@@ -1,0 +1,20 @@
+# Bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# Generated data (keep .gitkeep)
+data/results/*.json
+data/tasks/*
+!data/results/.gitkeep
+!data/tasks/.gitkeep
+
+# Env and IDE
+.venv/
+venv/
+.env
+.idea/
+*.swp
+*.swo
