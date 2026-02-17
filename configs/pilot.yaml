@@ -1,0 +1,35 @@
+# Pilot study configuration — feasibility validation (~2 GPU-hours).
+# See blueprints/infrastructureplan_pilot.md Section V.
+
+model:
+  name: "Qwen/Qwen2.5-3B-Instruct"
+  dtype: fp16
+
+inference:
+  temperature: 0.3
+  max_tokens: 256
+  avg_tokens_per_call: 200  # input ~120, output ~80
+
+pilot:
+  instances: 5
+  compute_stages: 3   # C0, C1, C2
+  runs_per_instance: 1
+  # 5 * 3 * 1 = 15 episodes for Test 5
+
+paths:
+  pilot_benchmark: "data/results/pilot_benchmark.json"
+  pilot_calibration: "data/results/pilot_calibration.json"
+  pilot_cost_validation: "data/results/pilot_cost_validation.md"
+  pilot_feasibility_report: "data/results/pilot_feasibility_report.md"
+
+test1_inference:
+  num_prompts: 50
+  expected_tok_per_sec_min: 80
+
+test3_verbalized_confidence:
+  num_easy: 5
+  num_hard: 5
+
+test4_textworld:
+  num_mini_envs: 3
+  max_rooms: 5

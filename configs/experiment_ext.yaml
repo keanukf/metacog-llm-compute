@@ -1,0 +1,20 @@
+# Extension experiments — optional after core.
+# See blueprints/infrastructureplan_pilot.md Section III.E.
+
+# Semantic Consistency signal (5x sampling per step)
+semantic_consistency:
+  enabled: false
+  samples_per_step: 5
+
+# Second model for generalizability
+second_model:
+  enabled: false
+  name: "microsoft/Phi-3.5-mini-instruct"
+
+# Third domain: Logical Reasoning
+logical_reasoning:
+  enabled: false
+  instances: 50
+
+paths:
+  results_ext: "data/results/extensions"
