@@ -1,0 +1,66 @@
+{
+  "episode_id": "ep_textworld_1_C0_0",
+  "domain": "textworld",
+  "instance": 1,
+  "compute_stage": "C0",
+  "run": 0,
+  "task_success": true,
+  "steps": 10,
+  "lm_calls": 10,
+  "tokens": 2000,
+  "wall_clock_time": 0.0,
+  "tle_per_step": [
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    }
+  ],
+  "vc_per_step": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ]
+}

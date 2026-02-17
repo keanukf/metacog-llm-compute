@@ -1,0 +1,12 @@
+# Core (blueprint: vLLM, TextWorld, analysis)
+vllm>=0.4.0
+transformers>=4.36.0
+textworld
+numpy
+pandas
+scipy
+pyyaml
+
+# Dev / tests
+pytest>=7.0.0
+pytest-cov>=4.0.0

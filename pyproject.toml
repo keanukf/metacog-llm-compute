@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metacog-llm-compute"
+version = "0.1.0"
+description = "Metacognitive effort allocation in sequential LM agents"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "pyyaml",
+]
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov>=4"]
+full = ["vllm", "transformers", "textworld"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
