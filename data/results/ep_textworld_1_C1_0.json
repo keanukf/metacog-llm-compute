@@ -8,7 +8,7 @@
   "steps": 10,
   "lm_calls": 10,
   "tokens": 50,
-  "wall_clock_time": 7.891599670983851e-05,
+  "wall_clock_time": 6.929200026206672e-05,
   "tle_per_step": [
     {
       "mean_entropy": 0.9670019784070771,

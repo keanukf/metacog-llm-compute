@@ -1,6 +1,7 @@
 # Core (blueprint: vLLM, TextWorld, analysis)
 vllm>=0.4.0
 transformers>=4.36.0
+accelerate
 textworld
 numpy
 pandas
