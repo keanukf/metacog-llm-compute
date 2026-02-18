@@ -64,15 +64,19 @@ def run_test1_inference_speed(
 
     if real_model is not None:
         # Real benchmark: 50 prompts, measure wall time and token count
+        print(f"Test 1: inference speed — running {num_prompts} prompts...")
         prompts = [f"Complete this sentence: The quick brown fox " * (i % 3 + 1) for i in range(num_prompts)]
         latencies = []
         total_tokens = 0
-        for p in prompts:
+        progress_interval = max(1, num_prompts // 5)  # e.g. every 10 for 50 prompts
+        for i, p in enumerate(prompts):
             t0 = time.perf_counter()
             text, logprobs = real_model.generate(p, logprobs=True, max_tokens=max_tokens, temperature=temperature)
             elapsed = time.perf_counter() - t0
             latencies.append(elapsed)
             total_tokens += len(logprobs) if logprobs else 0
+            if (i + 1) % progress_interval == 0 or (i + 1) == num_prompts:
+                print(f"  Test 1: {i + 1}/{num_prompts} prompts done")
         elapsed_total = sum(latencies)
         tokens_per_sec = total_tokens / elapsed_total if elapsed_total > 0 else 0.0
         n = len(latencies)
@@ -103,6 +107,7 @@ def run_test1_inference_speed(
 
 def run_test2_token_entropy(config: dict) -> dict:
     """Test 2: TLE extraction from logprobs."""
+    print("Running Test 2: token entropy...")
     from src.signals.token_entropy import compute_tle
     # Synthetic logprobs: easy (low entropy) vs hard (high entropy)
     easy = [{"logprob": -0.1}] * 10
@@ -112,6 +117,7 @@ def run_test2_token_entropy(config: dict) -> dict:
 
 def run_test3_verbalized_confidence(config: dict) -> dict:
     """Test 3: VC parsing."""
+    print("Running Test 3: verbalized confidence...")
     from src.signals.verbalized_confidence import parse_confidence
     samples = [
         "The answer is 42. Confidence: 85",
@@ -123,6 +129,7 @@ def run_test3_verbalized_confidence(config: dict) -> dict:
 
 def run_test4_textworld(config: dict) -> dict:
     """Test 4: TextWorld mini env — reset, step, observation."""
+    print("Running Test 4: TextWorld env...")
     from src.environments.textworld_env import TextWorldEnv
     env = TextWorldEnv(max_steps=5)
     obs = env.reset()
@@ -134,6 +141,7 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
     """Test 5: instances x 3 stages x runs = episodes; structured JSON per episode.
     If real_model is provided, use it; otherwise use MockModel (stub env always).
     """
+    print("Running Test 5: end-to-end episodes...")
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.environments.textworld_env import TextWorldEnv
@@ -149,6 +157,14 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
     instances = config.get("pilot", {}).get("instances", 5)
     stages = ["C0", "C1", "C2"]
     runs = config.get("pilot", {}).get("runs_per_instance", 1)
+    total_episodes = instances * len(stages) * runs
+    episode_idx = [0]
+
+    def _log_progress():
+        episode_idx[0] += 1
+        if episode_idx[0] % 5 == 0 or episode_idx[0] == total_episodes:
+            print(f"  Test 5: {episode_idx[0]}/{total_episodes} episodes done")
+
     episodes_data = []
     for inst in range(instances):
         for stage in stages:
@@ -173,11 +189,13 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
                 }
                 log_episode(ep_id, data, output_dir)
                 episodes_data.append(data)
+                _log_progress()
     return episodes_data
 
 
 def run_test6_logging_analysis(episodes_data: list[dict], output_dir: Path) -> dict:
     """Test 6: JSON round-trip + ECE on 15 data points."""
+    print("Running Test 6: logging analysis...")
     from src.analysis.calibration import compute_ece
     import json
     # Build predictions/correctness from episodes (use last VC or TLE as proxy)
@@ -232,24 +250,35 @@ def main() -> None:
     output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     config = load_config(config_path)
+    print(f"Config: {config_path}")
 
     pilot_mode = _resolve_pilot_mode(args)
+    print(f"Pilot mode: {pilot_mode}")
+    if pilot_mode != "mock":
+        model_name = config.get("model", {}).get("name", "?")
+        print(f"Creating model ({model_name})... (loading from cache may take ~1 min)")
     real_model = _create_real_model(config, pilot_mode)
     if pilot_mode != "mock" and real_model is None:
         print(f"Warning: pilot_mode={pilot_mode} but real model could not be created; falling back to mock.")
         pilot_mode = "mock"
     if pilot_mode != "mock":
         config.setdefault("pilot", {})["use_real_model"] = True
-    print(f"Pilot mode: {pilot_mode}")
+        print("Model ready.")
 
     benchmark = {"pilot_mode": pilot_mode}
     benchmark["test1"] = run_test1_inference_speed(config, output_dir, real_model=real_model)
+    print(f"Test 1 done (tokens/s: {benchmark['test1'].get('tokens_per_sec', 0):.1f})")
     benchmark["test2"] = run_test2_token_entropy(config)
+    print("Test 2 done.")
     benchmark["test3"] = run_test3_verbalized_confidence(config)
+    print("Test 3 done.")
     benchmark["test4"] = run_test4_textworld(config)
+    print("Test 4 done.")
     episodes = run_test5_e2e(config, output_dir, real_model=real_model)
     benchmark["test5_episodes"] = len(episodes)
+    print(f"Test 5 done ({len(episodes)} episodes).")
     benchmark["test6"] = run_test6_logging_analysis(episodes, output_dir)
+    print("Test 6 done.")
 
     benchmark_path = output_dir / "pilot_benchmark.json"
     with open(benchmark_path, "w") as f:
