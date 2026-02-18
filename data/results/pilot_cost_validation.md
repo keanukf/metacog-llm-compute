@@ -1,7 +1,7 @@
 # Pilot Cost Validation
 
 ## Measured (Test 1)
-- **tokens/s:** 159302.1
+- **tokens/s:** 159220.4
 - **VRAM (GB):** 0.00
 
 ## Blueprint assumptions

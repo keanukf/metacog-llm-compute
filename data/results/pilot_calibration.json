@@ -9,7 +9,7 @@
     "steps": 10,
     "lm_calls": 10,
     "tokens": 50,
-    "wall_clock_time": 8.537498069927096e-05,
+    "wall_clock_time": 8.008300210349262e-05,
     "tle_per_step": [
       {
         "mean_entropy": 0.9670019784070771,
@@ -75,7 +75,7 @@
     "steps": 10,
     "lm_calls": 10,
     "tokens": 50,
-    "wall_clock_time": 0.00017133299843408167,
+    "wall_clock_time": 6.937500438652933e-05,
     "tle_per_step": [
       {
         "mean_entropy": 0.9670019784070771,
@@ -140,8 +140,8 @@
     "task_success": true,
     "steps": 10,
     "lm_calls": 10,
-    "tokens": 50,
-    "wall_clock_time": 5.9084006352350116e-05,
+    "tokens": 150,
+    "wall_clock_time": 0.00014387501869350672,
     "tle_per_step": [
       {
         "mean_entropy": 0.9670019784070771,
@@ -207,7 +207,7 @@
     "steps": 10,
     "lm_calls": 10,
     "tokens": 50,
-    "wall_clock_time": 5.7375000324100256e-05,
+    "wall_clock_time": 7.562499376945198e-05,
     "tle_per_step": [
       {
         "mean_entropy": 0.9670019784070771,
@@ -273,7 +273,7 @@
     "steps": 10,
     "lm_calls": 10,
     "tokens": 50,
-    "wall_clock_time": 5.549998604692519e-05,
+    "wall_clock_time": 7.891599670983851e-05,
     "tle_per_step": [
       {
         "mean_entropy": 0.9670019784070771,
@@ -338,8 +338,8 @@
     "task_success": true,
     "steps": 10,
     "lm_calls": 10,
-    "tokens": 50,
-    "wall_clock_time": 5.570802022702992e-05,
+    "tokens": 150,
+    "wall_clock_time": 0.00011041600373573601,
     "tle_per_step": [
       {
         "mean_entropy": 0.9670019784070771,

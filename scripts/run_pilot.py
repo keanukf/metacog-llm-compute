@@ -25,20 +25,26 @@ def load_config(config_path: str | Path) -> dict:
         return yaml.safe_load(f)
 
 
-def _create_real_model(config: dict):
-    """Create real model wrapper from config if GPU/backend available; else return None."""
-    use_real = config.get("pilot", {}).get("use_real_model", False)
-    if not use_real:
+def _create_real_model(config: dict, pilot_mode: str):
+    """
+    Create real model wrapper for the given pilot mode.
+    pilot_mode: "mock" -> None; "m1" -> HF on Apple Silicon (MPS); "cuda" -> vLLM on CUDA.
+    """
+    if pilot_mode == "mock":
         return None
     model_cfg = config.get("model", {})
     model_name = model_cfg.get("name")
     if not model_name:
         return None
     dtype = model_cfg.get("dtype", "float16")
-    backend = config.get("inference", {}).get("backend", "vllm")
     try:
         from src.utils.model_wrapper import create_wrapper
-        return create_wrapper(backend=backend, model_name=model_name, dtype=dtype)
+        if pilot_mode == "m1":
+            return create_wrapper(backend="hf", model_name=model_name, dtype=dtype, device="mps")
+        if pilot_mode == "cuda":
+            backend = config.get("inference", {}).get("backend", "vllm")
+            return create_wrapper(backend=backend, model_name=model_name, dtype=dtype)
+        return None
     except Exception:
         return None
 
@@ -189,25 +195,54 @@ def run_test6_logging_analysis(episodes_data: list[dict], output_dir: Path) -> d
     return {"ece": ece, "n_points": len(episodes_data)}
 
 
+def _resolve_pilot_mode(args) -> str:
+    """Resolve pilot mode: mock (0), m1 (1), cuda (2). --real auto-detects m1 vs cuda."""
+    mode = (args.pilot_mode or os.environ.get("PILOT_MODE") or "mock").lower()
+    if args.real or os.environ.get("USE_REAL_MODEL") == "1":
+        if mode == "mock":
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    mode = "cuda"
+                elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+                    mode = "m1"
+                else:
+                    mode = "mock"
+                    print("Warning: --real requested but no CUDA/MPS found; falling back to mock.")
+            except Exception:
+                mode = "mock"
+    return mode
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run pilot study (Tests 1-6)")
+    parser = argparse.ArgumentParser(
+        description="Run pilot study (Tests 1-6). Pilot 0: mock. Pilot 1: M1 (HF+MPS). Pilot 2: CUDA (vLLM)."
+    )
     parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
     parser.add_argument("--output-dir", default="data/results", help="Output directory")
-    parser.add_argument("--real", action="store_true", help="Use real model (vLLM/HF) when GPU available; else mock")
+    parser.add_argument(
+        "--pilot-mode",
+        choices=["mock", "m1", "cuda"],
+        default="mock",
+        help="Pilot 0: mock (no real model). Pilot 1: M1/local (HF on Apple Silicon). Pilot 2: real CUDA GPU (vLLM).",
+    )
+    parser.add_argument("--real", action="store_true", help="Use real model; auto-detect m1 vs cuda if --pilot-mode not set")
     args = parser.parse_args()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     config = load_config(config_path)
 
-    use_real = args.real or os.environ.get("USE_REAL_MODEL") == "1"
-    if use_real:
+    pilot_mode = _resolve_pilot_mode(args)
+    real_model = _create_real_model(config, pilot_mode)
+    if pilot_mode != "mock" and real_model is None:
+        print(f"Warning: pilot_mode={pilot_mode} but real model could not be created; falling back to mock.")
+        pilot_mode = "mock"
+    if pilot_mode != "mock":
         config.setdefault("pilot", {})["use_real_model"] = True
-    real_model = _create_real_model(config) if use_real else None
-    if use_real and real_model is None:
-        print("Warning: --real requested but real model could not be created; falling back to mock.")
+    print(f"Pilot mode: {pilot_mode}")
 
-    benchmark = {}
+    benchmark = {"pilot_mode": pilot_mode}
     benchmark["test1"] = run_test1_inference_speed(config, output_dir, real_model=real_model)
     benchmark["test2"] = run_test2_token_entropy(config)
     benchmark["test3"] = run_test3_verbalized_confidence(config)

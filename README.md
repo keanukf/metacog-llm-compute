@@ -8,13 +8,13 @@ Thesis codebase: pilot tests, agent loop, signal extraction (TLE, VC), and exper
 
 | | **Unit tests (pytest)** | **Pilot (run_pilot.py)** |
 |---|-------------------------|---------------------------|
-| **Purpose** | Check that **code and interfaces** are correct: signals, agent loop, logging, calibration logic. | Check **setup and hardware** in a small end-to-end run: real model, VRAM, throughput, full pipeline on GPU. |
-| **Runs** | 21 functional tests with **mocks** (no model, no GPU). | One script that runs Tests 1–6 in sequence; optionally **real model** when you pass `--real`. |
-| **Where** | Local or on pod; **no GPU required**. | Without `--real`: mock (local/pod, no GPU). With `--real`: **needs GPU** (e.g. RunPod). |
-| **When** | After every code change; in CI. | Before spending GPU budget: confirm vLLM, tok/s, VRAM, and that episodes/logs are produced. |
+| **Purpose** | Check that **code and interfaces** are correct: signals, agent loop, logging, calibration logic. | Check **setup and hardware** in a small end-to-end run: real model, throughput, full pipeline. |
+| **Runs** | 21 functional tests with **mocks** (no model, no GPU). | One script that runs Tests 1–6 in sequence; **pilot mode** chooses mock, M1, or CUDA. |
+| **Where** | Local or on pod; **no GPU required**. | **Pilot 0** (mock): anywhere. **Pilot 1** (M1): Mac with Apple Silicon. **Pilot 2** (CUDA): e.g. RunPod. |
+| **When** | After every code change; in CI. | Pilot 0: quick local sanity. Pilot 1: test on M1 before buying GPU. Pilot 2: confirm GPU setup before full experiments. |
 | **Output** | Pass/fail per test. | `pilot_benchmark.json`, `pilot_calibration.json`, and optionally `pilot_cost_validation.md`, `pilot_feasibility_report.md`. |
 
-**Summary:** Unit tests validate *logic*; the pilot validates *environment and hardware* in a small run so you can detect errors and confirm throughput before starting full Phase 1/2 experiments.
+**Summary:** Unit tests validate *logic*; the pilot validates *environment and hardware* in a small run. Three pilot levels: **0 = mock** (no real model), **1 = local M1** (HuggingFace on Apple Silicon), **2 = real CUDA** (vLLM on GPU).
 
 ---
 
@@ -40,35 +40,51 @@ These tests assert structure (e.g. result has `tokens_per_sec`, `latency_mean`),
 
 ## Running the pilot (setup and hardware check)
 
-The pilot runs Tests 1–6 in sequence and writes benchmark and calibration outputs. It exists in two modes:
+The pilot runs Tests 1–6 in sequence and writes benchmark and calibration outputs. Use `--pilot-mode` to choose the level:
 
-### Pilot with mocks (no GPU)
+| Mode | Flag | Hardware | Backend | Use case |
+|------|------|----------|---------|----------|
+| **Pilot 0** | `--pilot-mode mock` (default) | None | Mock | Quick local sanity; CI; no model download. |
+| **Pilot 1** | `--pilot-mode m1` | Mac M1/M2 (Apple Silicon) | HuggingFace + MPS | Test full pipeline locally before buying GPU. |
+| **Pilot 2** | `--pilot-mode cuda` | NVIDIA GPU (e.g. RunPod) | vLLM (or HF) | Validate GPU setup and throughput before Phase 1/2. |
 
-Default: no real model, stub environments. Use this to confirm the script and outputs locally:
+### Pilot 0 — Mock (default)
+
+No real model, stub environments. Confirms the script and output format:
 
 ```bash
 python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results
 ```
 
-You get `pilot_benchmark.json` and `pilot_calibration.json` with **mock** numbers (e.g. very high tokens_per_sec). Reports (`pilot_cost_validation.md`, `pilot_feasibility_report.md`) are written from config paths.
+You get `pilot_benchmark.json` and `pilot_calibration.json` with **mock** numbers (e.g. unrealistic tokens_per_sec). Reports are still written from config paths.
 
-### Pilot with real model (GPU required)
+### Pilot 1 — Local M1 (Apple Silicon)
 
-On a machine with CUDA (e.g. RunPod RTX 3090), use `--real` to load the configured model (vLLM or HuggingFace) and run real inference:
+On a Mac with M1/M2/M3, run the same pipeline with the real model via HuggingFace on Metal (MPS). No CUDA or vLLM required:
 
 ```bash
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --real
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode m1
 ```
 
-Or set `USE_REAL_MODEL=1`. With `--real`:
+Requires `transformers`, `torch` with MPS support, and enough RAM/Unified Memory for the model (e.g. Qwen2.5-3B). Slower than Pilot 2 but catches setup and integration errors before spending on cloud GPU.
 
-- **Test 1:** 50 real prompts → measured tokens/s, latency, VRAM.
+### Pilot 2 — Real CUDA GPU
+
+On a machine with CUDA (e.g. RunPod RTX 3090), use vLLM for real inference and measured throughput:
+
+```bash
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode cuda
+```
+
+Or use `--real` to auto-detect: if CUDA is available → cuda; else if MPS (Mac) → m1; else mock.
+
+- **Test 1:** 50 real prompts → measured tokens/s, latency, VRAM (CUDA only).
 - **Tests 2–3:** Unchanged (synthetic/sample data).
 - **Test 4:** TextWorld env (stub or real game if a game file is provided).
-- **Test 5:** Same model runs the e2e episode loop (stub or real env).
+- **Test 5:** Same model runs the e2e episode loop.
 - **Test 6:** ECE and logging on the episode data.
 
-After a real pilot run you should see realistic `tokens_per_sec` in `pilot_benchmark.json` and full episode data in `pilot_calibration.json`. Use the generated markdown reports for go/no-go and cost validation.
+After Pilot 1 or 2 you get realistic `tokens_per_sec` (for that device) in `pilot_benchmark.json`. The benchmark JSON includes `"pilot_mode": "mock" | "m1" | "cuda"` so you know which run it was.
 
 ---
 
@@ -141,12 +157,14 @@ All 21 tests should pass. This confirms the codebase and interfaces before you r
 
 ### 5. Run the pilot with real model (GPU workload)
 
-Run the pilot **with real inference** to check setup and hardware:
+Run the pilot **with real inference** on the pod (Pilot 2):
 
 ```bash
 cd /workspace/metacog-llm-compute
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir /workspace/metacog-llm-compute/data/results --real
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir /workspace/metacog-llm-compute/data/results --pilot-mode cuda
 ```
+
+Or use `--real` to auto-detect (on the pod this will select `cuda`).
 
 You should see:
 

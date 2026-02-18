@@ -133,11 +133,13 @@ class HFWrapper(ModelWrapper):
         model_name: str,
         dtype: str = "float16",
         device_map: str = "auto",
+        device: str | None = None,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
         self._dtype = dtype
         self._device_map = device_map
+        self._device = device  # e.g. "mps" for Apple Silicon, "cuda", "cpu"
         self._kwargs = kwargs
         self._model: Any = None
         self._tokenizer: Any = None
@@ -149,13 +151,24 @@ class HFWrapper(ModelWrapper):
         import torch
 
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_name, trust_remote_code=True)
+        # On Apple Silicon, device_map="auto" often stays on CPU; use device_map="cpu" then .to("mps")
+        device_map = self._device_map
+        if self._device == "mps":
+            if not getattr(torch.backends, "mps", None) or not torch.backends.mps.is_available():
+                self._device = "cpu"
+            device_map = "cpu"  # load to CPU first, then move to MPS
         model = AutoModelForCausalLM.from_pretrained(
             self._model_name,
             trust_remote_code=True,
             torch_dtype=torch.float16 if self._dtype in ("float16", "fp16") else torch.float32,
-            device_map=self._device_map,
+            device_map=device_map,
             **self._kwargs,
         )
+        if self._device and self._device != "cpu":
+            try:
+                model = model.to(self._device)
+            except Exception:
+                self._device = "cpu"
         self._model = model
 
     def generate(
@@ -221,17 +234,18 @@ def create_wrapper(
     backend: str = "vllm",
     model_name: str | None = None,
     dtype: str = "float16",
+    device: str | None = None,
     **kwargs: Any,
 ) -> ModelWrapper:
     """
     Factory: create wrapper by backend name.
     - backend "vllm" + model_name -> VLLMWrapper (requires CUDA).
-    - backend "hf" + model_name -> HFWrapper.
+    - backend "hf" + model_name -> HFWrapper; use device="mps" for Apple Silicon, "cuda" or None for auto.
     - Otherwise returns a base ModelWrapper (will raise on generate); use for mocks in tests.
     """
     if model_name and backend == "vllm":
         return VLLMWrapper(model_name=model_name, dtype=dtype, **kwargs)
     if model_name and backend == "hf":
-        return HFWrapper(model_name=model_name, dtype=dtype, **kwargs)
+        return HFWrapper(model_name=model_name, dtype=dtype, device=device, **kwargs)
     # Stub for tests / no model configured
     return ModelWrapper()

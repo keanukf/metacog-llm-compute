@@ -1,8 +1,9 @@
 {
+  "pilot_mode": "mock",
   "test1": {
-    "tokens_per_sec": 159302.0606458448,
-    "latency_mean": 0.0012554765405366197,
-    "latency_std": 2.5511701840739088e-06,
+    "tokens_per_sec": 159220.3602812178,
+    "latency_mean": 0.0012561207602266222,
+    "latency_std": 2.108367364988962e-06,
     "total_tokens": 10000,
     "num_prompts": 50,
     "vram_gb": 0.0
