@@ -12,23 +12,24 @@ def c0_step(
     observation: str,
     history: list[str],
     model: Any,
-) -> tuple[str, dict[str, float] | None, float | None]:
+) -> tuple[str, dict[str, float] | None, float | None, int]:
     """
     C0: One action call with logprobs (TLE); optional VC prompt.
-    Returns (action_text, tle_dict, vc_or_none).
+    Returns (action_text, tle_dict, vc_or_none, tokens_used).
     """
     prompt = "\n".join(history + [observation]) if history else observation
     text, logprobs = model.generate(prompt, logprobs=True)
     tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
     vc = verbalized_confidence.parse_confidence(text)
-    return text.strip(), tle, vc
+    tokens_used = len(logprobs) if logprobs else 0
+    return text.strip(), tle, vc, tokens_used
 
 
 def c1_step(
     observation: str,
     history: list[str],
     model: Any,
-) -> tuple[str, dict[str, float] | None, float | None]:
+) -> tuple[str, dict[str, float] | None, float | None, int]:
     """
     C1: CoT generation + self-verification (two calls conceptually).
     Stub: single call returning action and optional TLE/VC.
@@ -37,7 +38,21 @@ def c1_step(
     text, logprobs = model.generate(prompt, logprobs=True)
     tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
     vc = verbalized_confidence.parse_confidence(text)
-    return text.strip(), tle, vc
+    tokens_used = len(logprobs) if logprobs else 0
+    return text.strip(), tle, vc, tokens_used
+
+
+def _majority_vote(actions: list[str]) -> str:
+    """Return the most frequent action; on tie, return the first that achieves the max count."""
+    if not actions:
+        return ""
+    from collections import Counter
+    counts = Counter(actions)
+    max_count = max(counts.values())
+    for a in actions:
+        if counts[a] == max_count:
+            return a
+    return actions[0]
 
 
 def c2_step(
@@ -45,16 +60,32 @@ def c2_step(
     history: list[str],
     model: Any,
     n_samples: int = 3,
-) -> tuple[str, dict[str, float] | None, float | None]:
+) -> tuple[str, dict[str, float] | None, float | None, int]:
     """
     C2: Best-of-N (e.g. 3) samples + majority vote.
-    Stub: single call; full impl would run n_samples and vote.
+    Generates n_samples times, then picks action by majority vote; returns TLE/VC from winning sample.
     """
     prompt = "\n".join(history + [observation]) if history else observation
-    text, logprobs = model.generate(prompt, logprobs=True)
-    tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
-    vc = verbalized_confidence.parse_confidence(text)
-    return text.strip(), tle, vc
+    samples: list[tuple[str, Any]] = []
+    total_tokens = 0
+    for _ in range(n_samples):
+        text, logprobs = model.generate(prompt, logprobs=True)
+        samples.append((text.strip(), logprobs))
+        total_tokens += len(logprobs) if logprobs else 0
+    actions = [s[0] for s in samples]
+    winner = _majority_vote(actions)
+    # Use TLE/VC from first sample that produced the winning action
+    tle, vc = None, None
+    for text, logprobs in samples:
+        if text == winner:
+            tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
+            vc = verbalized_confidence.parse_confidence(text)
+            break
+    if tle is None and samples:
+        text, logprobs = samples[0]
+        tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
+        vc = verbalized_confidence.parse_confidence(text)
+    return winner, tle, vc, total_tokens
 
 
 def get_step_fn(stage: str):

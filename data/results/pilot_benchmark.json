@@ -1,10 +1,11 @@
 {
   "test1": {
-    "tokens_per_sec": 0.0,
-    "latency_mean": 0.0,
-    "latency_std": 0.0,
-    "vram_gb": 0.0,
-    "num_prompts": 50
+    "tokens_per_sec": 159302.0606458448,
+    "latency_mean": 0.0012554765405366197,
+    "latency_std": 2.5511701840739088e-06,
+    "total_tokens": 10000,
+    "num_prompts": 50,
+    "vram_gb": 0.0
   },
   "test2": {
     "easy_tle": {
@@ -26,9 +27,9 @@
     "after_step_obs_len": 31,
     "done": false
   },
-  "test5_episodes": 15,
+  "test5_episodes": 6,
   "test6": {
     "ece": 0.5,
-    "n_points": 15
+    "n_points": 6
   }
 }

@@ -4,10 +4,19 @@ No framework (no LangChain/LlamaIndex). Each compute stage is a clear function.
 """
 from __future__ import annotations
 
+import time
 from typing import Any, Callable
 
-# Compute stage step: (observation, history) -> (action, tle_or_none, vc_or_none)
-StepFn = Callable[[str, list[str], Any], tuple[str, dict | None, float | None]]
+# Compute stage step: (observation, history, model) -> (action, tle_or_none, vc_or_none, tokens_used)
+# tokens_used is output token count for this step; step may return 3-tuple for backward compat (tokens_used=0).
+StepFn = Callable[[str, list[str], Any], tuple[str, dict | None, float | None] | tuple[str, dict | None, float | None, int]]
+
+
+def _normalize_step_result(result: tuple) -> tuple[str, dict | None, float | None, int]:
+    """Unpack step result as (action, tle, vc, tokens_used); default tokens_used=0 for 3-tuple."""
+    if len(result) >= 4:
+        return result[0], result[1], result[2], int(result[3])
+    return result[0], result[1], result[2], 0
 
 
 def run_episode(
@@ -39,24 +48,27 @@ def run_episode(
     tle_per_step: list[dict | None] = []
     vc_per_step: list[float | None] = []
     if step_fn is None:
-        def _stub_step(o: str, h: list[str], m: Any) -> tuple[str, dict | None, float | None]:
-            return "go north", None, None
+        def _stub_step(o: str, h: list[str], m: Any) -> tuple[str, dict | None, float | None, int]:
+            return "go north", None, None, 0
         step_fn = _stub_step
+    t_start = time.perf_counter()
     while not getattr(env, "done", False) and steps < max_steps:
-        action, tle, vc = step_fn(obs, history, model)
+        raw = step_fn(obs, history, model)
+        action, tle, vc, tokens_used = _normalize_step_result(raw)
         tle_per_step.append(tle)
         vc_per_step.append(vc)
+        tokens += tokens_used
         obs = env.step(action)
         history.append(obs)
         steps += 1
         lm_calls += 1
-        tokens += 200
+    wall_clock_time = time.perf_counter() - t_start
     return {
         "steps": steps,
         "task_success": getattr(env, "done", False),
         "lm_calls": lm_calls,
         "tokens": tokens,
-        "wall_clock_time": 0.0,
+        "wall_clock_time": wall_clock_time,
         "tle_per_step": tle_per_step,
         "vc_per_step": vc_per_step,
     }

@@ -7,8 +7,8 @@
   "task_success": true,
   "steps": 10,
   "lm_calls": 10,
-  "tokens": 2000,
-  "wall_clock_time": 0.0,
+  "tokens": 50,
+  "wall_clock_time": 0.00017133299843408167,
   "tle_per_step": [
     {
       "mean_entropy": 0.9670019784070771,

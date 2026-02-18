@@ -1,0 +1,116 @@
+{
+  "episode_id": "ep_delayed_cue_46_C2_0",
+  "domain": "delayed_cue",
+  "instance": 46,
+  "compute_stage": "C2",
+  "run": 0,
+  "task_success": true,
+  "steps": 20,
+  "lm_calls": 20,
+  "tokens": 100,
+  "wall_clock_time": 0.00010499998461455107,
+  "tle_per_step": [
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    },
+    {
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
+    }
+  ],
+  "vc_per_step": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ]
+}

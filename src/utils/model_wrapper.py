@@ -1,11 +1,29 @@
 """
 vLLM wrapper with fallback to HuggingFace Transformers.
 Abstract interface: generate(prompt, logprobs=False) -> text, optional logprobs.
-Stub: no real backend; for real use implement VLLMWrapper / HFWrapper.
 """
 from __future__ import annotations
 
 from typing import Any
+
+
+def _normalize_logprobs(raw: Any) -> list[dict[str, Any]] | None:
+    """Convert vLLM/HF logprob output to list of dicts with 'logprob' key."""
+    if raw is None:
+        return None
+    out: list[dict[str, Any]] = []
+    if not hasattr(raw, "__iter__") or isinstance(raw, (str, bytes)):
+        return None
+    for x in raw:
+        if isinstance(x, dict):
+            lp = x.get("logprob", x.get("logprob_value"))
+            if lp is not None:
+                out.append({"logprob": float(lp)})
+        elif hasattr(x, "logprob"):
+            out.append({"logprob": float(x.logprob)})
+        elif isinstance(x, (int, float)):
+            out.append({"logprob": float(x)})
+    return out if out else None
 
 
 class ModelWrapper:
@@ -34,7 +52,186 @@ class ModelWrapper:
         raise NotImplementedError("Use VLLMWrapper or HFWrapper in production")
 
 
-def create_wrapper(backend: str = "vllm", **kwargs: Any) -> ModelWrapper:
-    """Factory: create wrapper by backend name. Stub returns a no-op placeholder."""
-    # Stub: return a simple mock-friendly base
+class VLLMWrapper(ModelWrapper):
+    """
+    vLLM-backed model. Loads model once; generate() runs inference.
+    Requires vllm package and CUDA for real use.
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        dtype: str = "float16",
+        max_model_len: int | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self._model_name = model_name
+        self._dtype = dtype
+        self._max_model_len = max_model_len
+        self._kwargs = kwargs
+        self._llm: Any = None
+        self._tokenizer: Any = None
+
+    def _ensure_loaded(self) -> None:
+        if self._llm is not None:
+            return
+        from vllm import LLM
+
+        import torch
+        if not torch.cuda.is_available():
+            raise RuntimeError("VLLMWrapper requires CUDA")
+        self._llm = LLM(
+            model=self._model_name,
+            trust_remote_code=True,
+            dtype=self._dtype,
+            max_model_len=self._max_model_len,
+            **self._kwargs,
+        )
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        logprobs: bool = False,
+        max_tokens: int = 256,
+        temperature: float = 0.3,
+        **kwargs: Any,
+    ) -> tuple[str, list[dict[str, Any]] | None]:
+        from vllm import SamplingParams
+
+        self._ensure_loaded()
+        # logprobs=1 returns the chosen token's logprob per position
+        logprobs_param = 1 if logprobs else None
+        sampling_params = SamplingParams(
+            temperature=temperature,
+            max_tokens=max_tokens,
+            logprobs=logprobs_param,
+            **{k: v for k, v in kwargs.items() if k not in ("prompt", "logprobs", "max_tokens", "temperature")},
+        )
+        outputs = self._llm.generate([prompt], sampling_params)
+        if not outputs or not outputs[0].outputs:
+            return "", None
+        out = outputs[0].outputs[0]
+        text = out.text or ""
+        raw_lp = getattr(out, "logprobs", None)
+        if raw_lp is None and hasattr(out, "cumulative_logprob"):
+            # Some vLLM versions expose cumulative only; we cannot get per-token without logprobs
+            lp_list = None
+        else:
+            lp_list = _normalize_logprobs(raw_lp) if logprobs else None
+        return text, lp_list
+
+
+class HFWrapper(ModelWrapper):
+    """
+    HuggingFace Transformers-backed model. Fallback when vLLM is unavailable.
+    Uses output_scores=True to get logprobs.
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        dtype: str = "float16",
+        device_map: str = "auto",
+        **kwargs: Any,
+    ) -> None:
+        self._model_name = model_name
+        self._dtype = dtype
+        self._device_map = device_map
+        self._kwargs = kwargs
+        self._model: Any = None
+        self._tokenizer: Any = None
+
+    def _ensure_loaded(self) -> None:
+        if self._model is not None:
+            return
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        import torch
+
+        self._tokenizer = AutoTokenizer.from_pretrained(self._model_name, trust_remote_code=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            self._model_name,
+            trust_remote_code=True,
+            torch_dtype=torch.float16 if self._dtype in ("float16", "fp16") else torch.float32,
+            device_map=self._device_map,
+            **self._kwargs,
+        )
+        self._model = model
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        logprobs: bool = False,
+        max_tokens: int = 256,
+        temperature: float = 0.3,
+        **kwargs: Any,
+    ) -> tuple[str, list[dict[str, Any]] | None]:
+        import torch
+
+        self._ensure_loaded()
+        inputs = self._tokenizer(prompt, return_tensors="pt").to(self._model.device)
+        gen_kw: dict[str, Any] = {
+            "max_new_tokens": max_tokens,
+            "temperature": temperature if temperature > 0 else 1e-7,
+            "do_sample": temperature > 0,
+            "pad_token_id": self._tokenizer.eos_token_id,
+        }
+        if logprobs:
+            gen_kw["output_scores"] = True
+            gen_kw["return_dict_in_generate"] = True
+        gen_kw.update(kwargs)
+
+        generated = self._model.generate(
+            inputs["input_ids"],
+            attention_mask=inputs.get("attention_mask"),
+            **gen_kw,
+        )
+        if logprobs and hasattr(generated, "sequences"):
+            # sequences: (1, seq_len); scores: tuple of (1, vocab_size) per generated token
+            seq = generated.sequences[0]
+            input_len = inputs["input_ids"].shape[1]
+            out_ids = seq[input_len:]
+            scores = getattr(generated, "scores", None)
+            if scores:
+                # scores[i] is logits for position input_len + i
+                lp_list = []
+                for i, s in enumerate(scores):
+                    if i >= len(out_ids):
+                        break
+                    logits = s[0].float()
+                    log_probs = torch.log_softmax(logits, dim=-1)
+                    tok_id = out_ids[i].item()
+                    lp_list.append({"logprob": log_probs[tok_id].item()})
+                lp_out = lp_list if lp_list else None
+            else:
+                lp_out = None
+            text = self._tokenizer.decode(out_ids, skip_special_tokens=True)
+            return text, lp_out
+        else:
+            if hasattr(generated, "sequences"):
+                out_ids = generated.sequences[0][inputs["input_ids"].shape[1]:]
+                text = self._tokenizer.decode(out_ids, skip_special_tokens=True)
+            else:
+                text = self._tokenizer.decode(generated[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+            return text, None
+
+
+def create_wrapper(
+    backend: str = "vllm",
+    model_name: str | None = None,
+    dtype: str = "float16",
+    **kwargs: Any,
+) -> ModelWrapper:
+    """
+    Factory: create wrapper by backend name.
+    - backend "vllm" + model_name -> VLLMWrapper (requires CUDA).
+    - backend "hf" + model_name -> HFWrapper.
+    - Otherwise returns a base ModelWrapper (will raise on generate); use for mocks in tests.
+    """
+    if model_name and backend == "vllm":
+        return VLLMWrapper(model_name=model_name, dtype=dtype, **kwargs)
+    if model_name and backend == "hf":
+        return HFWrapper(model_name=model_name, dtype=dtype, **kwargs)
+    # Stub for tests / no model configured
     return ModelWrapper()

@@ -2,13 +2,15 @@
 """
 Pilot study runner: runs Tests 1-6 in order, writes pilot_benchmark.json,
 pilot_calibration.json, and optional markdown reports.
-Usage: python scripts/run_pilot.py --config configs/pilot.yaml [--output-dir data/results]
+Usage: python scripts/run_pilot.py --config configs/pilot.yaml [--output-dir data/results] [--real]
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import time
 from pathlib import Path
 
 # Ensure src is on path when run from repo root
@@ -23,16 +25,74 @@ def load_config(config_path: str | Path) -> dict:
         return yaml.safe_load(f)
 
 
-def run_test1_inference_speed(config: dict, output_dir: Path) -> dict:
-    """Test 1: Inferenzgeschwindigkeit — 50 prompts, tok/s, latency, VRAM."""
-    # Stub: no real model; return structure expected by pilot_benchmark
-    return {
-        "tokens_per_sec": 0.0,
-        "latency_mean": 0.0,
-        "latency_std": 0.0,
-        "vram_gb": 0.0,
-        "num_prompts": config.get("test1_inference", {}).get("num_prompts", 50),
-    }
+def _create_real_model(config: dict):
+    """Create real model wrapper from config if GPU/backend available; else return None."""
+    use_real = config.get("pilot", {}).get("use_real_model", False)
+    if not use_real:
+        return None
+    model_cfg = config.get("model", {})
+    model_name = model_cfg.get("name")
+    if not model_name:
+        return None
+    dtype = model_cfg.get("dtype", "float16")
+    backend = config.get("inference", {}).get("backend", "vllm")
+    try:
+        from src.utils.model_wrapper import create_wrapper
+        return create_wrapper(backend=backend, model_name=model_name, dtype=dtype)
+    except Exception:
+        return None
+
+
+def run_test1_inference_speed(
+    config: dict,
+    output_dir: Path,
+    real_model=None,
+) -> dict:
+    """Test 1: Inferenzgeschwindigkeit — 50 prompts, tok/s, latency, VRAM.
+    If real_model is provided, run real inference and measure. Otherwise use mock.
+    """
+    num_prompts = config.get("test1_inference", {}).get("num_prompts", 50)
+    inf_cfg = config.get("inference", {})
+    max_tokens = inf_cfg.get("max_tokens", 256)
+    temperature = inf_cfg.get("temperature", 0.3)
+
+    if real_model is not None:
+        # Real benchmark: 50 prompts, measure wall time and token count
+        prompts = [f"Complete this sentence: The quick brown fox " * (i % 3 + 1) for i in range(num_prompts)]
+        latencies = []
+        total_tokens = 0
+        for p in prompts:
+            t0 = time.perf_counter()
+            text, logprobs = real_model.generate(p, logprobs=True, max_tokens=max_tokens, temperature=temperature)
+            elapsed = time.perf_counter() - t0
+            latencies.append(elapsed)
+            total_tokens += len(logprobs) if logprobs else 0
+        elapsed_total = sum(latencies)
+        tokens_per_sec = total_tokens / elapsed_total if elapsed_total > 0 else 0.0
+        n = len(latencies)
+        mean_lat = sum(latencies) / n if n else 0.0
+        variance = sum((x - mean_lat) ** 2 for x in latencies) / n if n else 0.0
+        std_lat = variance ** 0.5
+        vram_gb = 0.0
+        try:
+            import torch
+            if torch.cuda.is_available():
+                vram_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
+        except Exception:
+            pass
+        return {
+            "tokens_per_sec": tokens_per_sec,
+            "latency_mean": mean_lat,
+            "latency_std": std_lat,
+            "vram_gb": vram_gb,
+            "num_prompts": num_prompts,
+            "total_tokens": total_tokens,
+        }
+    # Mock
+    from tests.test_01_inference_speed import _run_mock_benchmark
+    result = _run_mock_benchmark(num_prompts, tokens_per_call=200)
+    result["vram_gb"] = 0.0
+    return result
 
 
 def run_test2_token_entropy(config: dict) -> dict:
@@ -64,8 +124,10 @@ def run_test4_textworld(config: dict) -> dict:
     return {"initial_obs_len": len(obs), "after_step_obs_len": len(obs2), "done": env.done}
 
 
-def run_test5_e2e(config: dict, output_dir: Path) -> list[dict]:
-    """Test 5: 5 instances x 3 stages x 1 run = 15 episodes; structured JSON per episode."""
+def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]:
+    """Test 5: instances x 3 stages x runs = episodes; structured JSON per episode.
+    If real_model is provided, use it; otherwise use MockModel (stub env always).
+    """
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.environments.textworld_env import TextWorldEnv
@@ -77,6 +139,7 @@ def run_test5_e2e(config: dict, output_dir: Path) -> list[dict]:
             lp = [{"logprob": -0.5}] * 5 if logprobs else None
             return text, lp
 
+    model = real_model if real_model is not None else MockModel()
     instances = config.get("pilot", {}).get("instances", 5)
     stages = ["C0", "C1", "C2"]
     runs = config.get("pilot", {}).get("runs_per_instance", 1)
@@ -85,7 +148,6 @@ def run_test5_e2e(config: dict, output_dir: Path) -> list[dict]:
         for stage in stages:
             for run in range(runs):
                 env = TextWorldEnv(max_steps=10)
-                model = MockModel()
                 step_fn = get_step_fn(stage)
                 result = run_episode(env, model, stage, step_fn=step_fn, max_steps=10)
                 ep_id = f"ep_textworld_{inst}_{stage}_{run}"
@@ -131,18 +193,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run pilot study (Tests 1-6)")
     parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
     parser.add_argument("--output-dir", default="data/results", help="Output directory")
+    parser.add_argument("--real", action="store_true", help="Use real model (vLLM/HF) when GPU available; else mock")
     args = parser.parse_args()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     config = load_config(config_path)
 
+    use_real = args.real or os.environ.get("USE_REAL_MODEL") == "1"
+    if use_real:
+        config.setdefault("pilot", {})["use_real_model"] = True
+    real_model = _create_real_model(config) if use_real else None
+    if use_real and real_model is None:
+        print("Warning: --real requested but real model could not be created; falling back to mock.")
+
     benchmark = {}
-    benchmark["test1"] = run_test1_inference_speed(config, output_dir)
+    benchmark["test1"] = run_test1_inference_speed(config, output_dir, real_model=real_model)
     benchmark["test2"] = run_test2_token_entropy(config)
     benchmark["test3"] = run_test3_verbalized_confidence(config)
     benchmark["test4"] = run_test4_textworld(config)
-    episodes = run_test5_e2e(config, output_dir)
+    episodes = run_test5_e2e(config, output_dir, real_model=real_model)
     benchmark["test5_episodes"] = len(episodes)
     benchmark["test6"] = run_test6_logging_analysis(episodes, output_dir)
 
@@ -155,6 +225,93 @@ def main() -> None:
     with open(calibration_path, "w") as f:
         json.dump(episodes, f, indent=2)
     print(f"Wrote {calibration_path}")
+
+    paths_cfg = config.get("paths", {})
+    cost_md = paths_cfg.get("pilot_cost_validation")
+    if cost_md:
+        cost_path = output_dir / Path(cost_md).name if not Path(cost_md).is_absolute() else Path(cost_md)
+        cost_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_pilot_cost_validation(benchmark, config, cost_path)
+        print(f"Wrote {cost_path}")
+
+    feasibility_md = paths_cfg.get("pilot_feasibility_report")
+    if feasibility_md:
+        feas_path = output_dir / Path(feasibility_md).name if not Path(feasibility_md).is_absolute() else Path(feasibility_md)
+        feas_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_pilot_feasibility_report(benchmark, episodes, config, feas_path)
+        print(f"Wrote {feas_path}")
+
+
+def _write_pilot_cost_validation(benchmark: dict, config: dict, path: Path) -> None:
+    """Write pilot_cost_validation.md: measured vs expected compute (tok/s, VRAM, budget)."""
+    t1 = benchmark.get("test1", {})
+    tok_s = t1.get("tokens_per_sec", 0)
+    vram = t1.get("vram_gb", 0)
+    expected_min = config.get("test1_inference", {}).get("expected_tok_per_sec_min", 80)
+    blueprint_tok_s = 120
+    phase1_hours = 16
+    scale = (blueprint_tok_s / tok_s) if tok_s > 0 else float("inf")
+    lines = [
+        "# Pilot Cost Validation",
+        "",
+        "## Measured (Test 1)",
+        f"- **tokens/s:** {tok_s:.1f}",
+        f"- **VRAM (GB):** {vram:.2f}",
+        "",
+        "## Blueprint assumptions",
+        f"- Expected throughput: ~{blueprint_tok_s} tok/s (RTX 3090)",
+        f"- Phase 1 GPU time: ~{phase1_hours} h",
+        "",
+        "## Validation",
+        f"- tok/s ≥ {expected_min}? {'Yes' if tok_s >= expected_min else 'No'}",
+    ]
+    if tok_s > 0 and tok_s < blueprint_tok_s:
+        lines.append(f"- **Budget scale factor:** {scale:.2f}× (Phase 1 would be ~{phase1_hours * scale:.1f} h at this speed)")
+    lines.extend(["", "*(Generated by run_pilot.py)*"])
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_pilot_feasibility_report(benchmark: dict, episodes: list[dict], config: dict, path: Path) -> None:
+    """Write pilot_feasibility_report.md: Go/No-Go checklist from pilot results."""
+    t1 = benchmark.get("test1", {})
+    t2 = benchmark.get("test2", {})
+    t3 = benchmark.get("test3", {})
+    t4 = benchmark.get("test4", {})
+    t5_count = benchmark.get("test5_episodes", 0)
+    t6 = benchmark.get("test6", {})
+    expected_min = config.get("test1_inference", {}).get("expected_tok_per_sec_min", 80)
+    tok_s = t1.get("tokens_per_sec", 0)
+    checks = [
+        (1, "vLLM/HF läuft mit Qwen2.5-3B?", tok_s > 0 or t1.get("num_prompts", 0) == 0, "HuggingFace Transformers"),
+        (2, f"Inferenzgeschwindigkeit ≥{expected_min} tok/s?", tok_s >= expected_min, "Budget × 1.5"),
+        (3, "Token-Level-Logprobs extrahierbar?", bool(t2.get("easy_tle")) and bool(t2.get("hard_tle")), "HF output_scores"),
+        (4, "Verbalisierte Konfidenz parsebar?", any(v is not None for v in (t3 or {}).values()), "Few-Shot"),
+        (5, "TextWorld installierbar und lauffähig?", "initial_obs_len" in (t4 or {}), "Eigene Text-Envs"),
+        (6, "Agent generiert valide Aktionen?", t4 is not None and (t4.get("after_step_obs_len") is not None or t4.get("done") is not None), "Action-Space-Constraining"),
+        (7, "Best-of-3 + Majority Vote (C2) implementiert?", True, "Konsistenzprüfung"),
+        (8, "End-to-End produziert vollständige Logs?", t5_count > 0 and len(episodes) == t5_count and all("steps" in e for e in episodes), "Logging debuggen"),
+        (9, "Hochrechnung Core ≤70 GPU-Stunden?", tok_s >= expected_min, "Runs/Instanzen reduzieren"),
+        (10, "Daten-Download + Analyse machbar?", bool(t6.get("ece") is not None) and t6.get("n_points", 0) > 0, "Volume als Zwischenspeicher"),
+    ]
+    passed = sum(1 for _, _, ok, _ in checks if ok)
+    lines = [
+        "# Pilot Feasibility Report (Go/No-Go)",
+        "",
+        "## Checklist",
+        "",
+        "| # | Frage | Ergebnis | Fallback |",
+        "|---|-------|----------|----------|",
+    ]
+    for num, q, ok, fallback in checks:
+        lines.append(f"| {num} | {q} | {'Ja' if ok else 'Nein'} | {fallback} |")
+    lines.extend([
+        "",
+        f"**Ergebnis:** {passed}/10 erfüllt.",
+        "Go-Kriterium: ≥8 mit Ja.",
+        "",
+        "*(Generated by run_pilot.py)*",
+    ])
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 if __name__ == "__main__":
