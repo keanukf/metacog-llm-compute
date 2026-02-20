@@ -1,7 +1,7 @@
 """
 Metacog Experiment Dashboard — Configure, Monitor, Analyze.
 Run locally: streamlit run app.py (from this directory) or streamlit run infra/dashboard/app.py (from repo root).
-Loads infra/dashboard/.env if present, then infra/.env (MinIO: MLFLOW_S3_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY).
+Credentials: loads infra/.env first (shared with scripts), then infra/dashboard/.env for overrides.
 """
 from pathlib import Path
 from dotenv import load_dotenv

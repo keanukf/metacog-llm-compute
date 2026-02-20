@@ -11,6 +11,7 @@ pyyaml
 # Experiment tracking and dashboard
 mlflow>=2.19
 boto3
+python-dotenv>=1.0
 streamlit>=1.40
 plotly
 

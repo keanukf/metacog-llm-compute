@@ -25,6 +25,15 @@ def load_config(config_path: str | Path) -> dict:
         return yaml.safe_load(f)
 
 
+def _load_infra_env() -> None:
+    """Load infra/.env so scripts use same MinIO credentials as dashboard."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(REPO_ROOT / "infra" / ".env")
+    except ImportError:
+        pass
+
+
 def _create_tracker(tracking_uri: str | None, infra_config: dict | None):
     if not tracking_uri and infra_config:
         tracking_uri = (infra_config.get("tracking") or {}).get("mlflow_uri") or ""
@@ -34,8 +43,8 @@ def _create_tracker(tracking_uri: str | None, infra_config: dict | None):
         from src.utils.experiment_tracker import ExperimentTracker
         s3 = (infra_config or {}).get("tracking", {}).get("s3_endpoint")
         exp_name = (infra_config or {}).get("tracking", {}).get("experiment_name", "metacog-llm-compute")
-        access = os.environ.get((infra_config or {}).get("storage", {}).get("access_key_env", "MINIO_ACCESS_KEY")) or os.environ.get("MINIO_ROOT_USER")
-        secret = os.environ.get((infra_config or {}).get("storage", {}).get("secret_key_env", "MINIO_SECRET_KEY")) or os.environ.get("MINIO_ROOT_PASSWORD")
+        access = os.environ.get("AWS_ACCESS_KEY_ID", "") or os.environ.get("MINIO_ROOT_USER", "")
+        secret = os.environ.get("AWS_SECRET_ACCESS_KEY", "") or os.environ.get("MINIO_ROOT_PASSWORD", "")
         return ExperimentTracker(
             tracking_uri=tracking_uri,
             experiment_name=exp_name,
@@ -102,6 +111,7 @@ def main() -> None:
 
     infra_config = None
     if args.infra_config and (REPO_ROOT / args.infra_config).exists():
+        _load_infra_env()
         infra_config = load_config(REPO_ROOT / args.infra_config)
     tracker = _create_tracker(args.tracking_uri, infra_config)
 

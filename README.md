@@ -197,15 +197,15 @@ The ML experiment stack (MLflow, MinIO, PostgreSQL) runs on the **home server** 
 | **MinIO Console** | http://minio-console.home | Web UI for bucket `mlflow` |
 | **PostgreSQL** | internal only (`postgres:5432`, db: `mlflow`) | MLflow metadata |
 
-**Tracking config (local scripts on Mac or RunPod):** use `configs/infra.yaml` (default for `--infra-config`):
+**Tracking config (local scripts on Mac or RunPod):** use `configs/infra.yaml` (default for `--infra-config`) for URIs and bucket. MinIO credentials come from **`infra/.env`** (same file as the dashboard; do not put secrets in the YAML):
 
-- `mlflow_uri: "http://mlflow.home"`
-- `s3_endpoint: "http://minio.home"`
-- `bucket: "mlflow"`
+- `configs/infra.yaml`: `mlflow_uri`, `s3_endpoint`, `bucket` only
+- `infra/.env`: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (or `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`)
 
 Example:
 
 ```bash
+# Ensure infra/.env exists with MinIO credentials, then:
 python scripts/run_pilot.py --config configs/pilot.yaml --infra-config configs/infra.yaml
 ```
 
@@ -220,8 +220,8 @@ The **Streamlit dashboard** (Configure, Monitor, Analyze) runs locally and conne
 **Option A — run directly (recommended):**
 
 ```bash
-# From repo root (optional: copy infra/dashboard/.env.example to infra/dashboard/.env for credentials)
-pip install -r infra/dashboard/requirements.txt
+# From repo root. Copy infra/.env.example to infra/.env and set MinIO credentials (used by dashboard and scripts).
+pip install -r requirements.txt
 streamlit run infra/dashboard/app.py
 ```
 
@@ -233,7 +233,7 @@ docker compose -f infra/docker-compose.yml up -d
 # Dashboard at http://localhost:8501
 ```
 
-Defaults: `MLFLOW_TRACKING_URI=http://mlflow.home`, `MLFLOW_S3_ENDPOINT_URL=http://minio.home`, bucket `mlflow`. See **`infra/.env.example`** and **`infra/dashboard/.env.example`** for MinIO credentials.
+Defaults: `MLFLOW_TRACKING_URI=http://mlflow.home`, `MLFLOW_S3_ENDPOINT_URL=http://minio.home`, bucket `mlflow`. **One `infra/.env`** holds MinIO credentials for both the dashboard and all scripts that use `--infra-config`. See **`infra/.env.example`**.
 
 ---
 

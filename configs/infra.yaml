@@ -8,6 +8,5 @@ tracking:
 
 storage:
   bucket: "mlflow"
-  access_key_env: "MINIO_ACCESS_KEY"
-  secret_key_env: "MINIO_SECRET_KEY"
-# Fallback: MINIO_ROOT_USER / MINIO_ROOT_PASSWORD (same as on the server where MinIO runs)
+# MinIO credentials from infra/.env: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or MINIO_ROOT_USER, MINIO_ROOT_PASSWORD).
+# Same .env is used by the dashboard and by scripts when using --infra-config.
