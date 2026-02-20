@@ -1,6 +1,6 @@
 ---
 name: Experiment Infrastructure Stack
-overview: Deploy a self-hosted experiment management stack on the home server (MLflow + MinIO + PostgreSQL + Streamlit dashboard via Docker/Portainer), integrate structured MLflow tracking into the existing Python experiment scripts, and build a Streamlit dashboard for experiment configuration, monitoring, and result analysis.
+overview: Deploy a self-hosted experiment management stack on the home server (MLflow + MinIO + PostgreSQL via Docker/Portainer); run the Streamlit dashboard locally on your Mac against that server; integrate structured MLflow tracking into the existing Python experiment scripts.
 todos:
   - id: docker-stack
     content: Create infra/docker-compose.yml with PostgreSQL, MinIO, MLflow, and Streamlit dashboard services, plus .env.example and init-minio.sh
@@ -51,16 +51,14 @@ graph TB
         PG["PostgreSQL<br/>MLflow metadata"]
         MINIO["MinIO<br/>S3 artifact storage"]
         MLF["MLflow Tracking Server<br/>:5000"]
-        DASH["Streamlit Dashboard<br/>:8501"]
         MLF --> PG
         MLF --> MINIO
-        DASH --> MLF
-        DASH --> MINIO
     end
     
     subgraph localMac ["Mac (M1)"]
         CODE["Experiment Scripts<br/>run_pilot / run_phase1 / run_phase2"]
         TRACKER["ExperimentTracker<br/>MLflow Python SDK"]
+        DASH["Streamlit Dashboard<br/>:8501"]
         CODE --> TRACKER
     end
     
@@ -70,27 +68,26 @@ graph TB
     
     TRACKER -->|"HTTP :5000"| MLF
     TRACKER -->|"S3 :9000"| MINIO
+    DASH -->|"HTTP :5000"| MLF
+    DASH -->|"S3 :9000"| MINIO
     CODE2 -->|"HTTP/S3"| homeServer
-    
-    DASH -.->|"browser"| localMac
 ```
 
 
 
-**Data flow:** Experiments run on Mac or RunPod. The `ExperimentTracker` streams parameters, metrics, and artifacts (episode JSONs, plots) to MLflow/MinIO on the home server over LAN. The Streamlit dashboard reads from MLflow and MinIO to display results, and writes config files that experiment scripts consume.
+**Data flow:** Experiments run on Mac or RunPod. The `ExperimentTracker` streams parameters, metrics, and artifacts (episode JSONs, plots) to MLflow/MinIO on the home server over LAN. The **Streamlit dashboard runs locally on your Mac** and connects to MLflow/MinIO on the home server to display results and write config files that experiment scripts consume (no need to deploy the dashboard to the server).
 
 ---
 
 ## Part 1: Home Server Docker Stack
 
-A single `docker-compose.yml` deployed as a Portainer stack. Four services:
+A single `docker-compose.yml` deployed as a Portainer stack. **Three services** (dashboard runs locally on your Mac; see Part 3).
 
 ### Services
 
 - **PostgreSQL 16** — MLflow metadata backend (runs, params, metrics, tags)
 - **MinIO** — S3-compatible object storage for artifacts. Bucket: `metacog-experiments`. This holds all episode JSONs, config snapshots, generated plots, and calibration data. Provides the GB-scale storage the Mac lacks.
 - **MLflow Tracking Server 2.x** — connects to PostgreSQL for backend store, MinIO for artifact store (`--default-artifact-root s3://metacog-experiments/mlflow-artifacts`). Exposes UI on `:5000`.
-- **Streamlit Dashboard** — custom Python app (see Part 3). Exposes UI on `:8501`.
 
 ### New file: `infra/docker-compose.yml`
 
@@ -233,11 +230,23 @@ Add to `requirements.txt`: `mlflow>=2.19`, `boto3`, `streamlit>=1.40`
 
 ---
 
-## Part 3: Streamlit Experiment Dashboard
+## Part 3: Streamlit Experiment Dashboard (run locally on your Mac)
 
-### New directory: `infra/dashboard/`
+### Directory: `infra/dashboard/`
 
-A Streamlit multi-page app with three main views. Containerized alongside the other services.
+A Streamlit multi-page app with three main views. **Run it on your Mac** so you can iterate on UI and config without redeploying to the home server. It connects to MLflow and MinIO on the home server via `MLFLOW_TRACKING_URI` and `MLFLOW_S3_ENDPOINT_URL` (and MinIO credentials).
+
+### Running the dashboard locally
+
+1. From repo root or `infra/dashboard/`: `pip install -r infra/dashboard/requirements.txt` (or use the project venv that already has streamlit).
+2. Set environment variables to point at your home server (same values as in `configs/infra.yaml`):
+  - `MLFLOW_TRACKING_URI=http://<HOME_SERVER_IP>:5000`
+  - `MLFLOW_S3_ENDPOINT_URL=http://<HOME_SERVER_IP>:9000`
+  - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (or `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from your server `.env`).
+3. Run: `streamlit run infra/dashboard/app.py` (from repo root) or `streamlit run app.py` from `infra/dashboard/`.
+4. Open [http://localhost:8501](http://localhost:8501) in your browser.
+
+See `infra/dashboard/README.md` and `infra/dashboard/.env.example` for a copy-paste env template.
 
 ### Page 1: Configure
 
@@ -276,16 +285,9 @@ A Streamlit multi-page app with three main views. Containerized alongside the ot
 
 All plots rendered with Plotly (interactive) via `st.plotly_chart()`.
 
-### New file: `infra/dashboard/Dockerfile`
+### Optional: `infra/dashboard/Dockerfile`
 
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
-```
+For running the dashboard in Docker on your Mac (e.g. same env as server), use the Dockerfile; primary workflow is running Streamlit directly on the host.
 
 ### Dashboard file structure
 
@@ -326,19 +328,19 @@ This script also integrates with the tracker, so difficulty screening shows up i
 ## File Summary
 
 
-| Action | Path                              | Purpose                        |
-| ------ | --------------------------------- | ------------------------------ |
-| New    | `infra/docker-compose.yml`        | Home server stack definition   |
-| New    | `infra/.env.example`              | Credentials template           |
-| New    | `infra/init-minio.sh`             | Bootstrap MinIO bucket         |
-| New    | `infra/dashboard/` (6+ files)     | Streamlit experiment dashboard |
-| New    | `src/utils/experiment_tracker.py` | MLflow wrapper class           |
-| New    | `configs/infra.yaml`              | Server connection config       |
-| New    | `scripts/run_calibration.py`      | Difficulty pre-screening       |
-| Edit   | `scripts/run_pilot.py`            | Add tracking integration       |
-| Edit   | `scripts/run_phase1.py`           | Add tracking integration       |
-| Edit   | `scripts/run_phase2.py`           | Add tracking integration       |
-| Edit   | `src/utils/logging_utils.py`      | Optional tracker forwarding    |
-| Edit   | `requirements.txt`                | Add mlflow, boto3, streamlit   |
+| Action | Path                              | Purpose                                          |
+| ------ | --------------------------------- | ------------------------------------------------ |
+| New    | `infra/docker-compose.yml`        | Home server stack (postgres, minio, mlflow only) |
+| New    | `infra/.env.example`              | Credentials template                             |
+| New    | `infra/init-minio.sh`             | Bootstrap MinIO bucket                           |
+| New    | `infra/dashboard/` (6+ files)     | Streamlit experiment dashboard                   |
+| New    | `src/utils/experiment_tracker.py` | MLflow wrapper class                             |
+| New    | `configs/infra.yaml`              | Server connection config                         |
+| New    | `scripts/run_calibration.py`      | Difficulty pre-screening                         |
+| Edit   | `scripts/run_pilot.py`            | Add tracking integration                         |
+| Edit   | `scripts/run_phase1.py`           | Add tracking integration                         |
+| Edit   | `scripts/run_phase2.py`           | Add tracking integration                         |
+| Edit   | `src/utils/logging_utils.py`      | Optional tracker forwarding                      |
+| Edit   | `requirements.txt`                | Add mlflow, boto3, streamlit                     |
 
 

@@ -1,7 +1,12 @@
 """
 Metacog Experiment Dashboard — Configure, Monitor, Analyze.
-Run: streamlit run app.py
+Run locally: streamlit run app.py (from this directory) or streamlit run infra/dashboard/app.py (from repo root).
+Loads infra/dashboard/.env if present (MLFLOW_TRACKING_URI, MLFLOW_S3_ENDPOINT_URL, AWS_*).
 """
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
 import streamlit as st
 
 st.set_page_config(

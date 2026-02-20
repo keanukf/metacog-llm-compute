@@ -1,4 +1,4 @@
-# Experiment infrastructure: MLflow + MinIO + PostgreSQL + Streamlit dashboard.
+# Experiment infrastructure: MLflow + MinIO + PostgreSQL (no dashboard — run dashboard locally on your Mac).
 # Deploy via Portainer: Stack -> Add stack -> paste this file, set env vars from .env.example.
 services:
   postgres:
@@ -63,20 +63,6 @@ services:
         condition: service_completed_successfully
     ports:
       - "5000:5000"
-
-  dashboard:
-    build:
-      context: ./dashboard
-      dockerfile: Dockerfile
-    environment:
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-    depends_on:
-      - mlflow
-    ports:
-      - "8501:8501"
 
 volumes:
   pgdata:

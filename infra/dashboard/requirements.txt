@@ -4,3 +4,4 @@ plotly
 pandas
 boto3
 pyyaml
+python-dotenv

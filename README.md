@@ -186,6 +186,20 @@ Or use `scp`. Then run analysis locally (e.g. ECE on `pilot_calibration.json` vi
 
 ---
 
+## Experiment dashboard (local)
+
+The **Streamlit dashboard** (Configure, Monitor, Analyze) runs **on your Mac** and connects to MLflow + MinIO on your home server. No need to deploy it to the server.
+
+```bash
+# From repo root: install deps, then run (set MLFLOW_TRACKING_URI etc. via infra/dashboard/.env)
+pip install -r infra/dashboard/requirements.txt
+streamlit run infra/dashboard/app.py
+```
+
+See **`infra/dashboard/README.md`** and **`infra/dashboard/.env.example`** for connection settings (home server IP and MinIO credentials).
+
+---
+
 ## Test suite layout (what each test file does)
 
 | Test file | What it does (unit test) | Pilot counterpart |
