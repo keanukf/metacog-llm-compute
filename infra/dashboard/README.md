@@ -10,10 +10,9 @@ Streamlit app for **Configure**, **Monitor**, and **Analyze**. It runs on your M
    ```
 
 2. **Configure connection to your home server**  
-   Copy `.env.example` to `.env` in this directory, then set:
-   - `MLFLOW_TRACKING_URI` — e.g. `http://192.168.1.100:5000`
-   - `MLFLOW_S3_ENDPOINT_URL` — e.g. `http://192.168.1.100:9000`
-   - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — same as `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from your server `infra/.env`
+   The app loads **`infra/.env`** first (shared MinIO/MLflow), then **`infra/dashboard/.env`** if present (to override). So you can either:
+   - Set `MLFLOW_TRACKING_URI`, `MLFLOW_S3_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` in **`infra/.env`** (no dashboard `.env` needed), or
+   - Copy `infra/dashboard/.env.example` to `infra/dashboard/.env` and set the same variables there.
 
 3. **Run** (from repo root):
    ```bash
@@ -26,4 +25,4 @@ Streamlit app for **Configure**, **Monitor**, and **Analyze**. It runs on your M
 
 4. Open **http://localhost:8501** in your browser.
 
-The app loads `infra/dashboard/.env` automatically if it exists. Do not commit `.env`.
+The app loads `infra/.env` and then `infra/dashboard/.env` (overrides). Do not commit `.env` files.
