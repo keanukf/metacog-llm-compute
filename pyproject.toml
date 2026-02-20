@@ -16,6 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7", "pytest-cov>=4"]
 full = ["vllm", "transformers", "accelerate", "textworld"]
+tracking = ["mlflow>=2.19", "boto3", "streamlit>=1.40", "plotly"]
 
 [tool.setuptools.packages.find]
 where = ["."]

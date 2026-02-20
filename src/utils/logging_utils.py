@@ -9,14 +9,22 @@ from pathlib import Path
 from typing import Any
 
 
-def log_episode(episode_id: str, data: dict[str, Any], path: str | Path) -> Path:
+def log_episode(
+    episode_id: str,
+    data: dict[str, Any],
+    path: str | Path,
+    tracker: Any = None,
+) -> Path:
     """
     Write a single episode's data as one JSON file.
+    If tracker (ExperimentTracker) is provided, also forwards the episode to MLflow
+    (caller should call tracker.log_episode separately for step_index/metrics; this only uploads artifact if needed).
 
     Args:
         episode_id: Unique id (e.g. ep_{domain}_{instance}_{stage}_{run}).
         data: Dict with keys such as TLE, VC, task_success, steps, lm_calls, tokens, wall_clock_time.
         path: Directory or full file path; if directory, file is path / f"{episode_id}.json".
+        tracker: Optional ExperimentTracker for MLflow; artifact upload is done in tracker.log_episode.
 
     Returns:
         Path to the written file.

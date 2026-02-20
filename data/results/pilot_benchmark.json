@@ -1,12 +1,12 @@
 {
-  "pilot_mode": "m1",
+  "pilot_mode": "mock",
   "test1": {
-    "tokens_per_sec": 7.071751282797815,
-    "latency_mean": 18.411280995800045,
-    "latency_std": 7.926223975796093,
-    "vram_gb": 0.0,
+    "tokens_per_sec": 158812.93051609956,
+    "latency_mean": 0.0012593433000074583,
+    "latency_std": 1.0881780087711996e-05,
+    "total_tokens": 10000,
     "num_prompts": 50,
-    "total_tokens": 6510
+    "vram_gb": 0.0
   },
   "test2": {
     "easy_tle": {
@@ -30,7 +30,7 @@
   },
   "test5_episodes": 6,
   "test6": {
-    "ece": 0.575,
+    "ece": 0.5,
     "n_points": 6
   }
 }

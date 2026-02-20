@@ -7,54 +7,54 @@
   "task_success": true,
   "steps": 10,
   "lm_calls": 10,
-  "tokens": 2560,
-  "wall_clock_time": 364.068759457994,
+  "tokens": 50,
+  "wall_clock_time": 0.00020083300114492886,
   "tle_per_step": [
     {
-      "mean_entropy": 0.1650079538962926,
-      "max_entropy": 0.9995563680152552
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.14677002315639587,
-      "max_entropy": 1.0
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.11364675816328855,
-      "max_entropy": 1.0
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.22280842302275897,
-      "max_entropy": 0.9995110686150479
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.23166372203368402,
-      "max_entropy": 1.0
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.1421645436030271,
-      "max_entropy": 0.9995565281581484
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.18490029083896298,
-      "max_entropy": 0.9995110636744305
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.16865023455934597,
-      "max_entropy": 1.0
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.1877287154574875,
-      "max_entropy": 0.9997918520552456
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.17913581747581628,
-      "max_entropy": 0.9995565032026683
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     }
   ],
   "vc_per_step": [
     null,
     null,
-    2.0,
+    null,
     null,
     null,
     null,

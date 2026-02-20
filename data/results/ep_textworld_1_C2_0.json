@@ -7,48 +7,48 @@
   "task_success": true,
   "steps": 10,
   "lm_calls": 10,
-  "tokens": 7239,
-  "wall_clock_time": 1012.3717083330266,
+  "tokens": 150,
+  "wall_clock_time": 7.741700028418563e-05,
   "tle_per_step": [
     {
-      "mean_entropy": 0.2182395069731275,
-      "max_entropy": 0.9999975286689813
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.21276233473862782,
-      "max_entropy": 0.9999289885857537
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.1638943510342145,
-      "max_entropy": 0.9999289308414961
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.19016009190846528,
-      "max_entropy": 1.0
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.15846073310107311,
-      "max_entropy": 0.9980456818617971
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.19325509993774212,
-      "max_entropy": 0.9997833272955876
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.1729554556890941,
-      "max_entropy": 0.9998403592226497
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.23528654212770503,
-      "max_entropy": 0.9999694801068115
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.20585318198581853,
-      "max_entropy": 1.0
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.21032661414425677,
-      "max_entropy": 0.9999014925873442
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     }
   ],
   "vc_per_step": [
@@ -57,9 +57,9 @@
     null,
     null,
     null,
-    3.0,
     null,
-    4.0,
+    null,
+    null,
     null,
     null
   ]

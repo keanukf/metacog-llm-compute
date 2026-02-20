@@ -4,40 +4,40 @@ overview: Deploy a self-hosted experiment management stack on the home server (M
 todos:
   - id: docker-stack
     content: Create infra/docker-compose.yml with PostgreSQL, MinIO, MLflow, and Streamlit dashboard services, plus .env.example and init-minio.sh
-    status: pending
+    status: completed
   - id: experiment-tracker
     content: Implement src/utils/experiment_tracker.py — MLflow wrapper with start_run, log_episode, log_aggregate_metrics, log_artifact, end_run
-    status: pending
+    status: completed
   - id: infra-config
     content: Create configs/infra.yaml with MLflow URI, S3 endpoint, bucket name, credential env var references
-    status: pending
+    status: completed
   - id: integrate-pilot
     content: Add --tracking-uri flag and ExperimentTracker integration to scripts/run_pilot.py
-    status: pending
+    status: completed
   - id: integrate-phase1
     content: Add ExperimentTracker integration to scripts/run_phase1.py (log each episode + aggregates)
-    status: pending
+    status: completed
   - id: integrate-phase2
     content: Add ExperimentTracker integration to scripts/run_phase2.py
-    status: pending
+    status: completed
   - id: update-logging
     content: Update src/utils/logging_utils.py to optionally forward to ExperimentTracker
-    status: pending
+    status: completed
   - id: dashboard-configure
     content: "Build Streamlit page 1 (Configure): config forms, parameter widgets, save-to-MinIO, CLI command display"
-    status: pending
+    status: completed
   - id: dashboard-monitor
     content: "Build Streamlit page 2 (Monitor): active runs table, live metrics charts, run comparison"
-    status: pending
+    status: completed
   - id: dashboard-analyze
     content: "Build Streamlit page 3 (Analyze): calibration curves, success rate charts, efficiency plot, TLE/VC distributions, episode inspector"
-    status: pending
+    status: completed
   - id: difficulty-calibration
     content: Create scripts/run_calibration.py for TextWorld difficulty pre-screening with varying world_size/quest_length, outputs difficulty_manifest.json
-    status: pending
+    status: completed
   - id: update-deps
     content: Add mlflow, boto3, streamlit, plotly to requirements.txt and pyproject.toml
-    status: pending
+    status: completed
 isProject: false
 ---
 

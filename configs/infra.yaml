@@ -1,0 +1,13 @@
+# Infrastructure: MLflow tracking and MinIO storage.
+# Replace <HOME_SERVER_IP> with your server's LAN IP (e.g. 192.168.1.100).
+
+tracking:
+  mlflow_uri: "http://<HOME_SERVER_IP>:5000"
+  s3_endpoint: "http://<HOME_SERVER_IP>:9000"
+  experiment_name: "metacog-llm-compute"
+
+storage:
+  bucket: "metacog-experiments"
+  access_key_env: "MINIO_ACCESS_KEY"
+  secret_key_env: "MINIO_SECRET_KEY"
+# Fallback: MINIO_ROOT_USER / MINIO_ROOT_PASSWORD (same as docker-compose)

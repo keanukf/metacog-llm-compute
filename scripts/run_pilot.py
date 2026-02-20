@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 # Ensure src is on path when run from repo root
@@ -23,6 +24,30 @@ def load_config(config_path: str | Path) -> dict:
     import yaml
     with open(config_path) as f:
         return yaml.safe_load(f)
+
+
+def _create_tracker(tracking_uri: str | None, infra_config: dict | None) -> "ExperimentTracker | None":
+    """Create ExperimentTracker if tracking_uri is set; otherwise return None."""
+    if not tracking_uri and infra_config:
+        tracking_uri = (infra_config.get("tracking") or {}).get("mlflow_uri") or ""
+    if not tracking_uri or "<HOME_SERVER_IP>" in tracking_uri:
+        return None
+    try:
+        from src.utils.experiment_tracker import ExperimentTracker
+        s3 = (infra_config or {}).get("tracking", {}).get("s3_endpoint")
+        exp_name = (infra_config or {}).get("tracking", {}).get("experiment_name", "metacog-llm-compute")
+        access = os.environ.get((infra_config or {}).get("storage", {}).get("access_key_env", "MINIO_ACCESS_KEY")) or os.environ.get("MINIO_ROOT_USER")
+        secret = os.environ.get((infra_config or {}).get("storage", {}).get("secret_key_env", "MINIO_SECRET_KEY")) or os.environ.get("MINIO_ROOT_PASSWORD")
+        return ExperimentTracker(
+            tracking_uri=tracking_uri,
+            experiment_name=exp_name,
+            s3_endpoint_url=s3,
+            aws_access_key=access,
+            aws_secret_key=secret,
+        )
+    except Exception as e:
+        print(f"Warning: could not create experiment tracker: {e}")
+        return None
 
 
 def _create_real_model(config: dict, pilot_mode: str):
@@ -137,9 +162,10 @@ def run_test4_textworld(config: dict) -> dict:
     return {"initial_obs_len": len(obs), "after_step_obs_len": len(obs2), "done": env.done}
 
 
-def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]:
+def run_test5_e2e(config: dict, output_dir: Path, real_model=None, tracker=None) -> list[dict]:
     """Test 5: instances x 3 stages x runs = episodes; structured JSON per episode.
     If real_model is provided, use it; otherwise use MockModel (stub env always).
+    If tracker is provided, each episode is logged to MLflow.
     """
     print("Running Test 5: end-to-end episodes...")
     from src.agent.base_agent import run_episode
@@ -187,7 +213,9 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
                     "tle_per_step": result.get("tle_per_step"),
                     "vc_per_step": result.get("vc_per_step"),
                 }
-                log_episode(ep_id, data, output_dir)
+                log_episode(ep_id, data, output_dir, tracker=tracker)
+                if tracker:
+                    tracker.log_episode(data, step_index=len(episodes_data))
                 episodes_data.append(data)
                 _log_progress()
     return episodes_data
@@ -245,12 +273,19 @@ def main() -> None:
         help="Pilot 0: mock (no real model). Pilot 1: M1/local (HF on Apple Silicon). Pilot 2: real CUDA GPU (vLLM).",
     )
     parser.add_argument("--real", action="store_true", help="Use real model; auto-detect m1 vs cuda if --pilot-mode not set")
+    parser.add_argument("--tracking-uri", default=None, help="MLflow tracking URI (e.g. http://192.168.1.100:5000). If set, pilot is logged to MLflow.")
+    parser.add_argument("--infra-config", default="configs/infra.yaml", help="Infra YAML for tracking/storage (used when --tracking-uri is set)")
     args = parser.parse_args()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     config = load_config(config_path)
     print(f"Config: {config_path}")
+
+    infra_config = None
+    if args.infra_config and (REPO_ROOT / args.infra_config).exists():
+        infra_config = load_config(REPO_ROOT / args.infra_config)
+    tracker = _create_tracker(args.tracking_uri, infra_config)
 
     pilot_mode = _resolve_pilot_mode(args)
     print(f"Pilot mode: {pilot_mode}")
@@ -265,8 +300,22 @@ def main() -> None:
         config.setdefault("pilot", {})["use_real_model"] = True
         print("Model ready.")
 
+    run_name = f"pilot_{pilot_mode}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    if tracker:
+        tracker.start_run(
+            run_name=run_name,
+            config={**config, "pilot_mode": pilot_mode},
+            tags={"phase": "pilot", "pilot_mode": pilot_mode},
+        )
+
     benchmark = {"pilot_mode": pilot_mode}
     benchmark["test1"] = run_test1_inference_speed(config, output_dir, real_model=real_model)
+    if tracker:
+        tracker.log_metrics({
+            "test1_tokens_per_sec": benchmark["test1"].get("tokens_per_sec", 0),
+            "test1_latency_mean": benchmark["test1"].get("latency_mean", 0),
+            "test1_vram_gb": benchmark["test1"].get("vram_gb", 0),
+        })
     print(f"Test 1 done (tokens/s: {benchmark['test1'].get('tokens_per_sec', 0):.1f})")
     benchmark["test2"] = run_test2_token_entropy(config)
     print("Test 2 done.")
@@ -274,10 +323,14 @@ def main() -> None:
     print("Test 3 done.")
     benchmark["test4"] = run_test4_textworld(config)
     print("Test 4 done.")
-    episodes = run_test5_e2e(config, output_dir, real_model=real_model)
+    episodes = run_test5_e2e(config, output_dir, real_model=real_model, tracker=tracker)
     benchmark["test5_episodes"] = len(episodes)
+    if tracker:
+        tracker.log_aggregate_metrics(episodes)
     print(f"Test 5 done ({len(episodes)} episodes).")
     benchmark["test6"] = run_test6_logging_analysis(episodes, output_dir)
+    if tracker:
+        tracker.log_metrics({"test6_ece": benchmark["test6"]["ece"], "test6_n_points": float(benchmark["test6"]["n_points"])})
     print("Test 6 done.")
 
     benchmark_path = output_dir / "pilot_benchmark.json"
@@ -289,6 +342,11 @@ def main() -> None:
     with open(calibration_path, "w") as f:
         json.dump(episodes, f, indent=2)
     print(f"Wrote {calibration_path}")
+
+    if tracker:
+        tracker.log_artifact(benchmark_path, artifact_path="pilot")
+        tracker.log_artifact(calibration_path, artifact_path="pilot")
+        tracker.end_run()
 
     paths_cfg = config.get("paths", {})
     cost_md = paths_cfg.get("pilot_cost_validation")

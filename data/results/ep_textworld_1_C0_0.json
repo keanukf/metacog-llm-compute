@@ -7,55 +7,55 @@
   "task_success": true,
   "steps": 10,
   "lm_calls": 10,
-  "tokens": 2423,
-  "wall_clock_time": 339.9559432909882,
+  "tokens": 50,
+  "wall_clock_time": 5.966699973214418e-05,
   "tle_per_step": [
     {
-      "mean_entropy": 0.14470514157903364,
-      "max_entropy": 0.9998563345441622
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.07240894743779426,
-      "max_entropy": 0.9980761657407031
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.21569203520047942,
-      "max_entropy": 0.9999822608456723
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.19896767144729338,
-      "max_entropy": 0.9999285991244318
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.1850055114430293,
-      "max_entropy": 1.0
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.1899479463424413,
-      "max_entropy": 1.0
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.20426094797903308,
-      "max_entropy": 0.9998891337582638
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.24075322287669013,
-      "max_entropy": 0.9999988911645143
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.20550374637884739,
-      "max_entropy": 0.9999955651516439
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.15952496345623063,
-      "max_entropy": 0.9995563680152552
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     }
   ],
   "vc_per_step": [
     null,
     null,
-    2.0,
-    4.0,
+    null,
+    null,
     null,
     null,
     null,

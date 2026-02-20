@@ -2,12 +2,15 @@
 """
 Phase 1 — Calibration: run domains x instances x compute_stages x runs.
 Supports --resume via checkpoint_dir; skips already completed episodes.
-Usage: python scripts/run_phase1.py --config configs/experiment_core.yaml --checkpoint-dir data/results/phase1 [--resume] [--real]
+Usage: python scripts/run_phase1.py --config configs/experiment_core.yaml [--tracking-uri URI] [--resume] [--real]
 """
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -19,6 +22,30 @@ def load_config(config_path: str | Path) -> dict:
     import yaml
     with open(config_path) as f:
         return yaml.safe_load(f)
+
+
+def _create_tracker(tracking_uri: str | None, infra_config: dict | None):
+    """Create ExperimentTracker if tracking_uri is set."""
+    if not tracking_uri and infra_config:
+        tracking_uri = (infra_config.get("tracking") or {}).get("mlflow_uri") or ""
+    if not tracking_uri or "<HOME_SERVER_IP>" in tracking_uri:
+        return None
+    try:
+        from src.utils.experiment_tracker import ExperimentTracker
+        s3 = (infra_config or {}).get("tracking", {}).get("s3_endpoint")
+        exp_name = (infra_config or {}).get("tracking", {}).get("experiment_name", "metacog-llm-compute")
+        access = os.environ.get((infra_config or {}).get("storage", {}).get("access_key_env", "MINIO_ACCESS_KEY")) or os.environ.get("MINIO_ROOT_USER")
+        secret = os.environ.get((infra_config or {}).get("storage", {}).get("secret_key_env", "MINIO_SECRET_KEY")) or os.environ.get("MINIO_ROOT_PASSWORD")
+        return ExperimentTracker(
+            tracking_uri=tracking_uri,
+            experiment_name=exp_name,
+            s3_endpoint_url=s3,
+            aws_access_key=access,
+            aws_secret_key=secret,
+        )
+    except Exception as e:
+        print(f"Warning: could not create experiment tracker: {e}")
+        return None
 
 
 def _create_model(config: dict, use_real: bool):
@@ -67,6 +94,8 @@ def main() -> None:
     parser.add_argument("--checkpoint-dir", default="data/results/phase1")
     parser.add_argument("--resume", action="store_true", help="Skip completed episodes")
     parser.add_argument("--real", action="store_true", help="Use real model (vLLM/HF) when available")
+    parser.add_argument("--tracking-uri", default=None, help="MLflow tracking URI for experiment logging")
+    parser.add_argument("--infra-config", default="configs/infra.yaml", help="Infra YAML for tracking/storage")
     args = parser.parse_args()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     checkpoint_dir = Path(args.checkpoint_dir)
@@ -74,6 +103,11 @@ def main() -> None:
         checkpoint_dir = REPO_ROOT / checkpoint_dir
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     config = load_config(config_path)
+
+    infra_config = None
+    if args.infra_config and (REPO_ROOT / args.infra_config).exists():
+        infra_config = load_config(REPO_ROOT / args.infra_config)
+    tracker = _create_tracker(args.tracking_uri, infra_config)
 
     from src.utils.checkpointing import list_completed_episodes, save_episode_checkpoint
     from src.agent.base_agent import run_episode
@@ -90,14 +124,24 @@ def main() -> None:
     print(f"Phase 1: {len(domains)} domains x {instances_per_domain} instances x {len(stages)} stages x {runs} runs = {total} episodes")
     print(f"Completed so far: {len(completed)}. Resume={args.resume}. Real model={args.real}.")
 
+    run_name = f"phase1_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    if tracker:
+        tracker.start_run(
+            run_name=run_name,
+            config={**config, "checkpoint_dir": str(checkpoint_dir)},
+            tags={"phase": "phase1"},
+        )
+
     model = _create_model(config, args.real)
     done_count = 0
+    step_index = 0
     for domain in domains:
         for inst in range(instances_per_domain):
             for stage in stages:
                 for run in range(runs):
                     ep_id = f"ep_{domain}_{inst}_{stage}_{run}"
                     if ep_id in completed:
+                        step_index += 1
                         continue
                     env = _make_env(domain, inst, config, max_steps)
                     step_fn = get_step_fn(stage)
@@ -117,9 +161,26 @@ def main() -> None:
                         "vc_per_step": result.get("vc_per_step"),
                     }
                     save_episode_checkpoint(checkpoint_dir, ep_id, data)
+                    if tracker:
+                        tracker.log_episode(data, step_index=step_index)
+                    step_index += 1
                     done_count += 1
                     if done_count % 50 == 0:
                         print(f"  Completed {done_count} new episodes (total in dir: {len(completed) + done_count})")
+    if tracker:
+        all_completed = list_completed_episodes(checkpoint_dir)
+        episodes_for_agg = []
+        for ep_id in sorted(all_completed):
+            p = checkpoint_dir / f"{ep_id}.json"
+            if p.exists():
+                try:
+                    with open(p) as f:
+                        episodes_for_agg.append(json.load(f))
+                except Exception:
+                    pass
+        if episodes_for_agg:
+            tracker.log_aggregate_metrics(episodes_for_agg)
+        tracker.end_run()
     print(f"Phase 1 done. New episodes: {done_count}. Total checkpoints: {len(list_completed_episodes(checkpoint_dir))}.")
 
 
