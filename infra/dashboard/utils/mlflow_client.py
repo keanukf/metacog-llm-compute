@@ -14,7 +14,7 @@ except ImportError:
 
 
 def get_tracking_uri() -> str:
-    return os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
+    return os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow.home")
 
 
 def get_client() -> Any | None:

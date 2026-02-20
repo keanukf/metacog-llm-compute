@@ -117,8 +117,9 @@ st.subheader("CLI command")
 script = "run_calibration.py" if phase == "calibration" else f"run_{phase}.py"
 config_arg = "configs/experiment_core.yaml" if phase != "pilot" else "configs/pilot.yaml"
 st.code(
-    f"# From repo root, with tracking server on your LAN (replace YOUR_SERVER_IP):\n"
-    f"python scripts/{script} --config {config_arg} --tracking-uri http://YOUR_SERVER_IP:5000",
+    "# From repo root. Tracking uses configs/infra.yaml (mlflow.home, minio.home):\n"
+    f"python scripts/{script} --config {config_arg} --infra-config configs/infra.yaml\n"
+    "# Or override: --tracking-uri http://mlflow.home",
     language="bash",
 )
 st.caption("If you saved a config to MinIO, download it and pass its path as --config.")

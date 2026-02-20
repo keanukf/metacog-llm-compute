@@ -8,7 +8,7 @@ from typing import Any
 import boto3
 import yaml
 
-BUCKET = os.environ.get("MINIO_BUCKET", "metacog-experiments")
+BUCKET = os.environ.get("MINIO_BUCKET", "mlflow")
 ENDPOINT = os.environ.get("MLFLOW_S3_ENDPOINT_URL", "") or os.environ.get("S3_ENDPOINT_URL", "")
 ACCESS = os.environ.get("AWS_ACCESS_KEY_ID", "") or os.environ.get("MINIO_ROOT_USER", "")
 SECRET = os.environ.get("AWS_SECRET_ACCESS_KEY", "") or os.environ.get("MINIO_ROOT_PASSWORD", "")
