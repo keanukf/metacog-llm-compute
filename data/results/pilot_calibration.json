@@ -8,56 +8,56 @@
     "task_success": true,
     "steps": 10,
     "lm_calls": 10,
-    "tokens": 50,
-    "wall_clock_time": 9.133300045505166e-05,
+    "tokens": 2428,
+    "wall_clock_time": 344.59943245802424,
     "tle_per_step": [
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1899959453797864,
+        "max_entropy": 0.999997337414513
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.20457422459373653,
+        "max_entropy": 0.9982834365830932
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.19749498698103887,
+        "max_entropy": 0.9995110636744305
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1849296913748495,
+        "max_entropy": 0.9995565010826737
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.18985140958708493,
+        "max_entropy": 0.9995109235204798
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.21213435210951304,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.16157627115610654,
+        "max_entropy": 0.999250699851556
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.187285186687994,
+        "max_entropy": 0.9997371137563934
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.20760168131620402,
+        "max_entropy": 0.9997504715898243
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.18248627194254805,
+        "max_entropy": 0.9989346529435079
       }
     ],
     "vc_per_step": [
       null,
       null,
-      null,
-      null,
-      null,
+      7.0,
+      4.0,
+      5.0,
       null,
       null,
       null,
@@ -74,54 +74,54 @@
     "task_success": true,
     "steps": 10,
     "lm_calls": 10,
-    "tokens": 50,
-    "wall_clock_time": 7.437498425133526e-05,
+    "tokens": 2560,
+    "wall_clock_time": 364.068759457994,
     "tle_per_step": [
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1650079538962926,
+        "max_entropy": 0.9995563680152552
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.14677002315639587,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.11364675816328855,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.22280842302275897,
+        "max_entropy": 0.9995110686150479
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.23166372203368402,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1421645436030271,
+        "max_entropy": 0.9995565281581484
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.18490029083896298,
+        "max_entropy": 0.9995110636744305
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.16865023455934597,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1877287154574875,
+        "max_entropy": 0.9997918520552456
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.17913581747581628,
+        "max_entropy": 0.9995565032026683
       }
     ],
     "vc_per_step": [
       null,
       null,
-      null,
+      2.0,
       null,
       null,
       null,
@@ -140,55 +140,55 @@
     "task_success": true,
     "steps": 10,
     "lm_calls": 10,
-    "tokens": 150,
-    "wall_clock_time": 0.00015166698722168803,
+    "tokens": 7533,
+    "wall_clock_time": 1074.265297874983,
     "tle_per_step": [
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.21443573201323365,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.2066779578887987,
+        "max_entropy": 0.9989346529435079
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.18418889165221938,
+        "max_entropy": 0.9995109235204798
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.25196080167630397,
+        "max_entropy": 0.9998657526605368
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1826935396259807,
+        "max_entropy": 0.9997825259476928
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.17874828236162318,
+        "max_entropy": 0.9999457295977321
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.18623274251576186,
+        "max_entropy": 0.9999456260306001
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.24055864972168964,
+        "max_entropy": 0.9995110686150479
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1970580064051125,
+        "max_entropy": 0.9997161094840115
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.20808744523928116,
+        "max_entropy": 0.9997811580694733
       }
     ],
     "vc_per_step": [
       null,
       null,
       null,
-      null,
+      1.0,
       null,
       null,
       null,
@@ -206,55 +206,55 @@
     "task_success": true,
     "steps": 10,
     "lm_calls": 10,
-    "tokens": 50,
-    "wall_clock_time": 7.12500186637044e-05,
+    "tokens": 2423,
+    "wall_clock_time": 339.9559432909882,
     "tle_per_step": [
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.14470514157903364,
+        "max_entropy": 0.9998563345441622
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.07240894743779426,
+        "max_entropy": 0.9980761657407031
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.21569203520047942,
+        "max_entropy": 0.9999822608456723
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.19896767144729338,
+        "max_entropy": 0.9999285991244318
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1850055114430293,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1899479463424413,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.20426094797903308,
+        "max_entropy": 0.9998891337582638
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.24075322287669013,
+        "max_entropy": 0.9999988911645143
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.20550374637884739,
+        "max_entropy": 0.9999955651516439
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.15952496345623063,
+        "max_entropy": 0.9995563680152552
       }
     ],
     "vc_per_step": [
       null,
       null,
-      null,
-      null,
+      2.0,
+      4.0,
       null,
       null,
       null,
@@ -272,48 +272,48 @@
     "task_success": true,
     "steps": 10,
     "lm_calls": 10,
-    "tokens": 50,
-    "wall_clock_time": 6.929200026206672e-05,
+    "tokens": 2273,
+    "wall_clock_time": 320.21334345798823,
     "tle_per_step": [
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.17923838115777643,
+        "max_entropy": 0.9997826234972815
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1213123983504733,
+        "max_entropy": 0.9995109235204798
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.25626329636766415,
+        "max_entropy": 0.9995110686150479
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.22154120340345823,
+        "max_entropy": 0.9995109224880399
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.16200833464146008,
+        "max_entropy": 0.9980459705697144
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.20702098872475744,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.18484477985964043,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.18759542750479438,
+        "max_entropy": 0.9994997722981451
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.19366145920016936,
+        "max_entropy": 0.9999940496606452
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.16121213195070863,
+        "max_entropy": 0.9999988911645143
       }
     ],
     "vc_per_step": [
@@ -326,7 +326,7 @@
       null,
       null,
       null,
-      null
+      5.0
     ]
   },
   {
@@ -338,48 +338,48 @@
     "task_success": true,
     "steps": 10,
     "lm_calls": 10,
-    "tokens": 150,
-    "wall_clock_time": 0.00010262499563395977,
+    "tokens": 7239,
+    "wall_clock_time": 1012.3717083330266,
     "tle_per_step": [
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.2182395069731275,
+        "max_entropy": 0.9999975286689813
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.21276233473862782,
+        "max_entropy": 0.9999289885857537
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1638943510342145,
+        "max_entropy": 0.9999289308414961
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.19016009190846528,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.15846073310107311,
+        "max_entropy": 0.9980456818617971
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.19325509993774212,
+        "max_entropy": 0.9997833272955876
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.1729554556890941,
+        "max_entropy": 0.9998403592226497
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.23528654212770503,
+        "max_entropy": 0.9999694801068115
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.20585318198581853,
+        "max_entropy": 1.0
       },
       {
-        "mean_entropy": 0.9670019784070771,
-        "max_entropy": 0.9670019784070771
+        "mean_entropy": 0.21032661414425677,
+        "max_entropy": 0.9999014925873442
       }
     ],
     "vc_per_step": [
@@ -388,9 +388,9 @@
       null,
       null,
       null,
+      3.0,
       null,
-      null,
-      null,
+      4.0,
       null,
       null
     ]

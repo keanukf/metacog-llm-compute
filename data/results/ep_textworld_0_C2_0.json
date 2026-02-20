@@ -7,55 +7,55 @@
   "task_success": true,
   "steps": 10,
   "lm_calls": 10,
-  "tokens": 150,
-  "wall_clock_time": 0.00015166698722168803,
+  "tokens": 7533,
+  "wall_clock_time": 1074.265297874983,
   "tle_per_step": [
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.21443573201323365,
+      "max_entropy": 1.0
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.2066779578887987,
+      "max_entropy": 0.9989346529435079
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.18418889165221938,
+      "max_entropy": 0.9995109235204798
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.25196080167630397,
+      "max_entropy": 0.9998657526605368
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.1826935396259807,
+      "max_entropy": 0.9997825259476928
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.17874828236162318,
+      "max_entropy": 0.9999457295977321
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.18623274251576186,
+      "max_entropy": 0.9999456260306001
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.24055864972168964,
+      "max_entropy": 0.9995110686150479
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.1970580064051125,
+      "max_entropy": 0.9997161094840115
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.20808744523928116,
+      "max_entropy": 0.9997811580694733
     }
   ],
   "vc_per_step": [
     null,
     null,
     null,
-    null,
+    1.0,
     null,
     null,
     null,
