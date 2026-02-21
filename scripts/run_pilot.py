@@ -296,6 +296,8 @@ def main() -> None:
         _load_infra_env()
         infra_config = load_config(REPO_ROOT / args.infra_config)
     tracker = _create_tracker(args.tracking_uri, infra_config)
+    if tracker:
+        print(f"MLflow tracking: {tracker.tracking_uri} (experiment: {(infra_config or {}).get('tracking', {}).get('experiment_name', 'metacog-llm-compute')})")
 
     pilot_mode = _resolve_pilot_mode(args)
     print(f"Pilot mode: {pilot_mode}")
@@ -356,7 +358,14 @@ def main() -> None:
     if tracker:
         tracker.log_artifact(benchmark_path, artifact_path="pilot")
         tracker.log_artifact(calibration_path, artifact_path="pilot")
+        run_id = tracker.run_id
+        exp_id = tracker.experiment_id
+        tracking_uri = tracker.tracking_uri
         tracker.end_run()
+        if run_id and exp_id and tracking_uri:
+            run_url = f"{tracking_uri.rstrip('/')}/#/experiments/{exp_id}/runs/{run_id}"
+            print(f"View run {run_name} at: {run_url}")
+            print(f"View experiment at: {tracking_uri.rstrip('/')}/#/experiments/{exp_id}")
 
     paths_cfg = config.get("paths", {})
     cost_md = paths_cfg.get("pilot_cost_validation")

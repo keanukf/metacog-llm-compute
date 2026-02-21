@@ -198,6 +198,13 @@ class ExperimentTracker:
         return self._run_id
 
     @property
+    def experiment_id(self) -> str | None:
+        """Current run's experiment ID (only while run is active)."""
+        if not _MLFLOW_AVAILABLE or not mlflow.active_run():
+            return None
+        return mlflow.active_run().info.experiment_id
+
+    @property
     def is_active(self) -> bool:
         return self._active and _MLFLOW_AVAILABLE and mlflow.active_run() is not None
 

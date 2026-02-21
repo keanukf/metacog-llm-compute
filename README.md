@@ -211,6 +211,16 @@ python scripts/run_pilot.py --config configs/pilot.yaml --infra-config configs/i
 
 Do **not** use `localhost:5000` — use **mlflow.home**. Network: Docker internal `backend`; external access only via NPM.
 
+**Troubleshooting: not seeing runs in MLflow**
+
+- **Select the right experiment** — In the MLflow UI (http://mlflow.home), use the experiment dropdown and choose **`metacog-llm-compute`**. The default view may show a different experiment with no runs.
+- **Verify connectivity** — From the same machine you ran the pilot, run:
+  ```bash
+  python scripts/check_mlflow_tracking.py --infra-config configs/infra.yaml
+  ```
+  This lists experiments and recent runs. If your run appears here but not in the browser, you're likely viewing a different experiment in the UI. If it doesn't appear, check that `mlflow.home` resolves and that you didn't see `Warning: could not create experiment tracker` when running the pilot (missing `infra/.env` or wrong `--infra-config` can disable tracking).
+- **Same network** — The MLflow UI must be opened from a host that can reach `mlflow.home` (same DNS/network as where the script ran).
+
 ---
 
 ## Experiment dashboard
