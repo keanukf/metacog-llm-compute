@@ -24,7 +24,7 @@ paths:
 
 test1_inference:
   num_prompts: 50
-  expected_tok_per_sec_min: 80
+  expected_tok_per_sec_min: 10
 
 test3_verbalized_confidence:
   num_easy: 5

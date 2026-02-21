@@ -7,48 +7,48 @@
   "task_success": true,
   "steps": 10,
   "lm_calls": 10,
-  "tokens": 50,
-  "wall_clock_time": 6.841700087534264e-05,
+  "tokens": 2418,
+  "wall_clock_time": 336.5732907920028,
   "tle_per_step": [
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.17538924853143525,
+      "max_entropy": 0.9999289885857537
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.0998296635539226,
+      "max_entropy": 0.9998889985407728
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.17707926132609983,
+      "max_entropy": 0.99999889134825
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.20496417055113605,
+      "max_entropy": 0.999946402603043
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.15756013589419718,
+      "max_entropy": 0.9995563633911524
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.22598789745591677,
+      "max_entropy": 0.9999040367272768
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.18068989621320153,
+      "max_entropy": 1.0
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.1757650862106238,
+      "max_entropy": 1.0
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.21011285530426255,
+      "max_entropy": 1.0
     },
     {
-      "mean_entropy": 0.9670019784070771,
-      "max_entropy": 0.9670019784070771
+      "mean_entropy": 0.23171556897810255,
+      "max_entropy": 1.0
     }
   ],
   "vc_per_step": [
@@ -61,6 +61,6 @@
     null,
     null,
     null,
-    null
+    2.0
   ]
 }
