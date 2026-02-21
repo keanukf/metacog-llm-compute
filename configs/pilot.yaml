@@ -9,6 +9,8 @@ inference:
   temperature: 0.3
   max_tokens: 256
   avg_tokens_per_call: 200  # input ~120, output ~80
+  # For pilot-mode litellm: OpenAI-compatible API (default http://litellm.home/)
+  # litellm_base_url: "http://litellm.home/"
 
 pilot:
   instances: 2 # 5 is default, 2 is for the pilot

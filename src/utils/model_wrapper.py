@@ -230,22 +230,85 @@ class HFWrapper(ModelWrapper):
             return text, None
 
 
+class LiteLLMWrapper(ModelWrapper):
+    """
+    LiteLLM proxy / OpenAI-compatible API. No local GPU; calls base_url (e.g. http://litellm.home/).
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        base_url: str = "http://litellm.home/",
+        **kwargs: Any,
+    ) -> None:
+        self._model_name = model_name
+        self._base_url = base_url.rstrip("/")
+        self._kwargs = kwargs
+        self._client: Any = None
+
+    def _ensure_client(self) -> Any:
+        if self._client is not None:
+            return self._client
+        try:
+            from openai import OpenAI
+        except ImportError as e:
+            raise RuntimeError(
+                "LiteLLMWrapper requires the openai package. Install with: pip install openai"
+            ) from e
+        self._client = OpenAI(base_url=f"{self._base_url}/v1", api_key="dummy")
+        return self._client
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        logprobs: bool = False,
+        max_tokens: int = 256,
+        temperature: float = 0.3,
+        **kwargs: Any,
+    ) -> tuple[str, list[dict[str, Any]] | None]:
+        client = self._ensure_client()
+        extra = {k: v for k, v in kwargs.items() if k not in ("prompt", "logprobs", "max_tokens", "temperature")}
+        resp = client.completions.create(
+            model=self._model_name,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            logprobs=1 if logprobs else None,
+            **extra,
+        )
+        if not resp.choices:
+            return "", None
+        choice = resp.choices[0]
+        text = (choice.text or "").strip()
+        raw_lp = getattr(choice, "logprobs", None)
+        lp_list = _normalize_logprobs(
+            getattr(raw_lp, "content", None) if raw_lp else None
+        ) if logprobs else None
+        return text, lp_list
+
+
 def create_wrapper(
     backend: str = "vllm",
     model_name: str | None = None,
     dtype: str = "float16",
     device: str | None = None,
+    base_url: str | None = None,
     **kwargs: Any,
 ) -> ModelWrapper:
     """
     Factory: create wrapper by backend name.
     - backend "vllm" + model_name -> VLLMWrapper (requires CUDA).
     - backend "hf" + model_name -> HFWrapper; use device="mps" for Apple Silicon, "cuda" or None for auto.
+    - backend "litellm" + model_name -> LiteLLMWrapper (OpenAI-compatible API at base_url).
     - Otherwise returns a base ModelWrapper (will raise on generate); use for mocks in tests.
     """
     if model_name and backend == "vllm":
         return VLLMWrapper(model_name=model_name, dtype=dtype, **kwargs)
     if model_name and backend == "hf":
         return HFWrapper(model_name=model_name, dtype=dtype, device=device, **kwargs)
+    if model_name and backend == "litellm":
+        url = base_url or kwargs.get("litellm_base_url") or "http://litellm.home/"
+        return LiteLLMWrapper(model_name=model_name, base_url=url, **kwargs)
     # Stub for tests / no model configured
     return ModelWrapper()

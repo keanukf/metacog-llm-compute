@@ -9,12 +9,12 @@ Thesis codebase: pilot tests, agent loop, signal extraction (TLE, VC), and exper
 | | **Unit tests (pytest)** | **Pilot (run_pilot.py)** |
 |---|-------------------------|---------------------------|
 | **Purpose** | Check that **code and interfaces** are correct: signals, agent loop, logging, calibration logic. | Check **setup and hardware** in a small end-to-end run: real model, throughput, full pipeline. |
-| **Runs** | 21 functional tests with **mocks** (no model, no GPU). | One script that runs Tests 1–6 in sequence; **pilot mode** chooses mock, M1, or CUDA. |
-| **Where** | Local or on pod; **no GPU required**. | **Pilot 0** (mock): anywhere. **Pilot 1** (M1): Mac with Apple Silicon. **Pilot 2** (CUDA): e.g. RunPod. |
-| **When** | After every code change; in CI. | Pilot 0: quick local sanity. Pilot 1: test on M1 before buying GPU. Pilot 2: confirm GPU setup before full experiments. |
+| **Runs** | 21 functional tests with **mocks** (no model, no GPU). | One script that runs Tests 1–6 in sequence; **pilot mode** chooses mock, M1, CUDA, or LiteLLM. |
+| **Where** | Local or on pod; **no GPU required**. | **Pilot 0** (mock): anywhere. **Pilot 1** (M1): Mac with Apple Silicon. **Pilot 2** (CUDA): e.g. RunPod. **Pilot 3** (litellm): any host with LiteLLM proxy. |
+| **When** | After every code change; in CI. | Pilot 0: quick local sanity. Pilot 1: test on M1 before buying GPU. Pilot 2: confirm GPU setup. Pilot 3: use remote LiteLLM endpoint. |
 | **Output** | Pass/fail per test. | `pilot_benchmark.json`, `pilot_calibration.json`, and optionally `pilot_cost_validation.md`, `pilot_feasibility_report.md`. |
 
-**Summary:** Unit tests validate *logic*; the pilot validates *environment and hardware* in a small run. Three pilot levels: **0 = mock** (no real model), **1 = local M1** (HuggingFace on Apple Silicon), **2 = real CUDA** (vLLM on GPU).
+**Summary:** Unit tests validate *logic*; the pilot validates *environment and hardware* in a small run. Four pilot levels: **0 = mock** (no real model), **1 = local M1** (HuggingFace on Apple Silicon), **2 = real CUDA** (vLLM on GPU), **3 = litellm** (OpenAI-compatible API, e.g. http://litellm.home/).
 
 ---
 
@@ -47,6 +47,7 @@ The pilot runs Tests 1–6 in sequence and writes benchmark and calibration outp
 | **Pilot 0** | `--pilot-mode mock` (default) | None | Mock | Quick local sanity; CI; no model download. |
 | **Pilot 1** | `--pilot-mode m1` | Mac M1/M2 (Apple Silicon) | HuggingFace + MPS | Test full pipeline locally before buying GPU. |
 | **Pilot 2** | `--pilot-mode cuda` | NVIDIA GPU (e.g. RunPod) | vLLM (or HF) | Validate GPU setup and throughput before Phase 1/2. |
+| **Pilot 3** | `--pilot-mode litellm` | Any (remote API) | LiteLLM proxy (OpenAI-compatible) | Use http://litellm.home/ or custom base URL for model serving. |
 
 ### Pilot 0 — Mock (default)
 
@@ -78,13 +79,23 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/result
 
 Or use `--real` to auto-detect: if CUDA is available → cuda; else if MPS (Mac) → m1; else mock.
 
+### Pilot 3 — LiteLLM proxy
+
+Use a remote OpenAI-compatible endpoint (e.g. LiteLLM at http://litellm.home/). No local GPU; model runs on the proxy. Set `model.name` in config to the model ID the proxy expects (e.g. `Qwen/Qwen2.5-3B-Instruct` or a proxy alias):
+
+```bash
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode litellm
+```
+
+Override the base URL via config `inference.litellm_base_url` or env `LITELLM_BASE_URL`. Requires the `openai` package.
+
 - **Test 1:** 50 real prompts → measured tokens/s, latency, VRAM (CUDA only).
 - **Tests 2–3:** Unchanged (synthetic/sample data).
 - **Test 4:** TextWorld env (stub or real game if a game file is provided).
 - **Test 5:** Same model runs the e2e episode loop.
 - **Test 6:** ECE and logging on the episode data.
 
-After Pilot 1 or 2 you get realistic `tokens_per_sec` (for that device) in `pilot_benchmark.json`. The benchmark JSON includes `"pilot_mode": "mock" | "m1" | "cuda"` so you know which run it was.
+After Pilot 1, 2, or 3 you get realistic `tokens_per_sec` (for that device/endpoint) in `pilot_benchmark.json`. The benchmark JSON includes `"pilot_mode": "mock" | "m1" | "cuda" | "litellm"` so you know which run it was.
 
 ---
 

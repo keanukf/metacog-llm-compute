@@ -62,7 +62,7 @@ def _create_tracker(tracking_uri: str | None, infra_config: dict | None) -> "Exp
 def _create_real_model(config: dict, pilot_mode: str):
     """
     Create real model wrapper for the given pilot mode.
-    pilot_mode: "mock" -> None; "m1" -> HF on Apple Silicon (MPS); "cuda" -> vLLM on CUDA.
+    pilot_mode: "mock" -> None; "m1" -> HF on Apple Silicon (MPS); "cuda" -> vLLM on CUDA; "litellm" -> LiteLLM proxy API.
     """
     if pilot_mode == "mock":
         return None
@@ -78,6 +78,10 @@ def _create_real_model(config: dict, pilot_mode: str):
         if pilot_mode == "cuda":
             backend = config.get("inference", {}).get("backend", "vllm")
             return create_wrapper(backend=backend, model_name=model_name, dtype=dtype)
+        if pilot_mode == "litellm":
+            inf = config.get("inference", {})
+            base_url = inf.get("litellm_base_url") or os.environ.get("LITELLM_BASE_URL", "http://litellm.home/")
+            return create_wrapper(backend="litellm", model_name=model_name, base_url=base_url)
         return None
     except Exception:
         return None
@@ -251,7 +255,7 @@ def run_test6_logging_analysis(episodes_data: list[dict], output_dir: Path) -> d
 
 
 def _resolve_pilot_mode(args) -> str:
-    """Resolve pilot mode: mock (0), m1 (1), cuda (2). --real auto-detects m1 vs cuda."""
+    """Resolve pilot mode: mock (0), m1 (1), cuda (2), litellm (3). --real auto-detects m1 vs cuda; litellm is explicit."""
     mode = (args.pilot_mode or os.environ.get("PILOT_MODE") or "mock").lower()
     if args.real or os.environ.get("USE_REAL_MODEL") == "1":
         if mode == "mock":
@@ -271,15 +275,15 @@ def _resolve_pilot_mode(args) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run pilot study (Tests 1-6). Pilot 0: mock. Pilot 1: M1 (HF+MPS). Pilot 2: CUDA (vLLM)."
+        description="Run pilot study (Tests 1-6). Pilot 0: mock. Pilot 1: M1 (HF+MPS). Pilot 2: CUDA (vLLM). Pilot 3: LiteLLM proxy."
     )
     parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
     parser.add_argument("--output-dir", default="data/results", help="Output directory")
     parser.add_argument(
         "--pilot-mode",
-        choices=["mock", "m1", "cuda"],
+        choices=["mock", "m1", "cuda", "litellm"],
         default="mock",
-        help="Pilot 0: mock (no real model). Pilot 1: M1/local (HF on Apple Silicon). Pilot 2: real CUDA GPU (vLLM).",
+        help="Pilot 0: mock. Pilot 1: M1 (HF on Apple Silicon). Pilot 2: CUDA (vLLM). Pilot 3: LiteLLM proxy (http://litellm.home/).",
     )
     parser.add_argument("--real", action="store_true", help="Use real model; auto-detect m1 vs cuda if --pilot-mode not set")
     parser.add_argument("--tracking-uri", default=None, help="MLflow tracking URI (e.g. http://192.168.1.100:5000). If set, pilot is logged to MLflow.")

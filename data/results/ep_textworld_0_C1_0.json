@@ -7,48 +7,48 @@
   "task_success": true,
   "steps": 10,
   "lm_calls": 10,
-  "tokens": 2450,
-  "wall_clock_time": 338.43189733300096,
+  "tokens": 50,
+  "wall_clock_time": 0.00017949999892152846,
   "tle_per_step": [
     {
-      "mean_entropy": 0.12985275734712062,
-      "max_entropy": 0.9993134231266492
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.21355348904741478,
-      "max_entropy": 1.0
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.15714935667528152,
-      "max_entropy": 0.9999799968699916
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.18965464747299102,
-      "max_entropy": 0.9999723932221903
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.17541208608378267,
-      "max_entropy": 0.9997919855836728
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.18082111886023333,
-      "max_entropy": 0.9999913412958575
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.21644658111041576,
-      "max_entropy": 0.9999988831440473
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.16310740043333716,
-      "max_entropy": 0.9998657792737098
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.2059696690529762,
-      "max_entropy": 1.0
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     },
     {
-      "mean_entropy": 0.20262770172834277,
-      "max_entropy": 0.999783474976341
+      "mean_entropy": 0.9670019784070771,
+      "max_entropy": 0.9670019784070771
     }
   ],
   "vc_per_step": [
@@ -57,7 +57,7 @@
     null,
     null,
     null,
-    4.0,
+    null,
     null,
     null,
     null,
