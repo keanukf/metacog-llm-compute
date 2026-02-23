@@ -81,7 +81,8 @@ def _create_real_model(config: dict, pilot_mode: str):
         if pilot_mode == "litellm":
             inf = config.get("inference", {})
             base_url = inf.get("litellm_base_url") or os.environ.get("LITELLM_BASE_URL", "http://litellm.home/")
-            return create_wrapper(backend="litellm", model_name=model_name, base_url=base_url)
+            api_key = inf.get("litellm_api_key") or os.environ.get("LITELLM_API_KEY")
+            return create_wrapper(backend="litellm", model_name=model_name, base_url=base_url, litellm_api_key=api_key)
         return None
     except Exception:
         return None

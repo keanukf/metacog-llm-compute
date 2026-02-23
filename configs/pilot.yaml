@@ -2,7 +2,7 @@
 # See blueprints/infrastructureplan_pilot.md Section V.
 
 model:
-  name: "Qwen/Qwen2.5-3B-Instruct"
+  name: "ollama/qwen3:0.6b"
   dtype: fp16
 
 inference:
@@ -10,7 +10,9 @@ inference:
   max_tokens: 256
   avg_tokens_per_call: 200  # input ~120, output ~80
   # For pilot-mode litellm: OpenAI-compatible API (default http://litellm.home/)
+  # Prefer LITELLM_API_KEY in env to avoid storing secrets in config.
   # litellm_base_url: "http://litellm.home/"
+  # litellm_api_key: "sk-..."   # or set env LITELLM_API_KEY
 
 pilot:
   instances: 2 # 5 is default, 2 is for the pilot

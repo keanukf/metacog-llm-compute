@@ -233,16 +233,19 @@ class HFWrapper(ModelWrapper):
 class LiteLLMWrapper(ModelWrapper):
     """
     LiteLLM proxy / OpenAI-compatible API. No local GPU; calls base_url (e.g. http://litellm.home/).
+    API key: pass api_key, or set LITELLM_API_KEY in the environment (LiteLLM often expects keys starting with sk-).
     """
 
     def __init__(
         self,
         model_name: str,
         base_url: str = "http://litellm.home/",
+        api_key: str | None = None,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
         self._base_url = base_url.rstrip("/")
+        self._api_key = api_key
         self._kwargs = kwargs
         self._client: Any = None
 
@@ -255,7 +258,9 @@ class LiteLLMWrapper(ModelWrapper):
             raise RuntimeError(
                 "LiteLLMWrapper requires the openai package. Install with: pip install openai"
             ) from e
-        self._client = OpenAI(base_url=f"{self._base_url}/v1", api_key="dummy")
+        import os
+        key = self._api_key or os.environ.get("LITELLM_API_KEY") or "dummy"
+        self._client = OpenAI(base_url=f"{self._base_url}/v1", api_key=key)
         return self._client
 
     def generate(
@@ -309,6 +314,8 @@ def create_wrapper(
         return HFWrapper(model_name=model_name, dtype=dtype, device=device, **kwargs)
     if model_name and backend == "litellm":
         url = base_url or kwargs.get("litellm_base_url") or "http://litellm.home/"
-        return LiteLLMWrapper(model_name=model_name, base_url=url, **kwargs)
+        api_key = kwargs.get("litellm_api_key") or kwargs.get("api_key")
+        rest = {k: v for k, v in kwargs.items() if k not in ("litellm_base_url", "litellm_api_key", "api_key")}
+        return LiteLLMWrapper(model_name=model_name, base_url=url, api_key=api_key, **rest)
     # Stub for tests / no model configured
     return ModelWrapper()

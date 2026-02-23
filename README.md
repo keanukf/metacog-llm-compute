@@ -87,7 +87,7 @@ Use a remote OpenAI-compatible endpoint (e.g. LiteLLM at http://litellm.home/). 
 python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode litellm
 ```
 
-Override the base URL via config `inference.litellm_base_url` or env `LITELLM_BASE_URL`. Requires the `openai` package.
+Override the base URL via config `inference.litellm_base_url` or env `LITELLM_BASE_URL`. For auth, set `LITELLM_API_KEY` in the environment (or `inference.litellm_api_key` in config); LiteLLM typically expects keys starting with `sk-`. The pilot loads `infra/.env` if present, so you can put `LITELLM_API_KEY=sk-...` there and keep it out of the repo. Requires the `openai` package.
 
 - **Test 1:** 50 real prompts → measured tokens/s, latency, VRAM (CUDA only).
 - **Tests 2–3:** Unchanged (synthetic/sample data).
