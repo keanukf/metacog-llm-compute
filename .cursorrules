@@ -1,0 +1,38 @@
+# Metacog-LLM-Compute — Cursor rules
+
+## Project summary
+
+Thesis codebase for **metacognitive effort allocation in sequential LM agents**: pilot tests, agent loop, signal extraction (TLE, VC), and experiment runners (e.g. RunPod). Design and infrastructure are documented in `blueprints/` (thesis_design.md, infrastructureplan_pilot.md).
+
+- **Core idea:** Use metacognitive proxy signals (Token-Level Entropy, Verbalized Confidence) to allocate compute depth (C0 Direct / C1 CoT+Verify / C2 Best-of-N) per step in multi-step agent tasks (TextWorld, Delayed-Cue Recall).
+- **Phases:** Phase 1 = calibration mapping; Phase 2 = adaptive allocation vs baselines. Pilot = small end-to-end run to validate setup and hardware.
+
+## Tech stack and layout
+
+- **Language:** Python 3.10+. Use type hints and docstrings; prefer `from __future__ import annotations` in scripts.
+- **Config:** YAML in `configs/` (e.g. `pilot.yaml`, `infra.yaml`). No secrets in YAML; use `infra/.env` (MinIO, LiteLLM keys) and load via `python-dotenv` where needed.
+- **Package:** `src/` is the main package; run scripts from repo root so `sys.path` includes repo root (see `run_pilot.py`).
+- **Tests:** pytest in `tests/`; 21 unit tests with mocks (no GPU). Run: `python -m pytest tests/ -v`. Shared fixtures in `tests/conftest.py`.
+- **Scripts:** Entry points live in `scripts/` (e.g. `run_pilot.py`, `run_phase1.py`). Use `--config`, `--output-dir`, `--pilot-mode`, `--real`, `--infra-config` as in README.
+
+## Key conventions
+
+1. **Paths:** Repo root is the CWD for scripts. Results go under `data/results/` (or `--output-dir`). Task instances (e.g. TextWorld games) in `data/tasks/`.
+2. **Pilot modes:** `mock` (default), `m1` (HuggingFace on Apple Silicon), `cuda` (vLLM on GPU), `litellm` (OpenAI-compatible API). Use `--real` to auto-detect.
+3. **Model wrapper:** `src/utils/model_wrapper.py` — `create_wrapper(backend, model_name, dtype, ...)`; backends: `hf`, `vllm`. Use wrapper for all inference in pilot/phase scripts.
+4. **Signals:** TLE in `src/signals/token_entropy.py`, VC parsing in `src/signals/verbalized_confidence.py`. Keep signal interfaces stable; tests assert on structure and behaviour.
+5. **Infrastructure:** MLflow/MinIO config in `configs/infra.yaml`; credentials from `infra/.env`. Use `ExperimentTracker` from `src.utils.experiment_tracker` when tracking is configured; fail gracefully if MLflow URI is placeholder or missing.
+6. **Dependencies:** Prefer versions in `requirements.txt` and `pyproject.toml`. Optional extras: `dev`, `full`, `tracking`. Don’t add heavy deps without aligning with blueprints/README.
+
+## When editing
+
+- **Agent loop / compute stages:** See `src/agent/` (base_agent, compute_stages, allocator). Compute stages are C0 (1 call), C1 (2 calls), C2 (3 calls).
+- **Environments:** `src/environments/` — TextWorld, delayed_cue, logical_reasoning. TextWorld can run stub or real game when `game_file` is provided.
+- **Analysis:** `src/analysis/` — calibration (ECE, Brier), comparison, visualization. Episode JSONs from pilot/phase1 have defined keys; preserve them when changing schema.
+- **Blueprints:** For design rationale, sample sizes, and infrastructure (GPU hours, RunPod), read `blueprints/thesis_design.md` and `blueprints/infrastructureplan_pilot.md`. Don’t contradict experiment design (e.g. 2×3×2 design, 50 instances per domain) without explicit user request.
+
+## Naming and style
+
+- Use descriptive names for config keys, CLI flags, and result keys (e.g. `pilot_benchmark`, `pilot_calibration`, `tokens_per_sec`).
+- Prefer existing patterns: e.g. `load_config(path)` returning dict, `REPO_ROOT = Path(__file__).resolve().parent.parent`, and `sys.path.insert(0, str(REPO_ROOT))` in scripts.
+- Log warnings for non-fatal issues (e.g. tracker creation failure, missing .env); avoid silent fallbacks that hide misconfiguration.
