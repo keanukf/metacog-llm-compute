@@ -82,7 +82,7 @@ class _MockModel:
 
 
 def _make_env(domain: str, instance: int, config: dict, max_steps: int):
-    """Create env for domain/instance. TextWorld: real game if file exists, else stub. delayed_cue: stub."""
+    """Create env for domain/instance. TextWorld: real game if file exists, else stub. delayed_cue: DelayedCueEnv."""
     from src.environments.textworld_env import TextWorldEnv
 
     if domain == "textworld":
@@ -93,7 +93,22 @@ def _make_env(domain: str, instance: int, config: dict, max_steps: int):
         if not game_file.exists():
             game_file = None
         return TextWorldEnv(game_file=str(game_file) if game_file else None, max_steps=max_steps)
-    # delayed_cue or other: stub env (same interface as TextWorldEnv)
+    if domain == "delayed_cue":
+        from src.environments.delayed_cue import DelayedCueEnv, generate_tasks
+
+        dc = config.get("delayed_cue", {})
+        r = dc.get("num_distractors_range", [3, 8])
+        lo, hi = int(r[0]), int(r[1])
+        complexity = dc.get("complexity", "medium")
+        base_seed = int(dc.get("task_generation_seed", 42))
+        seed = base_seed + instance * 10007
+        task = generate_tasks(
+            1,
+            seed=seed,
+            num_distractors_range=(lo, hi),
+            complexity=str(complexity),
+        )[0]
+        return DelayedCueEnv(task, max_steps=max_steps)
     return TextWorldEnv(game_file=None, max_steps=max_steps)
 
 
@@ -170,6 +185,8 @@ def main() -> None:
                         "tle_per_step": result.get("tle_per_step"),
                         "vc_per_step": result.get("vc_per_step"),
                     }
+                    if "step_correctness" in result:
+                        data["step_correctness"] = result["step_correctness"]
                     save_episode_checkpoint(checkpoint_dir, ep_id, data)
                     if tracker:
                         tracker.log_episode(data, step_index=step_index)

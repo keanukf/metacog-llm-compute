@@ -38,7 +38,8 @@ def run_episode(
 
     Returns:
         Dict with keys: steps, task_success, lm_calls, tokens, wall_clock_time,
-        tle_per_step (optional), vc_per_step (optional).
+        tle_per_step (optional), vc_per_step (optional),
+        step_correctness (optional): copy of env.step_results when present.
     """
     obs = env.reset()
     history: list[str] = []
@@ -63,12 +64,20 @@ def run_episode(
         steps += 1
         lm_calls += 1
     wall_clock_time = time.perf_counter() - t_start
-    return {
+    if hasattr(env, "task_success"):
+        task_success = bool(getattr(env, "task_success"))
+    else:
+        task_success = bool(getattr(env, "done", False))
+    out: dict[str, Any] = {
         "steps": steps,
-        "task_success": getattr(env, "done", False),
+        "task_success": task_success,
         "lm_calls": lm_calls,
         "tokens": tokens,
         "wall_clock_time": wall_clock_time,
         "tle_per_step": tle_per_step,
         "vc_per_step": vc_per_step,
     }
+    step_results = getattr(env, "step_results", None)
+    if step_results is not None:
+        out["step_correctness"] = list(step_results)
+    return out

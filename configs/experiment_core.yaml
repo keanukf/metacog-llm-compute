@@ -38,3 +38,9 @@ paths:
 episode:
   max_steps_per_episode: 20
   avg_steps: 10
+
+# Delayed-Cue Recall: per-instance distractor count sampled from range (inclusive).
+delayed_cue:
+  num_distractors_range: [3, 8]
+  complexity: "medium" # low | medium | high
+  task_generation_seed: 42
