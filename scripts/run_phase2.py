@@ -2,11 +2,13 @@
 """
 Phase 2 — Adaptive Allocation: run domains x instances x strategies x runs.
 Supports --resume via checkpoint_dir.
-Usage: python scripts/run_phase2.py --config configs/experiment_core.yaml [--resume]
+Usage: python scripts/run_phase2.py --config configs/experiment_core.yaml [--resume] [--real]
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
+import random
 import sys
 from pathlib import Path
 
@@ -21,34 +23,11 @@ def load_config(config_path: str | Path) -> dict:
         return yaml.safe_load(f)
 
 
-def _make_env(domain: str, instance: int, config: dict, max_steps: int):
-    """Create env for domain/instance. Mirrors Phase 1 domain handling."""
-    from src.environments.textworld_env import TextWorldEnv
-
-    if domain == "textworld":
-        tasks_dir = Path(config.get("paths", {}).get("tasks_dir", "data/tasks"))
-        game_file = tasks_dir / f"textworld_{instance}.ulx"
-        if not game_file.is_absolute():
-            game_file = REPO_ROOT / game_file
-        if not game_file.exists():
-            game_file = None
-        return TextWorldEnv(game_file=str(game_file) if game_file else None, max_steps=max_steps)
-    if domain == "tower_of_hanoi":
-        from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
-
-        cfg = config.get("tower_of_hanoi", {})
-        num_disks_range = cfg.get("num_disks_range", [3, 4])
-        partial_start_range = cfg.get("partial_start_range", [0, 3])
-        base_seed = int(cfg.get("task_generation_seed", 42))
-        seed = base_seed + instance * 10007
-        task_instance = generate_instances(
-            1,
-            seed=seed,
-            num_disks_range=(int(num_disks_range[0]), int(num_disks_range[1])),
-            partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
-        )[0]
-        return TowerOfHanoiEnv(task=task_instance, max_steps=max_steps)
-    return TextWorldEnv(game_file=None, max_steps=max_steps)
+def _rng_for_episode(ep_id: str) -> random.Random:
+    """Deterministic RNG per episode id (stable across processes for resume)."""
+    digest = hashlib.md5(ep_id.encode(), usedforsecurity=False).hexdigest()
+    seed = int(digest[:16], 16) % (2**32 - 1) + 1
+    return random.Random(seed)
 
 
 def main() -> None:
@@ -56,6 +35,7 @@ def main() -> None:
     parser.add_argument("--config", default="configs/experiment_core.yaml")
     parser.add_argument("--checkpoint-dir", default="data/results/phase2")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--real", action="store_true", help="Use real model (vLLM/HF) when available")
     args = parser.parse_args()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     checkpoint_dir = Path(args.checkpoint_dir)
@@ -64,7 +44,9 @@ def main() -> None:
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     config = load_config(config_path)
 
-    from src.utils.checkpointing import list_completed_episodes
+    from src.utils.checkpointing import list_completed_episodes, save_episode_checkpoint
+    from src.agent.base_agent import run_adaptive_episode
+    from src.utils.experiment_env import create_experiment_model, make_experiment_env
 
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
     phase2 = config.get("phase2", {})
@@ -72,11 +54,51 @@ def main() -> None:
     instances_per_domain = phase2.get("instances_per_domain", 50)
     strategies = phase2.get("strategies", ["adaptive_tle", "always_c0", "always_c2", "random", "eager_style", "adaptive_vc"])
     runs = phase2.get("runs_per_condition", 5)
+    max_steps = config.get("episode", {}).get("max_steps_per_episode", 20)
     total = len(domains) * instances_per_domain * len(strategies) * runs
     print(f"Phase 2: {len(domains)} domains x {instances_per_domain} instances x {len(strategies)} strategies x {runs} runs = {total} episodes")
-    print(f"Completed: {len(completed)}. Resume={args.resume}.")
+    print(f"Completed so far: {len(completed)}. Resume={args.resume}. Real model={args.real}.")
 
-    print("Stub: episode loop not run. Implement with allocator.allocate + base_agent.run_episode + checkpointing.")
+    model = create_experiment_model(config, args.real)
+    done_count = 0
+    for domain in domains:
+        for inst in range(instances_per_domain):
+            for strategy in strategies:
+                for run in range(runs):
+                    ep_id = f"ep_{domain}_{inst}_{strategy}_{run}"
+                    if ep_id in completed:
+                        continue
+                    env = make_experiment_env(domain, inst, config, max_steps, REPO_ROOT)
+                    rng = _rng_for_episode(ep_id)
+                    result = run_adaptive_episode(
+                        env,
+                        model,
+                        strategy,
+                        max_steps=max_steps,
+                        rng=rng,
+                    )
+                    data = {
+                        "episode_id": ep_id,
+                        "domain": domain,
+                        "instance": inst,
+                        "strategy": strategy,
+                        "run": run,
+                        "task_success": result["task_success"],
+                        "steps": result["steps"],
+                        "lm_calls": result["lm_calls"],
+                        "tokens": result["tokens"],
+                        "wall_clock_time": result["wall_clock_time"],
+                        "tle_per_step": result.get("tle_per_step"),
+                        "vc_per_step": result.get("vc_per_step"),
+                        "stage_per_step": result.get("stage_per_step"),
+                    }
+                    if result.get("step_correctness") is not None:
+                        data["step_correctness"] = result["step_correctness"]
+                    save_episode_checkpoint(checkpoint_dir, ep_id, data)
+                    done_count += 1
+                    if done_count % 50 == 0:
+                        print(f"  Completed {done_count} new episodes (total in dir: {len(completed) + done_count})")
+    print(f"Phase 2 done. New episodes: {done_count}. Total checkpoints: {len(list_completed_episodes(checkpoint_dir))}.")
 
 
 if __name__ == "__main__":

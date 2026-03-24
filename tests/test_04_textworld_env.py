@@ -5,8 +5,6 @@ Uses stub TextWorldEnv so no TextWorld install required.
 """
 from __future__ import annotations
 
-import pytest
-
 from src.environments.textworld_env import TextWorldEnv
 
 
@@ -44,3 +42,59 @@ def test_textworld_env_interface():
     assert obs
     obs = env.step("go south")
     assert env.done or obs
+
+
+def test_textworld_stub_step_results_cleared_on_reset():
+    env = TextWorldEnv(max_steps=5)
+    env.reset()
+    env.step("go north")
+    assert len(env.step_results) == 1
+    env.reset()
+    assert env.step_results == []
+
+
+def test_textworld_stub_step_results_non_empty_action_legal():
+    env = TextWorldEnv(max_steps=5)
+    env.reset()
+    env.step("  go north  ")
+    assert env.step_results[-1]["correctness"] == "legal"
+    assert env.step_results[-1]["action_parsed"] == "go north"
+    assert "state_before" in env.step_results[-1]
+    assert "state_after" in env.step_results[-1]
+
+
+def test_textworld_stub_empty_action_illegal():
+    env = TextWorldEnv(max_steps=5)
+    env.reset()
+    env.step("")
+    assert env.step_results[-1]["correctness"] == "illegal"
+    assert env.step_results[-1]["action_parsed"] is None
+
+
+def test_textworld_stub_step_index_increments():
+    env = TextWorldEnv(max_steps=5)
+    env.reset()
+    env.step("a")
+    env.step("b")
+    assert env.step_results[0]["step_index"] == 0
+    assert env.step_results[1]["step_index"] == 1
+
+
+def test_unpack_gym_step_five_tuple():
+    from src.environments.textworld_env import _unpack_gym_step
+
+    obs, r, done, info = _unpack_gym_step(("x", 0.5, False, True, {"score": 1}))
+    assert obs == "x"
+    assert r == 0.5
+    assert done is True
+    assert info["score"] == 1
+
+
+def test_action_in_admissible():
+    from src.environments.textworld_env import _action_in_admissible
+
+    parsed, ok = _action_in_admissible("  go north  ", ["go north", "look"])
+    assert ok
+    assert parsed == "go north"
+    _, ok2 = _action_in_admissible("take apple", ["go north"])
+    assert not ok2
