@@ -87,7 +87,7 @@ Use a remote OpenAI-compatible endpoint (e.g. LiteLLM at http://litellm.home/). 
 python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode litellm
 ```
 
-Override the base URL via config `inference.litellm_base_url` or env `LITELLM_BASE_URL`. For auth, set `LITELLM_API_KEY` in the environment (or `inference.litellm_api_key` in config); LiteLLM typically expects keys starting with `sk-`. The pilot loads `infra/.env` if present, so you can put `LITELLM_API_KEY=sk-...` there and keep it out of the repo. Requires the `openai` package.
+Override the base URL via config `inference.litellm_base_url` or env `LITELLM_BASE_URL`. For auth, set `LITELLM_API_KEY` in the environment (or `inference.litellm_api_key` in config); LiteLLM typically expects keys starting with `sk-`. Requires the `openai` package.
 
 - **Test 1:** 50 real prompts → measured tokens/s, latency, VRAM (CUDA only).
 - **Tests 2–3:** Unchanged (synthetic/sample data).
@@ -194,67 +194,6 @@ rsync -avz -e "ssh -i /path/to/key" \
 ```
 
 Or use `scp`. Then run analysis locally (e.g. ECE on `pilot_calibration.json` via `src/analysis/calibration.py`).
-
----
-
-## Experiment Infrastructure Access (Home Lab)
-
-The ML experiment stack (MLflow, MinIO, PostgreSQL) runs on the **home server** (orchestrated there; not in this repo). This repo only runs the **experiment dashboard**. The server exposes services behind **Nginx Proxy Manager**; clients use internal DNS (no host ports needed):
-
-| Service | URL | Use |
-|--------|-----|-----|
-| **MLflow UI & API** | http://mlflow.home | Tracking runs, params/metrics, artifacts, experiment comparison |
-| **MinIO API** | http://minio.home | S3-compatible artifact storage (episode logs, plots, configs) |
-| **MinIO Console** | http://minio-console.home | Web UI for bucket `mlflow` |
-| **PostgreSQL** | internal only (`postgres:5432`, db: `mlflow`) | MLflow metadata |
-
-**Tracking config (local scripts on Mac or RunPod):** use `configs/infra.yaml` (default for `--infra-config`) for URIs and bucket. MinIO credentials come from **`infra/.env`** (same file as the dashboard; do not put secrets in the YAML):
-
-- `configs/infra.yaml`: `mlflow_uri`, `s3_endpoint`, `bucket` only
-- `infra/.env`: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (or `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`)
-
-Example:
-
-```bash
-# Ensure infra/.env exists with MinIO credentials, then:
-python scripts/run_pilot.py --config configs/pilot.yaml --infra-config configs/infra.yaml
-```
-
-Do **not** use `localhost:5000` — use **mlflow.home**. Network: Docker internal `backend`; external access only via NPM.
-
-**Troubleshooting: not seeing runs in MLflow**
-
-- **Select the right experiment** — In the MLflow UI (http://mlflow.home), use the experiment dropdown and choose **`metacog-llm-compute`**. The default view may show a different experiment with no runs.
-- **Verify connectivity** — From the same machine you ran the pilot, run:
-  ```bash
-  python scripts/check_mlflow_tracking.py --infra-config configs/infra.yaml
-  ```
-  This lists experiments and recent runs. If your run appears here but not in the browser, you're likely viewing a different experiment in the UI. If it doesn't appear, check that `mlflow.home` resolves and that you didn't see `Warning: could not create experiment tracker` when running the pilot (missing `infra/.env` or wrong `--infra-config` can disable tracking).
-- **Same network** — The MLflow UI must be opened from a host that can reach `mlflow.home` (same DNS/network as where the script ran).
-
----
-
-## Experiment dashboard
-
-The **Streamlit dashboard** (Configure, Monitor, Analyze) runs locally and connects to MLflow + MinIO on the server via **mlflow.home** / **minio.home**.
-
-**Option A — run directly (recommended):**
-
-```bash
-# From repo root. Copy infra/.env.example to infra/.env and set MinIO credentials (used by dashboard and scripts).
-pip install -r requirements.txt
-streamlit run infra/dashboard/app.py
-```
-
-**Option B — run via Docker (from repo root):**
-
-```bash
-cp infra/.env.example infra/.env   # set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
-docker compose -f infra/docker-compose.yml up -d
-# Dashboard at http://localhost:8501
-```
-
-Defaults: `MLFLOW_TRACKING_URI=http://mlflow.home`, `MLFLOW_S3_ENDPOINT_URL=http://minio.home`, bucket `mlflow`. **One `infra/.env`** holds MinIO credentials for both the dashboard and all scripts that use `--infra-config`. See **`infra/.env.example`**.
 
 ---
 
