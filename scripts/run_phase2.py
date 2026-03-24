@@ -56,6 +56,36 @@ def _create_tracker(tracking_uri: str | None, infra_config: dict | None):
         return None
 
 
+def _make_env(domain: str, instance: int, config: dict, max_steps: int):
+    """Create env for domain/instance. Mirrors Phase 1 domain handling."""
+    from src.environments.textworld_env import TextWorldEnv
+
+    if domain == "textworld":
+        tasks_dir = Path(config.get("paths", {}).get("tasks_dir", "data/tasks"))
+        game_file = tasks_dir / f"textworld_{instance}.ulx"
+        if not game_file.is_absolute():
+            game_file = REPO_ROOT / game_file
+        if not game_file.exists():
+            game_file = None
+        return TextWorldEnv(game_file=str(game_file) if game_file else None, max_steps=max_steps)
+    if domain == "tower_of_hanoi":
+        from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
+
+        cfg = config.get("tower_of_hanoi", {})
+        num_disks_range = cfg.get("num_disks_range", [3, 4])
+        partial_start_range = cfg.get("partial_start_range", [0, 3])
+        base_seed = int(cfg.get("task_generation_seed", 42))
+        seed = base_seed + instance * 10007
+        task_instance = generate_instances(
+            1,
+            seed=seed,
+            num_disks_range=(int(num_disks_range[0]), int(num_disks_range[1])),
+            partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
+        )[0]
+        return TowerOfHanoiEnv(task=task_instance, max_steps=max_steps)
+    return TextWorldEnv(game_file=None, max_steps=max_steps)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/experiment_core.yaml")
@@ -81,7 +111,7 @@ def main() -> None:
 
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
     phase2 = config.get("phase2", {})
-    domains = phase2.get("domains", ["textworld", "delayed_cue"])
+    domains = phase2.get("domains", ["textworld", "tower_of_hanoi"])
     instances_per_domain = phase2.get("instances_per_domain", 50)
     strategies = phase2.get("strategies", ["adaptive_tle", "always_c0", "always_c2", "random", "eager_style", "adaptive_vc"])
     runs = phase2.get("runs_per_condition", 5)

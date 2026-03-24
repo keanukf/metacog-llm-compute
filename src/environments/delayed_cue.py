@@ -2,6 +2,7 @@
 Delayed-Cue Recall: encoding → N distractors → recall (delayed match-to-sample).
 Same surface as TextWorldEnv: reset(), step(action), .observation, .done.
 """
+# DEPRECATED: Replaced by tower_of_hanoi.py. Kept for reference only.
 from __future__ import annotations
 
 import random

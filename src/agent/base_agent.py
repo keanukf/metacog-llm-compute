@@ -68,6 +68,8 @@ def run_episode(
         task_success = bool(getattr(env, "task_success"))
     else:
         task_success = bool(getattr(env, "done", False))
+    # Attach step-level correctness if environment provides it.
+    step_correctness = getattr(env, "step_results", None)
     out: dict[str, Any] = {
         "steps": steps,
         "task_success": task_success,
@@ -76,8 +78,6 @@ def run_episode(
         "wall_clock_time": wall_clock_time,
         "tle_per_step": tle_per_step,
         "vc_per_step": vc_per_step,
+        "step_correctness": step_correctness,
     }
-    step_results = getattr(env, "step_results", None)
-    if step_results is not None:
-        out["step_correctness"] = list(step_results)
     return out
