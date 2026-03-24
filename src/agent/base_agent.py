@@ -4,8 +4,12 @@ No framework (no LangChain/LlamaIndex). Each compute stage is a clear function.
 """
 from __future__ import annotations
 
+import random
 import time
 from typing import Any, Callable
+
+from src.agent.allocator import allocate
+from src.agent.compute_stages import get_step_fn
 
 # Compute stage step: (observation, history, model) -> (action, tle_or_none, vc_or_none, tokens_used)
 # tokens_used is output token count for this step; step may return 3-tuple for backward compat (tokens_used=0).
@@ -17,6 +21,27 @@ def _normalize_step_result(result: tuple) -> tuple[str, dict | None, float | Non
     if len(result) >= 4:
         return result[0], result[1], result[2], int(result[3])
     return result[0], result[1], result[2], 0
+
+
+def _copy_step_results(env: Any) -> list[dict[str, Any]] | None:
+    """Shallow copy env.step_results so callers cannot mutate episode records via the return dict."""
+    raw = getattr(env, "step_results", None)
+    if raw is None:
+        return None
+    return [dict(d) for d in raw]
+
+
+def _signal_for_next_step(
+    tle: dict[str, float] | None,
+    vc: float | None,
+) -> dict[str, Any] | None:
+    """Build allocator signal from the last step's TLE / VC for the *next* step."""
+    sig: dict[str, Any] = {}
+    if tle is not None and "mean_entropy" in tle:
+        sig["mean_entropy"] = tle["mean_entropy"]
+    if vc is not None:
+        sig["vc"] = vc
+    return sig if sig else None
 
 
 def run_episode(
@@ -39,7 +64,7 @@ def run_episode(
     Returns:
         Dict with keys: steps, task_success, lm_calls, tokens, wall_clock_time,
         tle_per_step (optional), vc_per_step (optional),
-        step_correctness (optional): copy of env.step_results when present.
+        step_correctness (optional): shallow copy of env.step_results when present.
     """
     obs = env.reset()
     history: list[str] = []
@@ -68,8 +93,7 @@ def run_episode(
         task_success = bool(getattr(env, "task_success"))
     else:
         task_success = bool(getattr(env, "done", False))
-    # Attach step-level correctness if environment provides it.
-    step_correctness = getattr(env, "step_results", None)
+    step_correctness = _copy_step_results(env)
     out: dict[str, Any] = {
         "steps": steps,
         "task_success": task_success,
@@ -81,3 +105,71 @@ def run_episode(
         "step_correctness": step_correctness,
     }
     return out
+
+
+def run_adaptive_episode(
+    env: Any,
+    model: Any,
+    strategy: str,
+    *,
+    max_steps: int = 20,
+    rng: random.Random | None = None,
+    allocate_fn: Callable[..., str] | None = None,
+    step_fn_for_stage: Callable[[str], StepFn] | None = None,
+) -> dict[str, Any]:
+    """
+    Run an episode where each step's compute stage comes from ``allocate_fn`` (default: allocator.allocate).
+
+    The signal passed into allocate is built from the *previous* step's TLE / VC; the first step uses
+    ``signal=None`` so adaptive strategies default to C0 until a signal exists.
+
+    Returns:
+        Same keys as ``run_episode`` plus ``stage_per_step``: list of ``"C0"`` | ``"C1"`` | ``"C2"`` per step.
+    """
+    rng = rng or random.Random()
+    alloc = allocate_fn or allocate
+    resolve = step_fn_for_stage or get_step_fn
+
+    obs = env.reset()
+    history: list[str] = []
+    steps = 0
+    lm_calls = 0
+    tokens = 0
+    tle_per_step: list[dict | None] = []
+    vc_per_step: list[float | None] = []
+    stage_per_step: list[str] = []
+    signal: dict[str, Any] | None = None
+
+    t_start = time.perf_counter()
+    while not getattr(env, "done", False) and steps < max_steps:
+        stage = alloc(signal, strategy, steps, rng)
+        stage_per_step.append(stage)
+        step_fn = resolve(stage)
+        raw = step_fn(obs, history, model)
+        action, tle, vc, tokens_used = _normalize_step_result(raw)
+        tle_per_step.append(tle)
+        vc_per_step.append(vc)
+        tokens += tokens_used
+        obs = env.step(action)
+        history.append(obs)
+        steps += 1
+        lm_calls += 1
+        signal = _signal_for_next_step(tle, vc)
+
+    wall_clock_time = time.perf_counter() - t_start
+    if hasattr(env, "task_success"):
+        task_success = bool(getattr(env, "task_success"))
+    else:
+        task_success = bool(getattr(env, "done", False))
+    step_correctness = _copy_step_results(env)
+    return {
+        "steps": steps,
+        "task_success": task_success,
+        "lm_calls": lm_calls,
+        "tokens": tokens,
+        "wall_clock_time": wall_clock_time,
+        "tle_per_step": tle_per_step,
+        "vc_per_step": vc_per_step,
+        "step_correctness": step_correctness,
+        "stage_per_step": stage_per_step,
+    }

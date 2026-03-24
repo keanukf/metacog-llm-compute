@@ -21,60 +21,6 @@ def load_config(config_path: str | Path) -> dict:
         return yaml.safe_load(f)
 
 
-def _create_model(config: dict, use_real: bool):
-    """Create model wrapper from config; real if use_real and GPU, else mock."""
-    if not use_real:
-        return _MockModel()
-    model_cfg = config.get("model", {})
-    model_name = model_cfg.get("name")
-    if not model_name:
-        return _MockModel()
-    dtype = model_cfg.get("dtype", "float16")
-    backend = config.get("inference", {}).get("backend", "vllm")
-    try:
-        from src.utils.model_wrapper import create_wrapper
-        return create_wrapper(backend=backend, model_name=model_name, dtype=dtype)
-    except Exception:
-        return _MockModel()
-
-
-class _MockModel:
-    def generate(self, prompt, logprobs=False, **kwargs):
-        text = "go north"
-        lp = [{"logprob": -0.5}] * 5 if logprobs else None
-        return text, lp
-
-
-def _make_env(domain: str, instance: int, config: dict, max_steps: int):
-    """Create env for domain/instance. TextWorld: real game if file exists, else stub."""
-    from src.environments.textworld_env import TextWorldEnv
-
-    if domain == "textworld":
-        tasks_dir = Path(config.get("paths", {}).get("tasks_dir", "data/tasks"))
-        game_file = tasks_dir / f"textworld_{instance}.ulx"
-        if not game_file.is_absolute():
-            game_file = REPO_ROOT / game_file
-        if not game_file.exists():
-            game_file = None
-        return TextWorldEnv(game_file=str(game_file) if game_file else None, max_steps=max_steps)
-    if domain == "tower_of_hanoi":
-        from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
-
-        cfg = config.get("tower_of_hanoi", {})
-        num_disks_range = cfg.get("num_disks_range", [3, 4])
-        partial_start_range = cfg.get("partial_start_range", [0, 3])
-        base_seed = int(cfg.get("task_generation_seed", 42))
-        seed = base_seed + instance * 10007
-        task_instance = generate_instances(
-            1,
-            seed=seed,
-            num_disks_range=(int(num_disks_range[0]), int(num_disks_range[1])),
-            partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
-        )[0]
-        return TowerOfHanoiEnv(task=task_instance, max_steps=max_steps)
-    return TextWorldEnv(game_file=None, max_steps=max_steps)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/experiment_core.yaml")
@@ -92,6 +38,7 @@ def main() -> None:
     from src.utils.checkpointing import list_completed_episodes, save_episode_checkpoint
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
+    from src.utils.experiment_env import create_experiment_model, make_experiment_env
 
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
     phase1 = config.get("phase1", {})
@@ -104,18 +51,16 @@ def main() -> None:
     print(f"Phase 1: {len(domains)} domains x {instances_per_domain} instances x {len(stages)} stages x {runs} runs = {total} episodes")
     print(f"Completed so far: {len(completed)}. Resume={args.resume}. Real model={args.real}.")
 
-    model = _create_model(config, args.real)
+    model = create_experiment_model(config, args.real)
     done_count = 0
-    step_index = 0
     for domain in domains:
         for inst in range(instances_per_domain):
             for stage in stages:
                 for run in range(runs):
                     ep_id = f"ep_{domain}_{inst}_{stage}_{run}"
                     if ep_id in completed:
-                        step_index += 1
                         continue
-                    env = _make_env(domain, inst, config, max_steps)
+                    env = make_experiment_env(domain, inst, config, max_steps, REPO_ROOT)
                     step_fn = get_step_fn(stage)
                     result = run_episode(env, model, stage, step_fn=step_fn, max_steps=max_steps)
                     data = {
@@ -132,10 +77,9 @@ def main() -> None:
                         "tle_per_step": result.get("tle_per_step"),
                         "vc_per_step": result.get("vc_per_step"),
                     }
-                    if "step_correctness" in result:
+                    if result.get("step_correctness") is not None:
                         data["step_correctness"] = result["step_correctness"]
                     save_episode_checkpoint(checkpoint_dir, ep_id, data)
-                    step_index += 1
                     done_count += 1
                     if done_count % 50 == 0:
                         print(f"  Completed {done_count} new episodes (total in dir: {len(completed) + done_count})")
