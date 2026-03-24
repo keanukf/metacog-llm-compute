@@ -9,13 +9,6 @@ pandas
 scipy
 pyyaml
 
-# Experiment tracking and dashboard
-mlflow>=2.19
-boto3
-python-dotenv>=1.0
-streamlit>=1.40
-plotly
-
 # Dev / tests
 pytest>=7.0.0
 pytest-cov>=4.0.0

@@ -10,10 +10,10 @@ Thesis codebase for **metacognitive effort allocation in sequential LM agents**:
 ## Tech stack and layout
 
 - **Language:** Python 3.10+. Use type hints and docstrings; prefer `from __future__ import annotations` in scripts.
-- **Config:** YAML in `configs/` (e.g. `pilot.yaml`, `infra.yaml`). No secrets in YAML; use `infra/.env` (MinIO, LiteLLM keys) and load via `python-dotenv` where needed.
+- **Config:** YAML in `configs/` (e.g. `pilot.yaml`, `experiment_core.yaml`). Do not commit secrets in YAML; use environment variables for API keys (e.g. LiteLLM).
 - **Package:** `src/` is the main package; run scripts from repo root so `sys.path` includes repo root (see `run_pilot.py`).
 - **Tests:** pytest in `tests/`; 21 unit tests with mocks (no GPU). Run: `python -m pytest tests/ -v`. Shared fixtures in `tests/conftest.py`.
-- **Scripts:** Entry points live in `scripts/` (e.g. `run_pilot.py`, `run_phase1.py`). Use `--config`, `--output-dir`, `--pilot-mode`, `--real`, `--infra-config` as in README.
+- **Scripts:** Entry points live in `scripts/` (e.g. `run_pilot.py`, `run_phase1.py`). Use `--config`, `--output-dir`, `--pilot-mode`, `--real` as in README.
 
 ## Key conventions
 
@@ -21,8 +21,7 @@ Thesis codebase for **metacognitive effort allocation in sequential LM agents**:
 2. **Pilot modes:** `mock` (default), `m1` (HuggingFace on Apple Silicon), `cuda` (vLLM on GPU), `litellm` (OpenAI-compatible API). Use `--real` to auto-detect.
 3. **Model wrapper:** `src/utils/model_wrapper.py` — `create_wrapper(backend, model_name, dtype, ...)`; backends: `hf`, `vllm`. Use wrapper for all inference in pilot/phase scripts.
 4. **Signals:** TLE in `src/signals/token_entropy.py`, VC parsing in `src/signals/verbalized_confidence.py`. Keep signal interfaces stable; tests assert on structure and behaviour.
-5. **Infrastructure:** MLflow/MinIO config in `configs/infra.yaml`; credentials from `infra/.env`. Use `ExperimentTracker` from `src.utils.experiment_tracker` when tracking is configured; fail gracefully if MLflow URI is placeholder or missing.
-6. **Dependencies:** Prefer versions in `requirements.txt` and `pyproject.toml`. Optional extras: `dev`, `full`, `tracking`. Don’t add heavy deps without aligning with blueprints/README.
+5. **Dependencies:** Prefer versions in `requirements.txt` and `pyproject.toml`. Optional extras: `dev`, `full`. Don’t add heavy deps without aligning with blueprints/README.
 
 ## When editing
 
@@ -35,4 +34,4 @@ Thesis codebase for **metacognitive effort allocation in sequential LM agents**:
 
 - Use descriptive names for config keys, CLI flags, and result keys (e.g. `pilot_benchmark`, `pilot_calibration`, `tokens_per_sec`).
 - Prefer existing patterns: e.g. `load_config(path)` returning dict, `REPO_ROOT = Path(__file__).resolve().parent.parent`, and `sys.path.insert(0, str(REPO_ROOT))` in scripts.
-- Log warnings for non-fatal issues (e.g. tracker creation failure, missing .env); avoid silent fallbacks that hide misconfiguration.
+- Log warnings for non-fatal issues where appropriate; avoid silent fallbacks that hide misconfiguration.
