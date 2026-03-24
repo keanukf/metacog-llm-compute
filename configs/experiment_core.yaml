@@ -11,14 +11,14 @@ inference:
   avg_tokens_per_call: 200
 
 phase1:
-  domains: ["textworld", "delayed_cue"]
+  domains: ["textworld", "tower_of_hanoi"]
   instances_per_domain: 50
   compute_stages: 3   # C0, C1, C2
   runs_per_condition: 5
   # 100 instances * 3 stages * 5 runs = 1500 episodes
 
 phase2:
-  domains: ["textworld", "delayed_cue"]
+  domains: ["textworld", "tower_of_hanoi"]
   instances_per_domain: 50
   strategies:
     - adaptive_tle
@@ -39,8 +39,7 @@ episode:
   max_steps_per_episode: 20
   avg_steps: 10
 
-# Delayed-Cue Recall: per-instance distractor count sampled from range (inclusive).
-delayed_cue:
-  num_distractors_range: [3, 8]
-  complexity: "medium" # low | medium | high
-  task_generation_seed: 42
+# Tower of Hanoi: vary number of disks and partial-start depth.
+tower_of_hanoi:
+  num_disks_range: [3, 4]
+  partial_start_range: [0, 3]

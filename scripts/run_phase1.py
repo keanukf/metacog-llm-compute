@@ -82,7 +82,7 @@ class _MockModel:
 
 
 def _make_env(domain: str, instance: int, config: dict, max_steps: int):
-    """Create env for domain/instance. TextWorld: real game if file exists, else stub. delayed_cue: DelayedCueEnv."""
+    """Create env for domain/instance. TextWorld: real game if file exists, else stub."""
     from src.environments.textworld_env import TextWorldEnv
 
     if domain == "textworld":
@@ -93,22 +93,21 @@ def _make_env(domain: str, instance: int, config: dict, max_steps: int):
         if not game_file.exists():
             game_file = None
         return TextWorldEnv(game_file=str(game_file) if game_file else None, max_steps=max_steps)
-    if domain == "delayed_cue":
-        from src.environments.delayed_cue import DelayedCueEnv, generate_tasks
+    if domain == "tower_of_hanoi":
+        from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
 
-        dc = config.get("delayed_cue", {})
-        r = dc.get("num_distractors_range", [3, 8])
-        lo, hi = int(r[0]), int(r[1])
-        complexity = dc.get("complexity", "medium")
-        base_seed = int(dc.get("task_generation_seed", 42))
+        cfg = config.get("tower_of_hanoi", {})
+        num_disks_range = cfg.get("num_disks_range", [3, 4])
+        partial_start_range = cfg.get("partial_start_range", [0, 3])
+        base_seed = int(cfg.get("task_generation_seed", 42))
         seed = base_seed + instance * 10007
-        task = generate_tasks(
+        task_instance = generate_instances(
             1,
             seed=seed,
-            num_distractors_range=(lo, hi),
-            complexity=str(complexity),
+            num_disks_range=(int(num_disks_range[0]), int(num_disks_range[1])),
+            partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
         )[0]
-        return DelayedCueEnv(task, max_steps=max_steps)
+        return TowerOfHanoiEnv(task=task_instance, max_steps=max_steps)
     return TextWorldEnv(game_file=None, max_steps=max_steps)
 
 
@@ -140,7 +139,7 @@ def main() -> None:
 
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
     phase1 = config.get("phase1", {})
-    domains = phase1.get("domains", ["textworld", "delayed_cue"])
+    domains = phase1.get("domains", ["textworld", "tower_of_hanoi"])
     instances_per_domain = phase1.get("instances_per_domain", 50)
     stages = ["C0", "C1", "C2"]
     runs = phase1.get("runs_per_condition", 5)
