@@ -7,6 +7,17 @@ from __future__ import annotations
 from typing import Any
 
 
+def normalize_openai_base_url(base_url: str) -> str:
+    """
+    OpenAI Python client expects base_url ending with /v1 (no duplicate segment).
+    Accepts either a server root (e.g. http://host:1234) or full API base (…/v1).
+    """
+    bu = base_url.strip().rstrip("/")
+    if bu.endswith("/v1"):
+        return bu
+    return f"{bu}/v1"
+
+
 def _normalize_logprobs(raw: Any) -> list[dict[str, Any]] | None:
     """Convert vLLM/HF logprob output to list of dicts with 'logprob' key."""
     if raw is None:
@@ -24,6 +35,31 @@ def _normalize_logprobs(raw: Any) -> list[dict[str, Any]] | None:
         elif isinstance(x, (int, float)):
             out.append({"logprob": float(x)})
     return out if out else None
+
+
+def _openai_completion_logprobs_to_list(raw_lp: Any) -> list[dict[str, Any]] | None:
+    """
+    Map OpenAI *Completions* choice.logprobs to internal [{"logprob": float}, ...].
+    Also accepts chat-style .content token lists (some proxies) and plain dicts from JSON.
+    """
+    if raw_lp is None:
+        return None
+    content = getattr(raw_lp, "content", None)
+    if content is None and isinstance(raw_lp, dict):
+        content = raw_lp.get("content")
+    if content is not None:
+        return _normalize_logprobs(content)
+
+    token_lps = getattr(raw_lp, "token_logprobs", None)
+    if token_lps is None and isinstance(raw_lp, dict):
+        token_lps = raw_lp.get("token_logprobs")
+    if token_lps is not None:
+        out: list[dict[str, Any]] = []
+        for lp in token_lps:
+            if lp is not None:
+                out.append({"logprob": float(lp)})
+        return out if out else None
+    return None
 
 
 class ModelWrapper:
@@ -244,7 +280,7 @@ class LiteLLMWrapper(ModelWrapper):
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
-        self._base_url = base_url.rstrip("/")
+        self._base_url = base_url.strip()
         self._api_key = api_key
         self._kwargs = kwargs
         self._client: Any = None
@@ -260,7 +296,7 @@ class LiteLLMWrapper(ModelWrapper):
             ) from e
         import os
         key = self._api_key or os.environ.get("LITELLM_API_KEY") or "dummy"
-        self._client = OpenAI(base_url=f"{self._base_url}/v1", api_key=key)
+        self._client = OpenAI(base_url=normalize_openai_base_url(self._base_url), api_key=key)
         return self._client
 
     def generate(
@@ -287,9 +323,15 @@ class LiteLLMWrapper(ModelWrapper):
         choice = resp.choices[0]
         text = (choice.text or "").strip()
         raw_lp = getattr(choice, "logprobs", None)
-        lp_list = _normalize_logprobs(
-            getattr(raw_lp, "content", None) if raw_lp else None
-        ) if logprobs else None
+        lp_list = _openai_completion_logprobs_to_list(raw_lp) if logprobs else None
+        # Many OpenAI-compatible servers omit token_logprobs; use usage for benchmark token counts.
+        if logprobs and not lp_list:
+            usage = getattr(resp, "usage", None)
+            ct = getattr(usage, "completion_tokens", None) if usage is not None else None
+            if ct is None and isinstance(usage, dict):
+                ct = usage.get("completion_tokens")
+            if isinstance(ct, int) and ct > 0:
+                lp_list = [{"logprob": 0.0} for _ in range(ct)]
         return text, lp_list
 
 

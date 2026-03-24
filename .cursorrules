@@ -12,13 +12,13 @@ Thesis codebase for **metacognitive effort allocation in sequential LM agents**:
 - **Language:** Python 3.10+. Use type hints and docstrings; prefer `from __future__ import annotations` in scripts.
 - **Config:** YAML in `configs/` (e.g. `pilot.yaml`, `experiment_core.yaml`). Do not commit secrets in YAML; use environment variables for API keys (e.g. LiteLLM).
 - **Package:** `src/` is the main package; run scripts from repo root so `sys.path` includes repo root (see `run_pilot.py`).
-- **Tests:** pytest in `tests/`; 21 unit tests with mocks (no GPU). Run: `python -m pytest tests/ -v`. Shared fixtures in `tests/conftest.py`.
+- **Tests:** pytest in `tests/`; unit tests with mocks (no GPU). Run: `python -m pytest tests/ -v`. Shared fixtures in `tests/conftest.py`.
 - **Scripts:** Entry points live in `scripts/` (e.g. `run_pilot.py`, `run_phase1.py`). Use `--config`, `--output-dir`, `--pilot-mode`, `--real` as in README.
 
 ## Key conventions
 
 1. **Paths:** Repo root is the CWD for scripts. Results go under `data/results/` (or `--output-dir`). Task instances (e.g. TextWorld games) in `data/tasks/`.
-2. **Pilot modes:** `mock` (default), `m1` (HuggingFace on Apple Silicon), `cuda` (vLLM on GPU), `litellm` (OpenAI-compatible API). Use `--real` to auto-detect.
+2. **Pilot modes:** `mock` (default), `hf` (HuggingFace on Apple Silicon / MPS), `cuda` (vLLM on GPU), `litellm` (OpenAI-compatible proxy), `lmstudio` (LM Studio local OpenAI API). CLI accepts deprecated alias `m1` → `hf`. Use `--real` to auto-detect.
 3. **Model wrapper:** `src/utils/model_wrapper.py` — `create_wrapper(backend, model_name, dtype, ...)`; backends: `hf`, `vllm`. Use wrapper for all inference in pilot/phase scripts.
 4. **Signals:** TLE in `src/signals/token_entropy.py`, VC parsing in `src/signals/verbalized_confidence.py`. Keep signal interfaces stable; tests assert on structure and behaviour.
 5. **Dependencies:** Prefer versions in `requirements.txt` and `pyproject.toml`. Optional extras: `dev`, `full`. Don’t add heavy deps without aligning with blueprints/README.
