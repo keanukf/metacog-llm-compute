@@ -1,6 +1,7 @@
 # Core (blueprint: vLLM, TextWorld, analysis)
-vllm>=0.4.0
-transformers>=4.36.0
+vllm>=0.18.0
+# Qwen3.5+ checkpoints use model_type qwen3_5 (needs transformers >= 5.2)
+transformers>=5.2.0
 openai>=1.0.0
 accelerate
 textworld

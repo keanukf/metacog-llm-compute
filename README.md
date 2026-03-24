@@ -9,18 +9,18 @@ Thesis codebase: pilot tests, agent loop, signal extraction (TLE, VC), and exper
 | | **Unit tests (pytest)** | **Pilot (run_pilot.py)** |
 |---|-------------------------|---------------------------|
 | **Purpose** | Check that **code and interfaces** are correct: signals, agent loop, logging, calibration logic. | Check **setup and hardware** in a small end-to-end run: real model, throughput, full pipeline. |
-| **Runs** | 21 functional tests with **mocks** (no model, no GPU). | One script that runs Tests 1–6 in sequence; **pilot mode** chooses mock, M1, CUDA, or LiteLLM. |
-| **Where** | Local or on pod; **no GPU required**. | **Pilot 0** (mock): anywhere. **Pilot 1** (M1): Mac with Apple Silicon. **Pilot 2** (CUDA): e.g. RunPod. **Pilot 3** (litellm): any host with LiteLLM proxy. |
-| **When** | After every code change; in CI. | Pilot 0: quick local sanity. Pilot 1: test on M1 before buying GPU. Pilot 2: confirm GPU setup. Pilot 3: use remote LiteLLM endpoint. |
+| **Runs** | Pytest suite with **mocks** (no model, no GPU). | One script that runs Tests 1–6 in sequence; **pilot mode** chooses mock, hf, CUDA, litellm, or lmstudio. |
+| **Where** | Local or on pod; **no GPU required**. | **Pilot 0** (mock): anywhere. **Pilot 1** (hf): Mac with Apple Silicon (HF+MPS). **Pilot 2** (CUDA): e.g. RunPod. **Pilot 3** (litellm): LiteLLM or other OpenAI-compatible proxy. **Pilot 4** (lmstudio): LM Studio server on LAN or localhost. |
+| **When** | After every code change; in CI. | Pilot 0: quick local sanity. Pilot 1: test HF+MPS on Mac before buying GPU. Pilot 2: confirm GPU setup. Pilot 3: remote proxy. Pilot 4: local LM Studio (often faster than raw HF on the same Mac). |
 | **Output** | Pass/fail per test. | `pilot_benchmark.json`, `pilot_calibration.json`, and optionally `pilot_cost_validation.md`, `pilot_feasibility_report.md`. |
 
-**Summary:** Unit tests validate *logic*; the pilot validates *environment and hardware* in a small run. Four pilot levels: **0 = mock** (no real model), **1 = local M1** (HuggingFace on Apple Silicon), **2 = real CUDA** (vLLM on GPU), **3 = litellm** (OpenAI-compatible API, e.g. http://litellm.home/).
+**Summary:** Unit tests validate *logic*; the pilot validates *environment and hardware* in a small run. Pilot levels: **mock** (no real model), **hf** (HuggingFace + MPS on Apple Silicon; CLI still accepts deprecated **m1**), **cuda** (vLLM on GPU), **litellm** (OpenAI-compatible proxy), **lmstudio** (LM Studio local OpenAI API, e.g. `http://host:1234/v1`).
 
 ---
 
 ## Running unit tests (no GPU)
 
-All 21 tests use mocks and run without GPU or cloud. From the repo root:
+All tests use mocks and run without GPU or cloud. From the repo root:
 
 ```bash
 pip install -r requirements.txt
@@ -45,9 +45,10 @@ The pilot runs Tests 1–6 in sequence and writes benchmark and calibration outp
 | Mode | Flag | Hardware | Backend | Use case |
 |------|------|----------|---------|----------|
 | **Pilot 0** | `--pilot-mode mock` (default) | None | Mock | Quick local sanity; CI; no model download. |
-| **Pilot 1** | `--pilot-mode m1` | Mac M1/M2 (Apple Silicon) | HuggingFace + MPS | Test full pipeline locally before buying GPU. |
+| **Pilot 1** | `--pilot-mode hf` | Mac M1/M2 (Apple Silicon) | HuggingFace + MPS | Test full pipeline locally before buying GPU. |
 | **Pilot 2** | `--pilot-mode cuda` | NVIDIA GPU (e.g. RunPod) | vLLM (or HF) | Validate GPU setup and throughput before Phase 1/2. |
-| **Pilot 3** | `--pilot-mode litellm` | Any (remote API) | LiteLLM proxy (OpenAI-compatible) | Use http://litellm.home/ or custom base URL for model serving. |
+| **Pilot 3** | `--pilot-mode litellm` | Any (remote API) | OpenAI-compatible HTTP (e.g. LiteLLM) | Custom base URL; set `LITELLM_BASE_URL` / config. |
+| **Pilot 4** | `--pilot-mode lmstudio` | Any (LM Studio host) | Same HTTP client as litellm | Local or LAN LM Studio (`LM_STUDIO_BASE_URL`, default `http://localhost:1234/v1`). |
 
 ### Pilot 0 — Mock (default)
 
@@ -59,13 +60,15 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/result
 
 You get `pilot_benchmark.json` and `pilot_calibration.json` with **mock** numbers (e.g. unrealistic tokens_per_sec). Reports are still written from config paths.
 
-### Pilot 1 — Local M1 (Apple Silicon)
+### Pilot 1 — HuggingFace on Apple Silicon (hf)
 
 On a Mac with M1/M2/M3, run the same pipeline with the real model via HuggingFace on Metal (MPS). No CUDA or vLLM required:
 
 ```bash
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode m1
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode hf
 ```
+
+`--pilot-mode m1` is accepted as a deprecated alias for `hf`. For the same machine, **lmstudio** is often faster because inference runs inside LM Studio instead of raw Transformers.
 
 Requires `transformers`, `torch` with MPS support, and enough RAM/Unified Memory for the model (e.g. Qwen2.5-3B). Slower than Pilot 2 but catches setup and integration errors before spending on cloud GPU.
 
@@ -77,7 +80,7 @@ On a machine with CUDA (e.g. RunPod RTX 3090), use vLLM for real inference and m
 python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode cuda
 ```
 
-Or use `--real` to auto-detect: if CUDA is available → cuda; else if MPS (Mac) → m1; else mock.
+Or use `--real` to auto-detect: if CUDA is available → cuda; else if MPS (Mac) → hf; else mock.
 
 ### Pilot 3 — LiteLLM proxy
 
@@ -87,7 +90,18 @@ Use a remote OpenAI-compatible endpoint (e.g. LiteLLM at http://litellm.home/). 
 python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode litellm
 ```
 
-Override the base URL via config `inference.litellm_base_url` or env `LITELLM_BASE_URL`. For auth, set `LITELLM_API_KEY` in the environment (or `inference.litellm_api_key` in config); LiteLLM typically expects keys starting with `sk-`. Requires the `openai` package.
+Override the base URL via config `inference.litellm_base_url` or env `LITELLM_BASE_URL` (host root or `…/v1` — duplicates are normalized). For auth, set `LITELLM_API_KEY` in the environment (or `inference.litellm_api_key` in config); LiteLLM typically expects keys starting with `sk-`. Requires the `openai` package.
+
+### Pilot 4 — LM Studio
+
+LM Studio exposes an OpenAI-compatible API (often `http://localhost:1234/v1` or a LAN address). Set `model.name` to the **exact model identifier** shown in LM Studio for API requests:
+
+```bash
+export LM_STUDIO_BASE_URL="http://192.168.178.173:1234/v1"
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode lmstudio
+```
+
+Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; default API key is `lm-studio` if unset (`LM_STUDIO_API_KEY`).
 
 - **Test 1:** 50 real prompts → measured tokens/s, latency, VRAM (CUDA only).
 - **Tests 2–3:** Unchanged (synthetic/sample data).
@@ -95,7 +109,7 @@ Override the base URL via config `inference.litellm_base_url` or env `LITELLM_BA
 - **Test 5:** Same model runs the e2e episode loop.
 - **Test 6:** ECE and logging on the episode data.
 
-After Pilot 1, 2, or 3 you get realistic `tokens_per_sec` (for that device/endpoint) in `pilot_benchmark.json`. The benchmark JSON includes `"pilot_mode": "mock" | "m1" | "cuda" | "litellm"` so you know which run it was.
+After a non-mock pilot you get realistic `tokens_per_sec` (for that device/endpoint) in `pilot_benchmark.json`. The benchmark JSON includes `"pilot_mode": "mock" | "hf" | "cuda" | "litellm" | "lmstudio"` so you know which run it was.
 
 ---
 

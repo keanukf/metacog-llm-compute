@@ -2,8 +2,8 @@
 # See blueprints/infrastructureplan_pilot.md Section V.
 
 model:
-  name: "ollama/qwen3:0.6b"
-  dtype: fp16
+  name: "mlx-community/Qwen3.5-0.8B-MLX"
+  dtype: int8
 
 inference:
   temperature: 0.3
@@ -13,6 +13,9 @@ inference:
   # Prefer LITELLM_API_KEY in env to avoid storing secrets in config.
   # litellm_base_url: "http://litellm.home/"
   # litellm_api_key: "sk-..."   # or set env LITELLM_API_KEY
+  # For pilot-mode lmstudio: LM Studio local server (OpenAI-compatible). URL may be …/v1 or host:port only.
+  # lmstudio_base_url: "http://192.168.178.173:1234/v1"
+  # lmstudio_api_key: "lm-studio"   # or set env LM_STUDIO_API_KEY / LM_STUDIO_BASE_URL
 
 pilot:
   instances: 2 # 5 is default, 2 is for the pilot
@@ -27,7 +30,7 @@ paths:
   pilot_feasibility_report: "data/results/pilot_feasibility_report.md"
 
 test1_inference:
-  num_prompts: 50
+  num_prompts: 5
   expected_tok_per_sec_min: 10
 
 test3_verbalized_confidence:

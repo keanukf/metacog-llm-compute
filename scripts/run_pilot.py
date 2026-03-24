@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import warnings
 import sys
 import time
 from pathlib import Path
@@ -25,10 +26,29 @@ def load_config(config_path: str | Path) -> dict:
         return yaml.safe_load(f)
 
 
+def parse_pilot_mode_arg(value: str) -> str:
+    """CLI pilot mode: mock | hf | m1 (deprecated alias for hf) | cuda | litellm | lmstudio."""
+    v = (value or "mock").lower().strip()
+    if v == "m1":
+        warnings.warn(
+            '--pilot-mode m1 is deprecated; use "hf" (HuggingFace + MPS on Apple Silicon).',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        v = "hf"
+    allowed = frozenset({"mock", "hf", "cuda", "litellm", "lmstudio"})
+    if v not in allowed:
+        raise argparse.ArgumentTypeError(
+            f"invalid pilot mode {value!r}; expected one of: mock, hf, m1, cuda, litellm, lmstudio"
+        )
+    return v
+
+
 def _create_real_model(config: dict, pilot_mode: str):
     """
     Create real model wrapper for the given pilot mode.
-    pilot_mode: "mock" -> None; "m1" -> HF on Apple Silicon (MPS); "cuda" -> vLLM on CUDA; "litellm" -> LiteLLM proxy API.
+    mock -> None; hf -> HuggingFace on Apple Silicon (MPS); cuda -> vLLM (or inference.backend);
+    litellm -> OpenAI-compatible proxy; lmstudio -> LM Studio local server (OpenAI-compatible).
     """
     if pilot_mode == "mock":
         return None
@@ -39,7 +59,7 @@ def _create_real_model(config: dict, pilot_mode: str):
     dtype = model_cfg.get("dtype", "float16")
     try:
         from src.utils.model_wrapper import create_wrapper
-        if pilot_mode == "m1":
+        if pilot_mode == "hf":
             return create_wrapper(backend="hf", model_name=model_name, dtype=dtype, device="mps")
         if pilot_mode == "cuda":
             backend = config.get("inference", {}).get("backend", "vllm")
@@ -48,6 +68,13 @@ def _create_real_model(config: dict, pilot_mode: str):
             inf = config.get("inference", {})
             base_url = inf.get("litellm_base_url") or os.environ.get("LITELLM_BASE_URL", "http://litellm.home/")
             api_key = inf.get("litellm_api_key") or os.environ.get("LITELLM_API_KEY")
+            return create_wrapper(backend="litellm", model_name=model_name, base_url=base_url, litellm_api_key=api_key)
+        if pilot_mode == "lmstudio":
+            inf = config.get("inference", {})
+            base_url = inf.get("lmstudio_base_url") or os.environ.get(
+                "LM_STUDIO_BASE_URL", "http://localhost:1234/v1"
+            )
+            api_key = inf.get("lmstudio_api_key") or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
             return create_wrapper(backend="litellm", model_name=model_name, base_url=base_url, litellm_api_key=api_key)
         return None
     except Exception:
@@ -79,7 +106,11 @@ def run_test1_inference_speed(
             text, logprobs = real_model.generate(p, logprobs=True, max_tokens=max_tokens, temperature=temperature)
             elapsed = time.perf_counter() - t0
             latencies.append(elapsed)
-            total_tokens += len(logprobs) if logprobs else 0
+            n_out = len(logprobs) if logprobs else 0
+            if n_out == 0 and (text or "").strip():
+                # APIs without logprobs/usage (rare): rough chars→tokens for tok/s
+                n_out = max(1, len(text) // 4)
+            total_tokens += n_out
             if (i + 1) % progress_interval == 0 or (i + 1) == num_prompts:
                 print(f"  Test 1: {i + 1}/{num_prompts} prompts done")
         elapsed_total = sum(latencies)
@@ -219,8 +250,9 @@ def run_test6_logging_analysis(episodes_data: list[dict], output_dir: Path) -> d
 
 
 def _resolve_pilot_mode(args) -> str:
-    """Resolve pilot mode: mock (0), m1 (1), cuda (2), litellm (3). --real auto-detects m1 vs cuda; litellm is explicit."""
-    mode = (args.pilot_mode or os.environ.get("PILOT_MODE") or "mock").lower()
+    """Resolve pilot mode. --real auto-detects hf vs cuda when mode is mock; lmstudio/litellm stay explicit."""
+    raw = getattr(args, "pilot_mode", None) or os.environ.get("PILOT_MODE") or "mock"
+    mode = parse_pilot_mode_arg(raw) if isinstance(raw, str) else "mock"
     if args.real or os.environ.get("USE_REAL_MODEL") == "1":
         if mode == "mock":
             try:
@@ -228,7 +260,7 @@ def _resolve_pilot_mode(args) -> str:
                 if torch.cuda.is_available():
                     mode = "cuda"
                 elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-                    mode = "m1"
+                    mode = "hf"
                 else:
                     mode = "mock"
                     print("Warning: --real requested but no CUDA/MPS found; falling back to mock.")
@@ -239,17 +271,21 @@ def _resolve_pilot_mode(args) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run pilot study (Tests 1-6). Pilot 0: mock. Pilot 1: M1 (HF+MPS). Pilot 2: CUDA (vLLM). Pilot 3: LiteLLM proxy."
+        description="Run pilot study (Tests 1-6). mock | hf (HF+MPS) | cuda | litellm | lmstudio (OpenAI API)."
     )
     parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
     parser.add_argument("--output-dir", default="data/results", help="Output directory")
     parser.add_argument(
         "--pilot-mode",
-        choices=["mock", "m1", "cuda", "litellm"],
+        type=parse_pilot_mode_arg,
         default="mock",
-        help="Pilot 0: mock. Pilot 1: M1 (HF on Apple Silicon). Pilot 2: CUDA (vLLM). Pilot 3: LiteLLM proxy (http://litellm.home/).",
+        help="mock | hf (HuggingFace+MPS) | m1 (deprecated=hf) | cuda | litellm | lmstudio (LM Studio server).",
     )
-    parser.add_argument("--real", action="store_true", help="Use real model; auto-detect m1 vs cuda if --pilot-mode not set")
+    parser.add_argument(
+        "--real",
+        action="store_true",
+        help="Use real model; auto-detect hf vs cuda if --pilot-mode is mock",
+    )
     args = parser.parse_args()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
