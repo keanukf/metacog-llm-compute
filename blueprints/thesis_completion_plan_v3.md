@@ -1,4 +1,4 @@
-# Thesis Completion Plan v3 — March 24 to April 30, 2026
+# Thesis Completion Plan v3 — March 23 to April 29, 2026
 
 **Keanu Forthmann · M.Sc. Artificial Intelligence · IU Internationale Hochschule**
 **Metacognitive Effort Allocation in Sequential Language Model Agents**
@@ -62,11 +62,11 @@ The second task domain is now **Tower of Hanoi** (text-based), replacing Delayed
 
 ## Week-by-Week Plan
 
-### WEEK 1: March 24–30 — Code Completion + GPU Pilot + Start Writing
+### WEEK 1: March 23–29 — Code Completion + GPU Pilot + Start Writing
 
 **Goal:** Close all implementation gaps. Validate both domains on real GPU. Start Ch2 draft.
 
-#### Monday March 24 — Tower of Hanoi Environment [Cursor]
+#### Monday March 23 — Tower of Hanoi Environment [Cursor]
 
 Implement `src/environments/tower_of_hanoi.py`:
 
@@ -113,7 +113,7 @@ Store in `env.step_results: list[dict]` with keys: `step_index`, `action`, `corr
 - Difficulty scaling (3 vs. 4 disks produce different episode lengths)
 - Action parsing (various formats)
 
-#### Tuesday March 25 — Step-Level Correctness for TextWorld + Phase 2 Loop [Cursor]
+#### Tuesday March 24 — Step-Level Correctness for TextWorld + Phase 2 Loop [Cursor]
 
 **TextWorld step-level correctness:**
 - Extend `TextWorldEnv` to track action validity via game engine feedback
@@ -133,7 +133,7 @@ Store in `env.step_results: list[dict]` with keys: `step_index`, `action`, `corr
 - `domain == "textworld"` → `TextWorldEnv(game_file=...)`
 - `domain == "tower_of_hanoi"` → `TowerOfHanoiEnv(task=instance_dict)`
 
-#### Wednesday March 26 — Real GPU Pilot [RunPod RTX 3090]
+#### Wednesday March 25 — Real GPU Pilot [RunPod RTX 3090]
 
 ```bash
 python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode cuda
@@ -153,7 +153,7 @@ Standard pilot validation plus **Tower of Hanoi parseability check:**
 - If still fails → fall back to BlocksWorld as alternative (similar structure, may be more amenable to text-based action format)
 - If pilot passes ≥8/10 checks → proceed
 
-#### Thursday March 27 — Pre-Experiment Validation [RunPod, keep pod running]
+#### Thursday March 26 — Pre-Experiment Validation [RunPod, keep pod running]
 
 1. **TextWorld difficulty sweep:** `run_calibration.py` — target 30–50% C0 success rate
 2. **Tower of Hanoi difficulty sweep:** run C0 on 3-disk and 4-disk instances, with and without partial starts. Find the configuration that yields ~30–50% task success. Record: how many moves are optimal vs. legal vs. illegal?
@@ -162,7 +162,7 @@ Standard pilot validation plus **Tower of Hanoi parseability check:**
 
 **If AUROC < 0.6:** adjust TLE aggregation, consider prompt tuning for VC, or reframe H1.
 
-#### Friday March 28 — Statistical Analysis Code [Cursor]
+#### Friday March 27 — Statistical Analysis Code [Cursor]
 
 Implement `src/analysis/comparison.py`:
 - Mixed-effects model setup (`statsmodels` or `pymer4`)
@@ -171,7 +171,7 @@ Implement `src/analysis/comparison.py`:
 - Effect size computation (Cohen's d with bootstrapped 95% CIs)
 - Pairwise contrasts (Tukey-adjusted) for Phase 2 strategy comparisons
 
-#### Saturday–Sunday March 29–30 — Writing: Ch2 §2.1–2.2 [Claude]
+#### Saturday–Sunday March 28–29 — Writing: Ch2 §2.1–2.2 [Claude]
 
 Draft Chapter 2, Moves 1–2 (~13 pages):
 
@@ -200,11 +200,11 @@ Follow "name the bridge, don't cross it" in §2.2. Full bridge is §2.3 (Week 2)
 
 ---
 
-### WEEK 2: March 31 – April 6 — Phase 1 Experiments + Write Ch2–5
+### WEEK 2: March 30 – April 5 — Phase 1 Experiments + Write Ch2–5
 
 **Goal:** Run Phase 1 calibration. Complete Ch2, Ch3, Ch4, Ch5 drafts.
 
-#### Monday March 31
+#### Monday March 30
 
 **Daytime:** Write Ch2 §2.3 The Bridge (~7 pp, claims 20–34). Map psychological constructs onto computational analogues explicitly. This is the structural contribution of Chapter 2.
 
@@ -213,13 +213,13 @@ Follow "name the bridge, don't cross it" in §2.2. Full bridge is §2.3 (Week 2)
 python scripts/run_phase1.py --config configs/experiment_core.yaml --pilot-mode cuda --domain textworld --resume
 ```
 
-#### Tuesday April 1
+#### Tuesday March 31
 
 **Daytime:** Draft Ch3 §3.1–3.3 (~5 pp, claims 1–16 from Ch3 matrix). Entropy-based allocation, metacognitive probes, LLM metacognitive capabilities.
 
 **Evening:** Start Phase 1 Tower of Hanoi overnight run (~8h).
 
-#### Wednesday April 2
+#### Wednesday April 1
 
 **Morning:** Download Phase 1 data. Run initial analysis: ECE, Brier, reliability diagrams, step-position calibration curves, cross-domain comparison (TextWorld vs. Tower of Hanoi).
 
@@ -227,11 +227,11 @@ python scripts/run_phase1.py --config configs/experiment_core.yaml --pilot-mode 
 
 **Evening:** Draft Ch3 §3.4–3.6 (~5 pp, claims 17–30). §3.6 positioning must make the gap feel inevitable.
 
-#### Thursday April 3
+#### Thursday April 2
 
 Draft Ch4 (Research Questions and Hypotheses, ~4 pp): derive RQ1–RQ3 from Ch2 theory + Ch3 empirical boundaries. State H1–H4 with updated H4 framing (exploration vs. planning).
 
-#### Friday–Sunday April 4–6
+#### Friday–Sunday April 3–5
 
 Draft Ch5 Methodology (~10 pp):
 - 5.1 Research Design (2×3×2 factorial)
@@ -256,11 +256,11 @@ Draft Ch5 Methodology (~10 pp):
 
 ---
 
-### WEEK 3: April 7–13 — Phase 2 Experiments + Results Chapters
+### WEEK 3: April 6–12 — Phase 2 Experiments + Results Chapters
 
 **Goal:** Run Phase 2. Generate all figures. Draft Ch6 and Ch7.
 
-#### Monday April 7
+#### Monday April 6
 
 **Daytime:** Generate all Phase 1 visualizations:
 - Reliability diagrams (TLE and VC, both domains)
@@ -272,7 +272,7 @@ Export as high-res PNGs.
 
 **Evening:** Start Phase 2 TextWorld overnight (~10h, 1500 episodes).
 
-#### Tuesday April 8
+#### Tuesday April 7
 
 **Daytime:** Draft Ch6 Results: Signal Calibration (~6 pp):
 - 6.1 Overall Calibration of TLE
@@ -282,13 +282,13 @@ Export as high-res PNGs.
 
 **Evening:** Start Phase 2 Tower of Hanoi overnight (~10h).
 
-#### Wednesday April 9
+#### Wednesday April 8
 
 **Morning:** Verify Phase 2 data. Rerun failed episodes if needed (buffer night run).
 
 **Afternoon:** Full Phase 2 analysis: success rates, compute efficiency, mixed-effects model, pairwise contrasts, effect sizes, allocation pattern analysis. Compare allocation patterns across domains (does the allocator choose differently for exploration vs. planning?).
 
-#### Thursday–Friday April 10–11
+#### Thursday–Friday April 9–10
 
 Draft Ch7 Results: Adaptive Allocation (~8 pp):
 - 7.1 Performance Comparison Against Baselines
@@ -296,7 +296,7 @@ Draft Ch7 Results: Adaptive Allocation (~8 pp):
 - 7.3 Step-Level vs. Prompt-Level Allocation (EAGer-Style Comparison)
 - 7.4 Allocation Patterns: When Does the Agent Choose to Deliberate?
 
-#### Saturday–Sunday April 12–13
+#### Saturday–Sunday April 11–12
 
 Finalize all figures and tables. §3.6 positioning table. Colorblind-friendly, properly captioned.
 
@@ -309,11 +309,11 @@ Finalize all figures and tables. §3.6 positioning table. Colorblind-friendly, p
 
 ---
 
-### WEEK 4: April 14–20 — Discussion + Introduction + First Revision
+### WEEK 4: April 13–19 — Discussion + Introduction + First Revision
 
 **Goal:** Complete all chapter drafts. First full revision.
 
-#### Monday–Tuesday April 14–15 — Ch8 Discussion (~10 pp)
+#### Monday–Tuesday April 13–14 — Ch8 Discussion (~10 pp)
 
 - 8.1 Interpretation Through Dual-Process Theory — does the allocator function as an EVC-informed switch?
 - 8.2 Signal Quality: Sequential vs. Single-Turn — how do results compare to EAGer/MeCo single-turn findings?
@@ -322,19 +322,19 @@ Finalize all figures and tables. §3.6 positioning table. Colorblind-friendly, p
 - 8.5 Limitations (proactive: single model, rule-based allocator, Tower of Hanoi solution space compression, limited runs)
 - 8.6 Ethical Considerations
 
-#### Wednesday April 16 — Ch1 Introduction (~4 pp)
+#### Wednesday April 15 — Ch1 Introduction (~4 pp)
 
 - 1.1 The Compute Allocation Problem
 - 1.2 Research Gap: Single-Turn to Sequential
 - 1.3 Structure of the Thesis
 
-#### Thursday April 17 — Ch9 Conclusion + Future Work (~3 pp)
+#### Thursday April 16 — Ch9 Conclusion + Future Work (~3 pp)
 
 - 9.1 Summary of Contributions
 - 9.2 Future Research (learned allocator, more models, longer episodes, additional sequential domains)
 - 9.3 Toward Metacognition-Aware AI Agents
 
-#### Friday–Sunday April 18–20 — First Full Revision Pass
+#### Friday–Sunday April 17–19 — First Full Revision Pass
 
 Read entire thesis end-to-end. Check: argument coherence, precision, forbidden constructions, interdisciplinary coherence, cross-references, citation completeness. Verify that "Delayed-Cue" appears nowhere in the final text.
 
@@ -347,25 +347,25 @@ Read entire thesis end-to-end. Check: argument coherence, precision, forbidden c
 
 ---
 
-### WEEK 5: April 21–30 — Polish, Format, Submit
+### WEEK 5: April 20–29 — Polish, Format, Submit
 
-#### Monday–Tuesday April 21–22 — Second Revision + APA Check
+#### Monday–Tuesday April 20–21 — Second Revision + APA Check
 
 Style revision, APA 7 citation check (every in-text ↔ bibliography), abstract (~300 words).
 
-#### Wednesday April 23 — Word Formatting
+#### Wednesday April 22 — Word Formatting
 
 IU-compliant Word document: title page, Roman/Arabic page numbers, Arial 11pt/1.5/block text/2cm margins, max 3 heading levels, figure/table lists, abbreviation list, Eidesstattliche Erklärung.
 
-#### Thursday April 24 — Final Proofread
+#### Thursday April 23 — Final Proofread
 
 Final read. Check figures at print resolution. Verify Turnitin access.
 
-#### Friday–Sunday April 25–27 — Buffer
+#### Friday–Sunday April 24–26 — Buffer
 
 If on track: Kolloquium preparation. If behind: catch-up.
 
-#### By April 30, 23:59 — Submit
+#### By April 29, 23:59 — Submit
 
 PDF via Turnitin. Notify supervisor.
 
@@ -406,14 +406,14 @@ PDF via Turnitin. Notify supervisor.
 
 | When | Condition | Action |
 |------|-----------|--------|
-| March 26 (GPU pilot) | ≥8/10 checks pass | Proceed |
-| March 26 | tok/s < 80 | Scale GPU budget +$5–10 |
-| March 26 | Tower of Hanoi parseability < 80% | Add few-shot examples; if still fails, add valid-move list to observations; if still fails, fall back to BlocksWorld |
-| March 27 | AUROC < 0.6 for both signals | Emergency: debug signals before Phase 1 |
-| April 2 (Phase 1 data) | ECE > 0.4 for both signals | H1 null result; reframe Discussion |
-| April 2 | No temporal degradation | H3 null result; valid if reported fully |
-| April 9 (Phase 2 data) | Adaptive shows no advantage | H2 null; "SLMs lack sufficient metacognitive signal quality" |
-| April 20 (final week) | Any chapter undrafted | Prioritize missing chapter over revision |
+| March 25 (GPU pilot) | ≥8/10 checks pass | Proceed |
+| March 25 | tok/s < 80 | Scale GPU budget +$5–10 |
+| March 25 | Tower of Hanoi parseability < 80% | Add few-shot examples; if still fails, add valid-move list to observations; if still fails, fall back to BlocksWorld |
+| March 26 | AUROC < 0.6 for both signals | Emergency: debug signals before Phase 1 |
+| April 1 (Phase 1 data) | ECE > 0.4 for both signals | H1 null result; reframe Discussion |
+| April 1 | No temporal degradation | H3 null result; valid if reported fully |
+| April 8 (Phase 2 data) | Adaptive shows no advantage | H2 null; "SLMs lack sufficient metacognitive signal quality" |
+| April 19 (final week) | Any chapter undrafted | Prioritize missing chapter over revision |
 
 ---
 
