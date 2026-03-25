@@ -62,6 +62,7 @@ def test_env_optimal_move_tracked():
     src, dst = task["optimal_solution"][0]
     env.step(f"Move disk from {src} to {dst}")
     assert env.step_results[-1]["correctness"] == "optimal"
+    assert isinstance(env.step_results[-1].get("optimal_moves_remaining"), int)
 
 
 def test_env_legal_move_tracked():
