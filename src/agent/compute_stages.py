@@ -12,24 +12,24 @@ def c0_step(
     observation: str,
     history: list[str],
     model: Any,
-) -> tuple[str, dict[str, float] | None, float | None, int]:
+) -> tuple[str, dict[str, float] | None, float | None, int, int]:
     """
     C0: One action call with logprobs (TLE); optional VC prompt.
-    Returns (action_text, tle_dict, vc_or_none, tokens_used).
+    Returns (action_text, tle_dict, vc_or_none, tokens_used, lm_calls_this_step).
     """
     prompt = "\n".join(history + [observation]) if history else observation
     text, logprobs = model.generate(prompt, logprobs=True)
     tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
     vc = verbalized_confidence.parse_confidence(text)
     tokens_used = len(logprobs) if logprobs else 0
-    return text.strip(), tle, vc, tokens_used
+    return text.strip(), tle, vc, tokens_used, 1
 
 
 def c1_step(
     observation: str,
     history: list[str],
     model: Any,
-) -> tuple[str, dict[str, float] | None, float | None, int]:
+) -> tuple[str, dict[str, float] | None, float | None, int, int]:
     """
     C1: CoT generation + self-verification (two calls conceptually).
     Stub: single call returning action and optional TLE/VC.
@@ -39,7 +39,8 @@ def c1_step(
     tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
     vc = verbalized_confidence.parse_confidence(text)
     tokens_used = len(logprobs) if logprobs else 0
-    return text.strip(), tle, vc, tokens_used
+    # NOTE: current C1 stub is a single model call; when implemented as CoT + verify, set this to 2.
+    return text.strip(), tle, vc, tokens_used, 1
 
 
 def _majority_vote(actions: list[str]) -> str:
@@ -60,7 +61,7 @@ def c2_step(
     history: list[str],
     model: Any,
     n_samples: int = 3,
-) -> tuple[str, dict[str, float] | None, float | None, int]:
+) -> tuple[str, dict[str, float] | None, float | None, int, int]:
     """
     C2: Best-of-N (e.g. 3) samples + majority vote.
     Generates n_samples times, then picks action by majority vote; returns TLE/VC from winning sample.
@@ -85,7 +86,7 @@ def c2_step(
         text, logprobs = samples[0]
         tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
         vc = verbalized_confidence.parse_confidence(text)
-    return winner, tle, vc, total_tokens
+    return winner, tle, vc, total_tokens, int(n_samples)
 
 
 def get_step_fn(stage: str):

@@ -27,10 +27,38 @@ def test_e2e_produces_episode_dict_with_required_keys(mock_model, temp_results_d
     env = TextWorldEnv(max_steps=5)
     step_fn = get_step_fn("C0")
     result = run_episode(env, mock_model, "C0", step_fn=step_fn, max_steps=5)
-    required = {"steps", "task_success", "lm_calls", "tokens", "wall_clock_time"}
+    required = {
+        "steps",
+        "task_success",
+        "lm_calls",
+        "total_lm_calls",
+        "tokens",
+        "total_tokens_generated",
+        "normalized_compute_cost",
+        "efficiency_score",
+        "wall_clock_time",
+        "timestamp_utc",
+        "steps_detail",
+    }
     for k in required:
         assert k in result, f"missing key {k}"
     assert "tle_per_step" in result or "vc_per_step" in result
+    assert isinstance(result["steps_detail"], list)
+    if result["steps_detail"]:
+        sd = result["steps_detail"][0]
+        for k in (
+            "step_index",
+            "compute_stage",
+            "action",
+            "tokens_generated",
+            "lm_calls_this_step",
+            "step_wall_time_s",
+            "tle",
+            "vc",
+            "correctness",
+            "observation_length_chars",
+        ):
+            assert k in sd, f"missing step key {k}"
 
 
 def test_e2e_mini_pipeline_6_episodes(mock_model, temp_results_dir):
@@ -57,9 +85,15 @@ def test_e2e_mini_pipeline_6_episodes(mock_model, temp_results_dir):
                 "steps": result["steps"],
                 "lm_calls": result["lm_calls"],
                 "tokens": result["tokens"],
+                "total_lm_calls": result["total_lm_calls"],
+                "total_tokens_generated": result["total_tokens_generated"],
+                "normalized_compute_cost": result["normalized_compute_cost"],
+                "efficiency_score": result["efficiency_score"],
+                "timestamp_utc": result["timestamp_utc"],
                 "wall_clock_time": result["wall_clock_time"],
                 "tle_per_step": result.get("tle_per_step"),
                 "vc_per_step": result.get("vc_per_step"),
+                "steps_detail": result.get("steps_detail"),
             }
             logger.log(ep_id, data)
     files = list(temp_results_dir.glob("*.json"))
