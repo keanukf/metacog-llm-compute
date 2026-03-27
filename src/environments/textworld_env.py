@@ -88,20 +88,34 @@ def _action_in_admissible(action: str, admissible: Any) -> tuple[str | None, boo
     return parsed, False
 
 
+def _experiment_meta_sidecar_path(game_path: Path) -> Path:
+    """Experiment metadata lives in ``{stem}.meta.json`` (not ``{stem}.json``, which is TextWorld's Game dump)."""
+    return game_path.parent / f"{game_path.stem}.meta.json"
+
+
 def _load_sidecar(game_file: str | None) -> dict[str, Any] | None:
     if not game_file:
         return None
     p = Path(game_file)
-    sidecar = p.with_suffix(".json")
-    if not sidecar.exists():
-        return None
-    try:
-        with open(sidecar) as f:
-            data = json.load(f)
-        if isinstance(data, dict):
-            return data
-    except Exception:
-        return None
+    meta = _experiment_meta_sidecar_path(p)
+    if meta.exists():
+        try:
+            with open(meta) as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            return None
+    # Legacy: experiment sidecar used to overwrite ``{stem}.json`` (wrong — broke TextWorld's Game.load).
+    legacy = p.with_suffix(".json")
+    if legacy.exists():
+        try:
+            with open(legacy) as f:
+                data = json.load(f)
+            if isinstance(data, dict) and "generation_parameters" in data:
+                return data
+        except Exception:
+            return None
     return None
 
 
@@ -139,7 +153,6 @@ class TextWorldEnv:
 
     def _init_gym_env(self) -> None:
         try:
-            import gym  # noqa: F401
             import textworld.gym
             try:
                 from textworld import EnvInfos
@@ -157,7 +170,7 @@ class TextWorldEnv:
                     max_episode_steps=self._max_steps,
                     name=f"tw_{id(self)}",
                 )
-            self._gym_env = gym.make(env_id)
+            self._gym_env = textworld.gym.make(env_id)
         except Exception:
             self._use_real = False
             self._gym_env = None

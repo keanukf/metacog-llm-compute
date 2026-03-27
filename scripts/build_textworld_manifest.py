@@ -42,7 +42,7 @@ def main() -> None:
     parser.add_argument(
         "--dataset-dir",
         default="data/tasks/textworld",
-        help="Directory containing textworld_*.z8 (or legacy *.ulx) + matching .json sidecars",
+        help="Directory containing textworld_*.z8 (or legacy *.ulx) + matching .meta.json sidecars",
     )
     parser.add_argument("--holdout-count", type=int, default=5, help="Number of held-out instances")
     parser.add_argument(
@@ -68,9 +68,26 @@ def main() -> None:
             idx = int(game_file.stem.split("_")[-1])
         except Exception as e:
             raise ValueError(f"Unexpected file naming: {game_file.name}") from e
-        sidecar_file = game_file.with_suffix(".json")
-        if not sidecar_file.exists():
-            raise FileNotFoundError(f"Missing sidecar for {game_file.name}: {sidecar_file.name}")
+        meta_path = game_file.parent / f"{game_file.stem}.meta.json"
+        if meta_path.exists():
+            sidecar_file = meta_path
+        else:
+            # Legacy layout: experiment metadata was written to ``{stem}.json`` (overwrote Game JSON — avoid).
+            legacy = game_file.with_suffix(".json")
+            if not legacy.exists():
+                raise FileNotFoundError(
+                    f"Missing experiment sidecar for {game_file.name}: "
+                    f"expected {meta_path.name} (or legacy {legacy.name})"
+                )
+            with open(legacy) as f:
+                probe = json.load(f)
+            if not isinstance(probe, dict) or "generation_parameters" not in probe:
+                raise FileNotFoundError(
+                    f"Missing {meta_path.name} for {game_file.name}. "
+                    "If you only have TextWorld's Game .json, regenerate with "
+                    "`scripts/generate_textworld_games.py` so .meta.json is written."
+                )
+            sidecar_file = legacy
         sidecar = _load_sidecar(sidecar_file)
         expected_steps = sidecar.get("expected_step_count")
         entry = {

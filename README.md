@@ -229,15 +229,15 @@ Or use `scp`. Then run analysis locally (e.g. ECE on `pilot_calibration.json` vi
 
 ## TextWorld Cooking dataset (thesis exploration domain)
 
-Core experiments use **TextWorld Cooking** (partial observability / exploration) and **Tower of Hanoi** (full observability / planning). TextWorld games are **not** bundled inside the library: you **generate** `.ulx` files and load them by path. This repo builds a reproducible dataset under `data/tasks/textworld/`.
+Core experiments use **TextWorld Cooking** (partial observability / exploration) and **Tower of Hanoi** (full observability / planning). TextWorld games are **not** bundled inside the library: you **generate** compiled story files (Inform 7 **`.z8`**, or legacy **`.ulx`**) and load them by path. This repo builds a reproducible dataset under `data/tasks/textworld/`.
 
 ### Generation (`scripts/generate_textworld_games.py`)
 
 Generates TextWorld Cooking games via `python -m textworld.challenges.tw_cooking` with:
 
 - **CLI:** `--num-rooms`, `--num-ingredients`, `--cut`, `--cook`, `--open`, `--num-instances`, `--seed` (master seed; each instance gets a deterministic sub-seed).
-- **Output:** `textworld_{i}.ulx` plus `textworld_{i}.json` sidecar in `--output-dir` (default `data/tasks/textworld/`).
-- **Sidecar JSON** includes generation parameters, seeds, walkthrough from game metadata (reference/debugging), entity list, `max_score`, and expected step count (walkthrough length).
+- **Output:** `textworld_{i}.z8`, TextWorld’s **serialized game** `textworld_{i}.json` (required at play time — do not overwrite), and experiment metadata **`textworld_{i}.meta.json`** in `--output-dir` (default `data/tasks/textworld/`).
+- **`.meta.json`** includes generation parameters, seeds, walkthrough from game metadata (reference/debugging), entity list, `max_score`, and expected step count (walkthrough length).
 - **Generation-time** `max_steps` is **50** (generous engine limit). The **agent** caps episodes via `episode.max_steps_per_episode` in config (e.g. 20–25); do not rely on the game file alone for the experiment cap.
 
 Optional: `--write-manifest` writes `difficulty_manifest.json` in the output directory (useful after the final 50-instance run).
@@ -253,7 +253,7 @@ python scripts/generate_textworld_games.py \
   --num-instances 3
 ```
 
-This writes `data/tasks/textworld/textworld_0.ulx` … `textworld_2.ulx` and matching `.json` sidecars. Add `--cut` for cutting, or omit `--cook` for a take-only style run, depending on the sweep cell you are testing.
+This writes `data/tasks/textworld/textworld_0.z8` … `textworld_2.z8`, matching `textworld_{i}.json` (game dump) and `textworld_{i}.meta.json`. Add `--cut` for cutting, or omit `--cook` for a take-only style run, depending on the sweep cell you are testing.
 
 ### Difficulty sweep (`scripts/sweep_textworld_difficulty.py`)
 
@@ -261,7 +261,15 @@ Runs a grid over rooms `{3,5,7}` × ingredients `{1,2,3}` × operations `{take-o
 
 ### Manual play (`scripts/play_textworld.py`)
 
-Interactive terminal play for a single `.ulx`: observations, score vs max score, and termination as `YOU WON` / `YOU LOST` / `MAX STEPS REACHED`. Use this to sanity-check generated games before long sweeps.
+Interactive terminal play for a single compiled story (`.z8` or `.ulx`): observations, score vs max score, and termination as `YOU WON` / `YOU LOST` / `MAX STEPS REACHED`. Use this to sanity-check generated games before long sweeps. Requires `textworld` (same stack as generation).
+
+Example (from repo root; path matches instances produced by `generate_textworld_games.py`):
+
+```bash
+python scripts/play_textworld.py data/tasks/textworld/textworld_0.z8
+```
+
+Use `--max-steps N` to change the interactive cap for the session (default 50).
 
 ### Final manifest (`scripts/build_textworld_manifest.py`)
 
@@ -269,13 +277,13 @@ After generating the **50** immutable instances with chosen parameters, build **
 
 ### `TextWorldEnv` and step correctness
 
-`src/environments/textworld_env.py` loads a `.ulx` and, when present, the **same-stem `.json` sidecar** (walkthrough kept for reference only). Step labels use the **game engine**, not walkthrough matching (Cooking allows multiple valid orderings):
+`src/environments/textworld_env.py` loads a `.z8`/`.ulx` and, when present, the **`textworld_{i}.meta.json` sidecar** (walkthrough kept for reference only; legacy `textworld_{i}.json` experiment-only files are still detected if they contain `generation_parameters`). Step labels use the **game engine**, not walkthrough matching (Cooking allows multiple valid orderings):
 
 - **`optimal`:** score increased after the step.
 - **`legal`:** admissible / no parser error, score unchanged.
 - **`illegal`:** unrecognized command or error feedback.
 
-Phase runners resolve games from `paths.tasks_dir` in `experiment_core.yaml`: either `data/tasks/textworld_{i}.ulx` or **`data/tasks/textworld/textworld_{i}.ulx`** (see `src/utils/experiment_env.py`).
+Phase runners resolve games from `paths.tasks_dir` in `experiment_core.yaml`: either `data/tasks/textworld_{i}.z8`/`.ulx` or **`data/tasks/textworld/textworld_{i}.z8`/`.ulx`** (see `src/utils/experiment_env.py`).
 
 ---
 
@@ -298,7 +306,7 @@ Shared fixtures (mock model, mock env, sample episode data, temp dir) are in `te
 
 - **Model:** `src/utils/model_wrapper.py` provides `VLLMWrapper` and `HFWrapper`; `create_wrapper(backend, model_name, dtype)` returns the right wrapper. Pilot uses it when a real backend is requested; CUDA mode fails fast if the wrapper cannot load.
 - **Pilot script:** `run_pilot.py` runs inference benchmarks, real-output TLE/VC checks (when not mock), Tower of Hanoi parseability, TextWorld e2e, and writes reports. See `configs/pilot.yaml`.
-- **TextWorld:** `TextWorldEnv` loads real `.ulx` games via `textworld.gym` when the file exists; loads optional `.json` sidecars; score-based step correctness for real games. Generate Cooking datasets with `scripts/generate_textworld_games.py` into `data/tasks/textworld/`. See **TextWorld Cooking dataset** above.
+- **TextWorld:** `TextWorldEnv` loads real `.z8`/`.ulx` games via `textworld.gym` when the file exists; loads optional `.meta.json` sidecars; score-based step correctness for real games. Generate Cooking datasets with `scripts/generate_textworld_games.py` into `data/tasks/textworld/`. See **TextWorld Cooking dataset** above.
 - **Reports:** Pilot writes `pilot_cost_validation.md` and `pilot_feasibility_report.md` when paths are set in config.
 - **Phase 1 / 2:** `run_phase1.py` and `run_phase2.py` support checkpointing and `--resume`; use `--real` for GPU/vLLM runs.
 
@@ -316,7 +324,7 @@ src/
   utils/          # logging_utils, model_wrapper, checkpointing
 scripts/          # run_pilot/phase1/phase2, setup_cloud.sh, generate_textworld_games,
                   # sweep_textworld_difficulty, play_textworld, build_textworld_manifest
-data/tasks/       # e.g. data/tasks/textworld/ — TextWorld Cooking .ulx + .json sidecars, difficulty_manifest.json
+data/tasks/       # e.g. data/tasks/textworld/ — TextWorld Cooking .z8 + Game .json + .meta.json, difficulty_manifest.json
 data/results/     # pilot_benchmark.json, pilot_calibration.json, pilot_*.md, phase1/2 episode JSONs
 tests/            # conftest.py, test_01_* … test_06_*
 ```

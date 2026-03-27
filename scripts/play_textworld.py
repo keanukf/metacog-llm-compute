@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Play a TextWorld .ulx game interactively in the terminal.
+Play a TextWorld story file (.z8, .z5, or legacy .ulx) interactively in the terminal.
 """
 from __future__ import annotations
 
@@ -60,8 +60,8 @@ def _print_status(info: dict[str, Any], fallback_score: float | None) -> float |
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Play a TextWorld .ulx game interactively.")
-    parser.add_argument("game_file", help="Path to .ulx file")
+    parser = argparse.ArgumentParser(description="Play a TextWorld story file interactively.")
+    parser.add_argument("game_file", help="Path to compiled game (.z8, .z5, … or .ulx)")
     parser.add_argument("--max-steps", type=int, default=50, help="Interactive cap for this debug session")
     args = parser.parse_args()
 
@@ -70,11 +70,10 @@ def main() -> None:
         raise FileNotFoundError(f"Game file not found: {game_file}")
 
     try:
-        import gym  # noqa: F401
         import textworld.gym
         from textworld import EnvInfos
     except Exception as e:
-        raise RuntimeError("textworld + gym are required. Install `textworld` and `gym`.") from e
+        raise RuntimeError("textworld is required. Install `textworld`.") from e
 
     infos = EnvInfos(admissible_commands=True, feedback=True, score=True)
     env_id = textworld.gym.register_game(
@@ -83,7 +82,8 @@ def main() -> None:
         name=f"play_{game_file.stem}",
         request_infos=infos,
     )
-    env = gym.make(env_id)
+    # register_game() fills textworld.gym's registry; OpenAI gym.make() does not see it.
+    env = textworld.gym.make(env_id)
 
     obs, info = _unpack_reset(env.reset())
     print(obs)

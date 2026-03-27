@@ -2,10 +2,10 @@
 """
 Generate TextWorld Cooking games and metadata sidecars for thesis experiments.
 
-This script creates one compiled story file (``.z8`` with TextWorld 1.x / Inform 7)
-plus one `.json` sidecar per instance.
-The sidecar captures generation settings, deterministic per-instance seed, and
-game metadata (including walkthrough when available).
+This script creates one compiled story file (``.z8`` with TextWorld 1.x / Inform 7),
+the companion TextWorld ``.json`` game file (``Game.serialize``, required at play time),
+plus one ``.meta.json`` experiment sidecar per instance (generation settings, seeds,
+walkthrough summary — must not overwrite the ``.json``).
 """
 from __future__ import annotations
 
@@ -209,7 +209,7 @@ def _build_manifest(
         entry = {
             "instance_id": idx,
             "game_file": r["game_file"],
-            "sidecar_file": str(out_dir / f"textworld_{idx}.json"),
+            "sidecar_file": str(out_dir / f"textworld_{idx}.meta.json"),
             "generation_parameters": r["generation_parameters"],
             "master_seed": r["master_seed"],
             "game_seed": r["game_seed"],
@@ -232,7 +232,9 @@ def _build_manifest(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate TextWorld Cooking dataset (.z8 + .json sidecars).")
+    parser = argparse.ArgumentParser(
+        description="Generate TextWorld Cooking dataset (.z8 + Game .json + .meta.json sidecars)."
+    )
     parser.add_argument("--output-dir", default="data/tasks/textworld", help="Directory for generated game files")
     parser.add_argument("--num-rooms", type=int, required=True, help="Map size (rooms)")
     parser.add_argument("--num-ingredients", type=int, required=True, help="Recipe complexity")
@@ -268,7 +270,7 @@ def main() -> None:
         instance_id = args.start_index + offset
         game_seed = _instance_seed(args.seed, instance_id)
         game_file = out_dir / f"textworld_{instance_id}.z8"
-        sidecar_file = out_dir / f"textworld_{instance_id}.json"
+        sidecar_file = out_dir / f"textworld_{instance_id}.meta.json"
         try:
             _run_generate_command(
                 output_file=game_file,
