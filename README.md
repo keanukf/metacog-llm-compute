@@ -24,12 +24,12 @@ Run scripts from the **repository root** so imports resolve (see `run_pilot.py` 
 | | **Unit tests (pytest)** | **Pilot (run_pilot.py)** |
 |---|-------------------------|---------------------------|
 | **Purpose** | Check that **code and interfaces** are correct: signals, agent loop, logging, calibration logic. | Check **setup and hardware** in a small end-to-end run: real model, throughput, full pipeline. |
-| **Runs** | Pytest suite with **mocks** (no model, no GPU). | One script that runs Tests 1–6 in sequence; **pilot mode** chooses mock, hf, CUDA, litellm, or lmstudio. |
-| **Where** | Local or on pod; **no GPU required**. | **Pilot 0** (mock): anywhere. **Pilot 1** (hf): Mac with Apple Silicon (HF+MPS). **Pilot 2** (CUDA): e.g. RunPod. **Pilot 3** (litellm): LiteLLM or other OpenAI-compatible proxy. **Pilot 4** (lmstudio): LM Studio server on LAN or localhost. |
-| **When** | After every code change; in CI. | Pilot 0: quick local sanity. Pilot 1: test HF+MPS on Mac before buying GPU. Pilot 2: confirm GPU setup. Pilot 3: remote proxy. Pilot 4: local LM Studio (often faster than raw HF on the same Mac). |
+| **Runs** | Pytest suite with **mocks** (no model, no GPU). | One script that runs Tests 1–6 in sequence; **pilot mode** chooses mock, hf, CUDA, or lmstudio. |
+| **Where** | Local or on pod; **no GPU required**. | **Pilot 0** (mock): anywhere. **Pilot 1** (hf): Mac with Apple Silicon (HF+MPS). **Pilot 2** (CUDA): e.g. RunPod. **Pilot 3** (lmstudio): LM Studio server on LAN or localhost. |
+| **When** | After every code change; in CI. | Pilot 0: quick local sanity. Pilot 1: test HF+MPS on Mac before buying GPU. Pilot 2: confirm GPU setup. Pilot 3: LM Studio (often faster than raw HF on the same Mac). |
 | **Output** | Pass/fail per test. | `pilot_benchmark.json`, `pilot_calibration.json`, and optionally `pilot_cost_validation.md`, `pilot_feasibility_report.md`. |
 
-**Summary:** Unit tests validate *logic*; the pilot validates *environment and hardware* in a small run. Pilot levels: **mock** (no real model), **hf** (HuggingFace + MPS on Apple Silicon; CLI still accepts deprecated **m1**), **cuda** (vLLM on GPU), **litellm** (OpenAI-compatible proxy), **lmstudio** (LM Studio local OpenAI API, e.g. `http://host:1234/v1`).
+**Summary:** Unit tests validate *logic*; the pilot validates *environment and hardware* in a small run. Pilot levels: **mock** (no real model), **hf** (HuggingFace + MPS on Apple Silicon; CLI still accepts deprecated **m1**), **cuda** (vLLM on GPU), **lmstudio** (LM Studio local OpenAI API, e.g. `http://host:1234/v1`).
 
 ---
 
@@ -62,8 +62,7 @@ The pilot runs Tests 1–6 in sequence and writes benchmark and calibration outp
 | **Pilot 0** | `--pilot-mode mock` (default) | None | Mock | Quick local sanity; CI; no model download. |
 | **Pilot 1** | `--pilot-mode hf` | Mac M1/M2 (Apple Silicon) | HuggingFace + MPS | Test full pipeline locally before buying GPU. |
 | **Pilot 2** | `--pilot-mode cuda` | NVIDIA GPU (e.g. RunPod) | vLLM (or HF) | Validate GPU setup and throughput before Phase 1/2. |
-| **Pilot 3** | `--pilot-mode litellm` | Any (remote API) | OpenAI-compatible HTTP (e.g. LiteLLM) | Custom base URL; set `LITELLM_BASE_URL` / config. |
-| **Pilot 4** | `--pilot-mode lmstudio` | Any (LM Studio host) | Same HTTP client as litellm | Local or LAN LM Studio (`LM_STUDIO_BASE_URL`, default `http://localhost:1234/v1`). |
+| **Pilot 3** | `--pilot-mode lmstudio` | LM Studio host (LAN or localhost) | OpenAI-compatible HTTP | Local or LAN LM Studio (`LM_STUDIO_BASE_URL`, default `http://localhost:1234/v1`). |
 
 ### Pilot 0 — Mock (default)
 
@@ -97,17 +96,7 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/result
 
 Or use `--real` to auto-detect: if CUDA is available → cuda; else if MPS (Mac) → hf; else mock.
 
-### Pilot 3 — LiteLLM proxy
-
-Use a remote OpenAI-compatible endpoint (e.g. LiteLLM at http://litellm.home/). No local GPU; model runs on the proxy. Set `model.name` in config to the model ID the proxy expects (e.g. `Qwen/Qwen2.5-3B-Instruct` or a proxy alias):
-
-```bash
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode litellm
-```
-
-Override the base URL via config `inference.litellm_base_url` or env `LITELLM_BASE_URL` (host root or `…/v1` — duplicates are normalized). For auth, set `LITELLM_API_KEY` in the environment (or `inference.litellm_api_key` in config); LiteLLM typically expects keys starting with `sk-`. Requires the `openai` package.
-
-### Pilot 4 — LM Studio
+### Pilot 3 — LM Studio
 
 LM Studio exposes an OpenAI-compatible API (often `http://localhost:1234/v1` or a LAN address). Set `model.name` to the **exact model identifier** shown in LM Studio for API requests:
 
@@ -116,7 +105,7 @@ export LM_STUDIO_BASE_URL="http://192.168.178.173:1234/v1"
 python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode lmstudio
 ```
 
-Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; default API key is `lm-studio` if unset (`LM_STUDIO_API_KEY`).
+Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; default API key is `lm-studio` if unset (`LM_STUDIO_API_KEY`). Requires the `openai` package.
 
 - **Test 1:** Real prompts → measured tokens/s, latency, VRAM (CUDA only).
 - **Tests 2–3:** With a real model, TLE and VC are evaluated on **real generations**; in mock mode they use synthetic/static checks.
@@ -125,7 +114,7 @@ Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; def
 - **Test 5:** Same model runs the e2e TextWorld episode loop.
 - **Test 6:** ECE and logging on the episode data.
 
-After a non-mock pilot you get realistic `tokens_per_sec` (for that device/endpoint) in `pilot_benchmark.json`. The benchmark JSON includes `"pilot_mode": "mock" | "hf" | "cuda" | "litellm" | "lmstudio"` so you know which run it was.
+After a non-mock pilot you get realistic `tokens_per_sec` (for that device/endpoint) in `pilot_benchmark.json`. The benchmark JSON includes `"pilot_mode": "mock" | "hf" | "cuda" | "lmstudio"` so you know which run it was.
 
 ---
 
@@ -304,7 +293,7 @@ Shared fixtures (mock model, mock env, sample episode data, temp dir) are in `te
 
 ## Current implementation (high level)
 
-- **Model:** `src/utils/model_wrapper.py` provides `VLLMWrapper` and `HFWrapper`; `create_wrapper(backend, model_name, dtype)` returns the right wrapper. Pilot uses it when a real backend is requested; CUDA mode fails fast if the wrapper cannot load.
+- **Model:** `src/utils/model_wrapper.py` provides `VLLMWrapper`, `HFWrapper`, and `LMStudioWrapper` (OpenAI HTTP for LM Studio); `create_wrapper(backend, model_name, dtype)` returns the right wrapper. Pilot uses it when a real backend is requested; CUDA mode fails fast if the wrapper cannot load.
 - **Pilot script:** `run_pilot.py` runs inference benchmarks, real-output TLE/VC checks (when not mock), Tower of Hanoi parseability, TextWorld e2e, and writes reports. See `configs/pilot.yaml`.
 - **TextWorld:** `TextWorldEnv` loads real `.z8`/`.ulx` games via `textworld.gym` when the file exists; loads optional `.meta.json` sidecars; score-based step correctness for real games. Generate Cooking datasets with `scripts/generate_textworld_games.py` into `data/tasks/textworld/`. See **TextWorld Cooking dataset** above.
 - **Reports:** Pilot writes `pilot_cost_validation.md` and `pilot_feasibility_report.md` when paths are set in config.

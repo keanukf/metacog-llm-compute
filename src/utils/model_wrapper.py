@@ -266,16 +266,16 @@ class HFWrapper(ModelWrapper):
             return text, None
 
 
-class LiteLLMWrapper(ModelWrapper):
+class LMStudioWrapper(ModelWrapper):
     """
-    LiteLLM proxy / OpenAI-compatible API. No local GPU; calls base_url (e.g. http://litellm.home/).
-    API key: pass api_key, or set LITELLM_API_KEY in the environment (LiteLLM often expects keys starting with sk-).
+    LM Studio (or compatible) OpenAI HTTP API. No local model load; calls base_url (e.g. http://host:1234/v1).
+    API key: pass api_key, or set LM_STUDIO_API_KEY (default placeholder used by LM Studio if unset).
     """
 
     def __init__(
         self,
         model_name: str,
-        base_url: str = "http://litellm.home/",
+        base_url: str = "http://localhost:1234/v1",
         api_key: str | None = None,
         **kwargs: Any,
     ) -> None:
@@ -292,10 +292,10 @@ class LiteLLMWrapper(ModelWrapper):
             from openai import OpenAI
         except ImportError as e:
             raise RuntimeError(
-                "LiteLLMWrapper requires the openai package. Install with: pip install openai"
+                "LMStudioWrapper requires the openai package. Install with: pip install openai"
             ) from e
         import os
-        key = self._api_key or os.environ.get("LITELLM_API_KEY") or "dummy"
+        key = self._api_key or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
         self._client = OpenAI(base_url=normalize_openai_base_url(self._base_url), api_key=key)
         return self._client
 
@@ -347,17 +347,17 @@ def create_wrapper(
     Factory: create wrapper by backend name.
     - backend "vllm" + model_name -> VLLMWrapper (requires CUDA).
     - backend "hf" + model_name -> HFWrapper; use device="mps" for Apple Silicon, "cuda" or None for auto.
-    - backend "litellm" + model_name -> LiteLLMWrapper (OpenAI-compatible API at base_url).
+    - backend "lmstudio" + model_name -> LMStudioWrapper (OpenAI-compatible API at base_url).
     - Otherwise returns a base ModelWrapper (will raise on generate); use for mocks in tests.
     """
     if model_name and backend == "vllm":
         return VLLMWrapper(model_name=model_name, dtype=dtype, **kwargs)
     if model_name and backend == "hf":
         return HFWrapper(model_name=model_name, dtype=dtype, device=device, **kwargs)
-    if model_name and backend == "litellm":
-        url = base_url or kwargs.get("litellm_base_url") or "http://litellm.home/"
-        api_key = kwargs.get("litellm_api_key") or kwargs.get("api_key")
-        rest = {k: v for k, v in kwargs.items() if k not in ("litellm_base_url", "litellm_api_key", "api_key")}
-        return LiteLLMWrapper(model_name=model_name, base_url=url, api_key=api_key, **rest)
+    if model_name and backend == "lmstudio":
+        url = base_url or kwargs.get("lmstudio_base_url") or "http://localhost:1234/v1"
+        api_key = kwargs.get("lmstudio_api_key") or kwargs.get("api_key")
+        rest = {k: v for k, v in kwargs.items() if k not in ("lmstudio_base_url", "lmstudio_api_key", "api_key")}
+        return LMStudioWrapper(model_name=model_name, base_url=url, api_key=api_key, **rest)
     # Stub for tests / no model configured
     return ModelWrapper()

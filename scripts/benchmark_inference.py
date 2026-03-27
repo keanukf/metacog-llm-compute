@@ -47,7 +47,7 @@ def main() -> None:
         "--pilot-mode",
         type=run_pilot.parse_pilot_mode_arg,
         default="mock",
-        help="mock | hf | m1 (deprecated=hf) | cuda | litellm | lmstudio",
+        help="mock | hf | m1 (deprecated=hf) | cuda | lmstudio",
     )
     parser.add_argument(
         "--real",

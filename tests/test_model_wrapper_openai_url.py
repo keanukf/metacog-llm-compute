@@ -1,4 +1,4 @@
-"""OpenAI client base URL normalization (litellm / lmstudio) and logprob parsing."""
+"""OpenAI client base URL normalization (LM Studio / OpenAI-compatible) and logprob parsing."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -7,7 +7,7 @@ from src.utils.model_wrapper import _openai_completion_logprobs_to_list, normali
 
 
 def test_normalize_openai_base_url_appends_v1():
-    assert normalize_openai_base_url("http://litellm.home/") == "http://litellm.home/v1"
+    assert normalize_openai_base_url("http://192.168.1.10:1234/") == "http://192.168.1.10:1234/v1"
     assert normalize_openai_base_url("http://192.168.178.173:1234") == "http://192.168.178.173:1234/v1"
 
 

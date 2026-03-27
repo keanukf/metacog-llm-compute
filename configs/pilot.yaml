@@ -12,10 +12,6 @@ inference:
   temperature: 0.3
   max_tokens: 256
   avg_tokens_per_call: 200  # input ~120, output ~80
-  # For pilot-mode litellm: OpenAI-compatible API (default http://litellm.home/)
-  # Prefer LITELLM_API_KEY in env to avoid storing secrets in config.
-  # litellm_base_url: "http://litellm.home/"
-  # litellm_api_key: "sk-..."   # or set env LITELLM_API_KEY
   # For pilot-mode lmstudio: LM Studio local server (OpenAI-compatible). URL may be …/v1 or host:port only.
   # lmstudio_base_url: "http://192.168.178.173:1234/v1"
   # lmstudio_api_key: "lm-studio"   # or set env LM_STUDIO_API_KEY / LM_STUDIO_BASE_URL
