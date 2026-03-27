@@ -2,7 +2,8 @@
 """
 Generate TextWorld Cooking games and metadata sidecars for thesis experiments.
 
-This script creates one `.ulx` game file plus one `.json` sidecar per instance.
+This script creates one compiled story file (``.z8`` with TextWorld 1.x / Inform 7)
+plus one `.json` sidecar per instance.
 The sidecar captures generation settings, deterministic per-instance seed, and
 game metadata (including walkthrough when available).
 """
@@ -11,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import random
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -33,6 +33,17 @@ def _instance_seed(master_seed: int, idx: int) -> int:
     return int(value)
 
 
+def _num_rooms_to_go(num_rooms: int) -> int:
+    """Map ``--num-rooms`` to TextWorld Cooking ``go`` presets (1, 6, 9, or 12)."""
+    if num_rooms <= 1:
+        return 1
+    if num_rooms <= 6:
+        return 6
+    if num_rooms <= 9:
+        return 9
+    return 12
+
+
 def _run_generate_command(
     *,
     output_file: Path,
@@ -44,38 +55,45 @@ def _run_generate_command(
     open_: bool,
 ) -> None:
     """
-    Generate one cooking game via the textworld challenge CLI.
+    Generate one cooking game via the registered ``tw-cooking`` challenge (TextWorld 1.x).
 
-    The exact CLI flags differ slightly by textworld versions; this function
-    uses the canonical tw_cooking module entrypoint expected in recent versions.
+    Uses the Python API (``tw-make`` wraps the same). Inform 7 builds ``.z8`` story
+    files only; there is no ``python -m textworld.challenges.tw_cooking`` runner.
     """
-    cmd = [
-        sys.executable,
-        "-m",
-        "textworld.challenges.tw_cooking",
-        "--output",
-        str(output_file),
-        "--seed",
-        str(seed),
-        "--world-size",
-        str(num_rooms),
-        "--nb-ingredients",
-        str(num_ingredients),
-        "--max-steps",
-        "50",
-    ]
-    if cut:
-        cmd.append("--cut")
-    if cook:
-        cmd.append("--cook")
-    if open_:
-        cmd.append("--open")
-    subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=str(REPO_ROOT))
+    try:
+        import textworld
+        from textworld.challenges import CHALLENGES
+        from textworld.generator import compile_game
+    except ImportError as e:
+        raise RuntimeError("textworld is not installed.") from e
+
+    _, make_game, _ = CHALLENGES["tw-cooking"]
+    go = _num_rooms_to_go(num_rooms)
+    # recipe_seed must stay 0 unless ``take`` > 0 (shuffle-recipe path in tw-cooking).
+    settings: dict[str, Any] = {
+        "recipe": num_ingredients,
+        "take": 0,
+        "go": go,
+        "open": bool(open_),
+        "cook": bool(cook),
+        "cut": bool(cut),
+        "drop": False,
+        "recipe_seed": 0,
+        "split": None,
+    }
+    options = textworld.GameOptions()
+    options.seeds = seed
+    options.path = str(output_file.resolve())
+    options.file_ext = ".z8"
+    options.force_recompile = True
+
+    game = make_game(settings=settings, options=options)
+    compile_game(game, options)
 
 
 def _extract_game_metadata(game_file: Path) -> dict[str, Any]:
     """
-    Load a generated .ulx through textworld to recover metadata.
+    Load serialized game JSON written next to the compiled story file (``compile_game``).
 
     Returns a best-effort metadata dict and never raises.
     """
@@ -88,7 +106,11 @@ def _extract_game_metadata(game_file: Path) -> dict[str, Any]:
     try:
         from textworld import Game  # type: ignore
 
-        game = Game.load(str(game_file))
+        tw_json = game_file.with_suffix(".json")
+        if not tw_json.exists():
+            data["metadata_error"] = f"Missing companion Game JSON: {tw_json}"
+            return data
+        game = Game.load(str(tw_json))
         meta = getattr(game, "metadata", None) or {}
         walkthrough = meta.get("walkthrough") or []
         if not isinstance(walkthrough, list):
@@ -137,6 +159,7 @@ def _write_sidecar(
         "game_file": str(game_file),
         "generation_parameters": {
             "num_rooms": int(num_rooms),
+            "go_preset": _num_rooms_to_go(num_rooms),
             "num_ingredients": int(num_ingredients),
             "cut": bool(cut),
             "cook": bool(cook),
@@ -209,7 +232,7 @@ def _build_manifest(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate TextWorld Cooking dataset (.ulx + .json sidecars).")
+    parser = argparse.ArgumentParser(description="Generate TextWorld Cooking dataset (.z8 + .json sidecars).")
     parser.add_argument("--output-dir", default="data/tasks/textworld", help="Directory for generated game files")
     parser.add_argument("--num-rooms", type=int, required=True, help="Map size (rooms)")
     parser.add_argument("--num-ingredients", type=int, required=True, help="Recipe complexity")
@@ -244,7 +267,7 @@ def main() -> None:
     for offset in range(args.num_instances):
         instance_id = args.start_index + offset
         game_seed = _instance_seed(args.seed, instance_id)
-        game_file = out_dir / f"textworld_{instance_id}.ulx"
+        game_file = out_dir / f"textworld_{instance_id}.z8"
         sidecar_file = out_dir / f"textworld_{instance_id}.json"
         try:
             _run_generate_command(
@@ -256,10 +279,11 @@ def main() -> None:
                 cook=args.cook,
                 open_=args.open_,
             )
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        except Exception as e:
             msg = (
                 f"Could not generate {game_file.name}. "
-                "Ensure textworld is installed and tw_cooking module is available.\n"
+                "Requires textworld with Inform 7 (bundled) and the ``tw-cooking`` challenge. "
+                "See ``tw-make tw-cooking --help`` for constraints.\n"
                 f"Error: {type(e).__name__}: {e}"
             )
             raise RuntimeError(msg) from e

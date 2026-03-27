@@ -47,6 +47,8 @@ def make_experiment_env(
     if domain == "textworld":
         tasks_dir = Path(config.get("paths", {}).get("tasks_dir", "data/tasks"))
         candidate_paths = [
+            tasks_dir / f"textworld_{instance}.z8",
+            tasks_dir / "textworld" / f"textworld_{instance}.z8",
             tasks_dir / f"textworld_{instance}.ulx",
             tasks_dir / "textworld" / f"textworld_{instance}.ulx",
         ]

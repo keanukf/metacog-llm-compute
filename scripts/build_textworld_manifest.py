@@ -39,7 +39,11 @@ def _load_sidecar(path: Path) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build TextWorld difficulty_manifest.json with fixed holdout split.")
-    parser.add_argument("--dataset-dir", default="data/tasks/textworld", help="Directory containing textworld_*.ulx/.json pairs")
+    parser.add_argument(
+        "--dataset-dir",
+        default="data/tasks/textworld",
+        help="Directory containing textworld_*.z8 (or legacy *.ulx) + matching .json sidecars",
+    )
     parser.add_argument("--holdout-count", type=int, default=5, help="Number of held-out instances")
     parser.add_argument(
         "--holdout-policy",
@@ -50,9 +54,13 @@ def main() -> None:
     args = parser.parse_args()
 
     dataset_dir = _to_abs(args.dataset_dir)
-    game_files = sorted(dataset_dir.glob("textworld_*.ulx"))
+    game_files = sorted(dataset_dir.glob("textworld_*.z8"))
     if not game_files:
-        raise FileNotFoundError(f"No textworld_*.ulx files found in {dataset_dir}")
+        game_files = sorted(dataset_dir.glob("textworld_*.ulx"))
+    if not game_files:
+        raise FileNotFoundError(
+            f"No textworld_*.z8 or textworld_*.ulx files found in {dataset_dir}"
+        )
 
     entries: list[dict[str, Any]] = []
     for game_file in game_files:

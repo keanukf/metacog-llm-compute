@@ -54,7 +54,7 @@ def _generate_combo_games(
     files: list[Path] = []
     for i in range(num_instances):
         game_seed = _instance_seed(seed, i)
-        game_file = base_dir / f"textworld_{i}.ulx"
+        game_file = base_dir / f"textworld_{i}.z8"
         sidecar_file = base_dir / f"textworld_{i}.json"
         _run_generate_command(
             output_file=game_file,
