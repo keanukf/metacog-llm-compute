@@ -33,8 +33,8 @@ The second task domain is now **Tower of Hanoi** (text-based), replacing Delayed
 - Literature infrastructure: 700+ screened, 200+ relevant, Zotero sync, SQLite DB
 - Claim matrices: Ch2 (v3, 34 sources) and Ch3 (v1, 25 sources) structurally complete
 - Outline: detailed, narratively coherent, section IDs mapped
-- Experiment codebase: 21 passing tests (mocked), model wrappers (vLLM/HF/LiteLLM), full agent loop with C0/C1/C2, TLE and VC signal extraction, MLflow tracking, checkpointing, Phase 1 episode loop
-- Pilot script validated on M1 and LiteLLM (full run_pilot.py executed)
+- Experiment codebase: 21 passing tests (mocked), model wrappers (vLLM/HF/LM Studio), full agent loop with C0/C1/C2, TLE and VC signal extraction, MLflow tracking, checkpointing, Phase 1 episode loop
+- Pilot script validated on M1 and LM Studio (full run_pilot.py executed)
 - Design decisions locked: 2×3×2 factorial, step-level correctness, scope simplifications justified
 
 ### What is missing (ranked by criticality)

@@ -30,7 +30,7 @@ def load_config(config_path: str | Path) -> dict:
 
 
 def parse_pilot_mode_arg(value: str) -> str:
-    """CLI pilot mode: mock | hf | m1 (deprecated alias for hf) | cuda | litellm | lmstudio."""
+    """CLI pilot mode: mock | hf | m1 (deprecated alias for hf) | cuda | lmstudio."""
     v = (value or "mock").lower().strip()
     if v == "m1":
         warnings.warn(
@@ -39,10 +39,10 @@ def parse_pilot_mode_arg(value: str) -> str:
             stacklevel=2,
         )
         v = "hf"
-    allowed = frozenset({"mock", "hf", "cuda", "litellm", "lmstudio"})
+    allowed = frozenset({"mock", "hf", "cuda", "lmstudio"})
     if v not in allowed:
         raise argparse.ArgumentTypeError(
-            f"invalid pilot mode {value!r}; expected one of: mock, hf, m1, cuda, litellm, lmstudio"
+            f"invalid pilot mode {value!r}; expected one of: mock, hf, m1, cuda, lmstudio"
         )
     return v
 
@@ -51,7 +51,7 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
     """
     Create real model wrapper for the given pilot mode.
     mock -> None; hf -> HuggingFace on Apple Silicon (MPS); cuda -> vLLM (or inference.backend);
-    litellm -> OpenAI-compatible proxy; lmstudio -> LM Studio local server (OpenAI-compatible).
+    lmstudio -> LM Studio local server (OpenAI-compatible HTTP).
     """
     if pilot_mode == "mock":
         return None, None
@@ -67,19 +67,6 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
         if pilot_mode == "cuda":
             backend = config.get("inference", {}).get("backend", "vllm")
             return create_wrapper(backend=backend, model_name=model_name, dtype=dtype), None
-        if pilot_mode == "litellm":
-            inf = config.get("inference", {})
-            base_url = inf.get("litellm_base_url") or os.environ.get("LITELLM_BASE_URL", "http://litellm.home/")
-            api_key = inf.get("litellm_api_key") or os.environ.get("LITELLM_API_KEY")
-            return (
-                create_wrapper(
-                    backend="litellm",
-                    model_name=model_name,
-                    base_url=base_url,
-                    litellm_api_key=api_key,
-                ),
-                None,
-            )
         if pilot_mode == "lmstudio":
             inf = config.get("inference", {})
             base_url = inf.get("lmstudio_base_url") or os.environ.get(
@@ -88,10 +75,10 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
             api_key = inf.get("lmstudio_api_key") or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
             return (
                 create_wrapper(
-                    backend="litellm",
+                    backend="lmstudio",
                     model_name=model_name,
                     base_url=base_url,
-                    litellm_api_key=api_key,
+                    lmstudio_api_key=api_key,
                 ),
                 None,
             )
@@ -503,7 +490,7 @@ def run_test6_logging_analysis(episodes_data: list[dict], output_dir: Path) -> d
 
 
 def _resolve_pilot_mode(args) -> str:
-    """Resolve pilot mode. --real auto-detects hf vs cuda when mode is mock; lmstudio/litellm stay explicit."""
+    """Resolve pilot mode. --real auto-detects hf vs cuda when mode is mock; lmstudio stays explicit."""
     raw = getattr(args, "pilot_mode", None) or os.environ.get("PILOT_MODE") or "mock"
     mode = parse_pilot_mode_arg(raw) if isinstance(raw, str) else "mock"
     if args.real or os.environ.get("USE_REAL_MODEL") == "1":
@@ -524,7 +511,7 @@ def _resolve_pilot_mode(args) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run pilot study (Tests 1-6). mock | hf (HF+MPS) | cuda | litellm | lmstudio (OpenAI API)."
+        description="Run pilot study (Tests 1-6). mock | hf (HF+MPS) | cuda | lmstudio (OpenAI API)."
     )
     parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
     parser.add_argument("--output-dir", default="data/results", help="Output directory")
@@ -532,7 +519,7 @@ def main() -> None:
         "--pilot-mode",
         type=parse_pilot_mode_arg,
         default="mock",
-        help="mock | hf (HuggingFace+MPS) | m1 (deprecated=hf) | cuda | litellm | lmstudio (LM Studio server).",
+        help="mock | hf (HuggingFace+MPS) | m1 (deprecated=hf) | cuda | lmstudio (LM Studio server).",
     )
     parser.add_argument(
         "--real",
