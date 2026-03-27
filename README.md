@@ -242,6 +242,19 @@ Generates TextWorld Cooking games via `python -m textworld.challenges.tw_cooking
 
 Optional: `--write-manifest` writes `difficulty_manifest.json` in the output directory (useful after the final 50-instance run).
 
+Example (from repo root; requires `textworld` installed):
+
+```bash
+python scripts/generate_textworld_games.py \
+  --num-rooms 5 \
+  --num-ingredients 2 \
+  --cook \
+  --seed 42 \
+  --num-instances 3
+```
+
+This writes `data/tasks/textworld/textworld_0.ulx` … `textworld_2.ulx` and matching `.json` sidecars. Add `--cut` for cutting, or omit `--cook` for a take-only style run, depending on the sweep cell you are testing.
+
 ### Difficulty sweep (`scripts/sweep_textworld_difficulty.py`)
 
 Runs a grid over rooms `{3,5,7}` × ingredients `{1,2,3}` × operations `{take-only, take+cook, take+cut+cook}`, generates a small batch per cell, runs **C0** episodes via the existing agent loop, and writes **`sweep_results.json`** plus a ranked console summary. Goal: land near **30–50% C0 task success** and **8–15 steps** mean episode length before freezing parameters for the final 50 instances. Use `--real` with `configs/experiment_core.yaml` (or your sweep config) so the model matches the thesis run (e.g. Qwen2.5-3B-Instruct on GPU).
