@@ -157,7 +157,14 @@ class TextWorldEnv:
             try:
                 from textworld import EnvInfos
 
-                infos = EnvInfos(admissible_commands=True, feedback=True, score=True)
+                infos = EnvInfos(
+                    admissible_commands=True,
+                    feedback=True,
+                    score=True,
+                    max_score=True,
+                    won=True,
+                    lost=True,
+                )
                 env_id = textworld.gym.register_game(
                     self._game_file,
                     max_episode_steps=self._max_steps,
