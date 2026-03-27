@@ -75,7 +75,15 @@ def main() -> None:
     except Exception as e:
         raise RuntimeError("textworld is required. Install `textworld`.") from e
 
-    infos = EnvInfos(admissible_commands=True, feedback=True, score=True)
+    # won/lost/max_score must be requested or Filter omits them (missing keys read as false).
+    infos = EnvInfos(
+        admissible_commands=True,
+        feedback=True,
+        score=True,
+        max_score=True,
+        won=True,
+        lost=True,
+    )
     env_id = textworld.gym.register_game(
         str(game_file),
         max_episode_steps=int(args.max_steps),
@@ -116,7 +124,21 @@ def main() -> None:
             elif steps >= int(args.max_steps):
                 print("MAX STEPS REACHED")
             else:
-                print("YOU LOST")
+                # Rare: natural termination without flags (older stacks); infer from transcript/score.
+                obs_l = (obs or "").lower()
+                ms = info.get("max_score")
+                try:
+                    reached_max = (
+                        score_cache is not None
+                        and ms is not None
+                        and float(score_cache) >= float(ms)
+                    )
+                except (TypeError, ValueError):
+                    reached_max = False
+                if reached_max or ("the end" in obs_l and "you have died" not in obs_l):
+                    print("YOU WON")
+                else:
+                    print("EPISODE ENDED")
             return
         if steps >= int(args.max_steps):
             print("MAX STEPS REACHED")
