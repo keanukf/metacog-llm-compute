@@ -46,11 +46,16 @@ def make_experiment_env(
 
     if domain == "textworld":
         tasks_dir = Path(config.get("paths", {}).get("tasks_dir", "data/tasks"))
-        game_file = tasks_dir / f"textworld_{instance}.ulx"
-        if not game_file.is_absolute():
-            game_file = repo_root / game_file
-        if not game_file.exists():
-            game_file = None
+        candidate_paths = [
+            tasks_dir / f"textworld_{instance}.ulx",
+            tasks_dir / "textworld" / f"textworld_{instance}.ulx",
+        ]
+        game_file = None
+        for cand in candidate_paths:
+            cand_abs = cand if cand.is_absolute() else repo_root / cand
+            if cand_abs.exists():
+                game_file = cand_abs
+                break
         return TextWorldEnv(game_file=str(game_file) if game_file else None, max_steps=max_steps)
     if domain == "tower_of_hanoi":
         from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances

@@ -6,10 +6,14 @@ When game_file is set and textworld is installed, loads and plays real games.
 Per-step records in ``step_results`` mirror TowerOfHanoiEnv (``step_index``, ``action_raw``,
 ``action_parsed``, ``correctness``, ``state_before``, ``state_after``) plus optional
 ``reward``, ``score_*`` when the engine exposes them. TextWorld uses ``correctness`` in
-``{"legal", "illegal"}`` only (no ``optimal`` without an oracle).
+``{"optimal", "legal", "illegal"}`` with score-based progress:
+- optimal: score increased
+- legal: admissible/no parser error, score unchanged
+- illegal: parser error or unrecognized action
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -84,32 +88,21 @@ def _action_in_admissible(action: str, admissible: Any) -> tuple[str | None, boo
     return parsed, False
 
 
-def _infer_correctness_real(
-    reward: float,
-    score_before: float | None,
-    score_after: float | None,
-    info: dict[str, Any],
-    observation: str,
-) -> str:
-    if admissible is not None:
-        _, ok = _action_in_admissible(action, admissible)
-        return "legal" if ok else "illegal"
-    if reward < 0:
-        return "illegal"
-    if _suggests_unknown_command(info, observation):
-        return "illegal"
-    inter = info.get("intermediate_reward")
+def _load_sidecar(game_file: str | None) -> dict[str, Any] | None:
+    if not game_file:
+        return None
+    p = Path(game_file)
+    sidecar = p.with_suffix(".json")
+    if not sidecar.exists():
+        return None
     try:
-        if inter is not None and float(inter) > 0:
-            return "legal"
-    except (TypeError, ValueError):
-        pass
-    if score_before is not None and score_after is not None and score_after > score_before:
-        return "legal"
-    if reward > 0:
-        return "legal"
-    # Ambiguous (many valid moves yield zero reward); default legal.
-    return "legal"
+        with open(sidecar) as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        return None
+    return None
 
 
 class TextWorldEnv:
@@ -130,6 +123,12 @@ class TextWorldEnv:
         self.current_step = 0
         self.task_success = False
         self._last_score: float | None = None
+        self.sidecar_metadata: dict[str, Any] | None = _load_sidecar(game_file)
+        self.walkthrough: list[str] = []
+        if isinstance(self.sidecar_metadata, dict):
+            wt = self.sidecar_metadata.get("walkthrough")
+            if isinstance(wt, list):
+                self.walkthrough = [str(x) for x in wt]
         self._use_real = (
             TEXTWORLD_AVAILABLE
             and game_file is not None
@@ -225,16 +224,23 @@ class TextWorldEnv:
 
             if use_admissible:
                 parsed, ok = _action_in_admissible(action, admissible)
-                correctness = "legal" if ok else "illegal"
+                illegal = not ok
             else:
                 parsed = _normalize_command_key(action) if action.strip() else None
-                correctness = _infer_correctness_real(
-                    reward,
-                    score_before,
-                    score_after,
-                    info,
-                    self.observation,
-                )
+                illegal = _suggests_unknown_command(info, self.observation) or reward < 0.0
+
+            if illegal:
+                correctness = "illegal"
+            else:
+                # Score-based policy requested for thesis: progress => optimal.
+                if (
+                    score_before is not None
+                    and score_after is not None
+                    and score_after > score_before
+                ):
+                    correctness = "optimal"
+                else:
+                    correctness = "legal"
 
             if info.get("won") is True or info.get("game_won") is True:
                 self.task_success = True
@@ -251,6 +257,11 @@ class TextWorldEnv:
                 "score_before": score_before,
                 "score_after": score_after,
                 "score_delta": score_delta,
+                "walkthrough_step_hint": (
+                    self.walkthrough[self.current_step]
+                    if self.current_step < len(self.walkthrough)
+                    else None
+                ),
             }
             self.step_results.append(rec)
             self.current_step += 1
