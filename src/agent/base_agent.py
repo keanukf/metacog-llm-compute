@@ -64,6 +64,7 @@ def run_episode(
     compute_stage: str,
     step_fn: StepFn | None = None,
     max_steps: int = 20,
+    on_step: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """
     Run one episode: reset env, then loop observation -> step_fn -> env.step until done.
@@ -74,6 +75,8 @@ def run_episode(
         compute_stage: "C0" | "C1" | "C2" (used to select step_fn if not provided).
         step_fn: If None, a default stub step is used (returns dummy action).
         max_steps: Cap on steps per episode.
+        on_step: Optional callback after each env step; dict keys include step_index,
+            episode_steps, max_steps, env_done, compute_stage, lm_calls_this_step, total_lm_calls.
 
     Returns:
         Dict with keys: steps, task_success, lm_calls, tokens, wall_clock_time,
@@ -120,6 +123,18 @@ def run_episode(
         obs = env.step(action)
         history.append(obs)
         steps += 1
+        if on_step is not None:
+            on_step(
+                {
+                    "step_index": steps - 1,
+                    "episode_steps": steps,
+                    "max_steps": max_steps,
+                    "env_done": bool(getattr(env, "done", False)),
+                    "compute_stage": compute_stage,
+                    "lm_calls_this_step": int(lm_calls_this_step),
+                    "total_lm_calls": int(total_lm_calls),
+                }
+            )
     wall_clock_time = time.perf_counter() - t_start
     if hasattr(env, "task_success"):
         task_success = bool(getattr(env, "task_success"))
@@ -173,12 +188,14 @@ def run_adaptive_episode(
     rng: random.Random | None = None,
     allocate_fn: Callable[..., str] | None = None,
     step_fn_for_stage: Callable[[str], StepFn] | None = None,
+    on_step: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """
     Run an episode where each step's compute stage comes from ``allocate_fn`` (default: allocator.allocate).
 
     The signal passed into allocate is built from the *previous* step's TLE / VC; the first step uses
     ``signal=None`` so adaptive strategies default to C0 until a signal exists.
+    on_step: Optional callback after each env step (same keys as ``run_episode``, plus ``strategy``).
 
     Returns:
         Same keys as ``run_episode`` plus ``stage_per_step``: list of ``"C0"`` | ``"C1"`` | ``"C2"`` per step.
@@ -230,6 +247,19 @@ def run_adaptive_episode(
         history.append(obs)
         steps += 1
         signal = _signal_for_next_step(tle, vc)
+        if on_step is not None:
+            on_step(
+                {
+                    "step_index": steps - 1,
+                    "episode_steps": steps,
+                    "max_steps": max_steps,
+                    "env_done": bool(getattr(env, "done", False)),
+                    "compute_stage": stage,
+                    "strategy": strategy,
+                    "lm_calls_this_step": int(lm_calls_this_step),
+                    "total_lm_calls": int(total_lm_calls),
+                }
+            )
 
     wall_clock_time = time.perf_counter() - t_start
     if hasattr(env, "task_success"):

@@ -2,6 +2,7 @@
 """
 Phase 1 — Calibration: run domains x instances x compute_stages x runs.
 Supports --resume via checkpoint_dir; skips already completed episodes.
+Progress: timestamped batch lines (elapsed, ep/h, ETA); optional --verbose-episodes / --verbose-steps.
 Usage: python scripts/run_phase1.py --config configs/experiment_core.yaml [--resume] [--real]
 """
 from __future__ import annotations
@@ -63,45 +64,6 @@ def _pearsonr(xs: list[float], ys: list[float]) -> float | None:
     if denx == 0 or deny == 0:
         return None
     return num / (denx * deny)
-
-
-def _print_progress(
-    *,
-    phase: str,
-    total_done: int,
-    total: int,
-    new_in_run: int,
-    pct: float,
-    eta_s: float | None,
-    rolling: list[dict],
-    domain: str,
-    stage_or_strategy: str,
-) -> None:
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    eta_h = (eta_s / 3600.0) if isinstance(eta_s, (int, float)) else None
-    print(
-        f"[{ts}] {phase} | {total_done}/{total} episodes ({pct:.1f}%) | {new_in_run} new this batch"
-        + (f" | ETA: ~{eta_h:.1f}h" if eta_h is not None else "")
-    )
-    if rolling:
-        succ = sum(1 for r in rolling if r.get("task_success"))
-        avg_steps = sum(r.get("steps", 0) for r in rolling) / len(rolling)
-        avg_ep_s = sum(r.get("ep_wall_time_s", 0.0) for r in rolling) / len(rolling)
-        tle_vals = [r["tle_mean"] for r in rolling if isinstance(r.get("tle_mean"), (int, float))]
-        vc_vals = [r["vc_mean"] for r in rolling if isinstance(r.get("vc_mean"), (int, float))]
-        avg_tle = (sum(tle_vals) / len(tle_vals)) if tle_vals else None
-        avg_vc = (sum(vc_vals) / len(vc_vals)) if vc_vals else None
-        msg = f"  Last {len(rolling)} episodes: {succ}/{len(rolling)} success | avg {avg_steps:.1f} steps | avg {avg_ep_s:.1f}s/ep"
-        if avg_tle is not None:
-            msg += f" | avg TLE {avg_tle:.2f}"
-        if avg_vc is not None:
-            msg += f" | avg VC {avg_vc:.1f}"
-        print(msg)
-    insts = [r.get("instance") for r in rolling if r.get("domain") == domain and r.get("compute_stage") == stage_or_strategy]
-    if insts:
-        print(f"  Domain: {domain} | Stage: {stage_or_strategy} | Instance range: {min(insts)}–{max(insts)}")
-    else:
-        print(f"  Domain: {domain} | Stage: {stage_or_strategy}")
 
 
 def _build_run_summary(
@@ -190,6 +152,8 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true", help="Skip completed episodes")
     parser.add_argument("--real", action="store_true", help="Use real model (vLLM/HF) when available")
     parser.add_argument("--progress-every", type=int, default=0, help="Print progress every N new episodes (0=use config/default)")
+    parser.add_argument("--verbose-episodes", action="store_true", help="Log each episode when it completes (one line)")
+    parser.add_argument("--verbose-steps", action="store_true", help="Log each environment step (very noisy)")
     args = parser.parse_args()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     checkpoint_dir = Path(args.checkpoint_dir)
@@ -203,6 +167,7 @@ def main() -> None:
     from src.agent.compute_stages import get_step_fn
     from src.utils.experiment_env import create_experiment_model, make_experiment_env
     from src.utils.logging_utils import write_run_metadata
+    from src.utils.run_progress import format_run_elapsed, log, log_episode_line, log_step_line, print_batch_progress
 
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
     phase1 = config.get("phase1", {})
@@ -213,8 +178,10 @@ def main() -> None:
     max_steps = config.get("episode", {}).get("max_steps_per_episode", 20)
     progress_every = int(args.progress_every) if int(args.progress_every) > 0 else int(phase1.get("progress_every_episodes", 10))
     total = len(domains) * instances_per_domain * len(stages) * runs
-    print(f"Phase 1: {len(domains)} domains x {instances_per_domain} instances x {len(stages)} stages x {runs} runs = {total} episodes")
-    print(f"Completed so far: {len(completed)}. Resume={args.resume}. Real model={args.real}.")
+    log(
+        f"Phase 1 start — {len(domains)} domains × {instances_per_domain} inst × {len(stages)} stages × {runs} runs = {total} episodes "
+        f"| resume={args.resume} real={args.real} | already_done={len(completed)}"
+    )
 
     model = create_experiment_model(config, args.real)
     pilot_mode = "cuda" if args.real else "mock"
@@ -242,6 +209,9 @@ def main() -> None:
     rolling: list[dict] = []
     done_count = 0
     for domain in domains:
+        log(
+            f"Phase 1: domain block — {domain} ({instances_per_domain} instances × {len(stages)} stages × {runs} runs)"
+        )
         for inst in range(instances_per_domain):
             for stage in stages:
                 for run in range(runs):
@@ -253,7 +223,24 @@ def main() -> None:
                     try:
                         env = make_experiment_env(domain, inst, config, max_steps, REPO_ROOT)
                         step_fn = get_step_fn(stage)
-                        result = run_episode(env, model, stage, step_fn=step_fn, max_steps=max_steps)
+                        on_step = None
+                        if args.verbose_steps:
+
+                            def _make_on_step(eid: str):
+                                def _inner(info: dict) -> None:
+                                    log_step_line(f"Phase 1 {eid}", info)
+
+                                return _inner
+
+                            on_step = _make_on_step(ep_id)
+                        result = run_episode(
+                            env,
+                            model,
+                            stage,
+                            step_fn=step_fn,
+                            max_steps=max_steps,
+                            on_step=on_step,
+                        )
                         data = {
                             "episode_id": ep_id,
                             "domain": domain,
@@ -297,6 +284,19 @@ def main() -> None:
                         )
                         if len(rolling) > 10:
                             rolling = rolling[-10:]
+                        if args.verbose_episodes:
+                            log_episode_line(
+                                "Phase 1",
+                                ep_id,
+                                domain=domain,
+                                label=stage,
+                                instance=inst,
+                                run=run,
+                                steps=int(data.get("steps") or 0),
+                                total_lm_calls=int(data.get("total_lm_calls") or 0),
+                                wall_s=float(ep_wall),
+                                success=bool(data.get("task_success")),
+                            )
                     except Exception:
                         failed += 1
                         err = {
@@ -310,29 +310,37 @@ def main() -> None:
                         }
                         with open(errors_path, "a") as f:
                             f.write(json.dumps(err) + "\n")
-                        print(f"Warning: episode failed: {ep_id} (continuing)")
+                        log(f"Warning: episode failed {ep_id} (continuing)")
 
                     now = time.time()
-                    if (progress_every and done_count % progress_every == 0) or (now - last_report_t) >= 300:
+                    elapsed_run = time.perf_counter() - t_run_start
+                    if (
+                        done_count == 1
+                        or (progress_every and done_count > 0 and done_count % progress_every == 0)
+                        or (now - last_report_t) >= 300
+                    ):
                         last_report_t = now
                         total_done = len(completed) + done_count
-                        pct = (total_done / total * 100.0) if total else 0.0
-                        elapsed = time.perf_counter() - t_run_start
-                        rate = (done_count / elapsed) if elapsed > 0 else 0.0
+                        rate = (done_count / elapsed_run) if elapsed_run > 0 else 0.0
                         remaining = total - total_done
                         eta_s = (remaining / rate) if rate > 0 else None
-                        _print_progress(
+                        print_batch_progress(
                             phase="Phase 1",
                             total_done=total_done,
                             total=total,
                             new_in_run=done_count,
-                            pct=pct,
+                            elapsed_s=elapsed_run,
                             eta_s=eta_s,
                             rolling=rolling,
                             domain=domain,
                             stage_or_strategy=stage,
+                            label_key="compute_stage",
                         )
-    print(f"Phase 1 done. New episodes: {done_count}. Total checkpoints: {len(list_completed_episodes(checkpoint_dir))}.")
+    wall_total = time.perf_counter() - t_run_start
+    log(
+        f"Phase 1 finished — new episodes: {done_count}; checkpoints: {len(list_completed_episodes(checkpoint_dir))}; "
+        f"wall {format_run_elapsed(wall_total)}"
+    )
     summary = _build_run_summary(
         checkpoint_dir=checkpoint_dir,
         total_wall_time_s=time.perf_counter() - t_run_start,

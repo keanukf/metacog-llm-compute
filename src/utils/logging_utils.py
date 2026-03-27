@@ -27,7 +27,8 @@ def log_episode(
 
     Args:
         episode_id: Unique id (e.g. ep_{domain}_{instance}_{stage}_{run}).
-        data: Dict with keys such as TLE, VC, task_success, steps, lm_calls, tokens, wall_clock_time.
+        data: Dict with keys such as TLE, VC, task_success, steps, lm_calls (env steps, legacy),
+        total_lm_calls, tokens, wall_clock_time.
         path: Directory or full file path; if directory, file is path / f"{episode_id}.json".
         tracker: Reserved for optional hooks; ignored by this function (file write only).
 

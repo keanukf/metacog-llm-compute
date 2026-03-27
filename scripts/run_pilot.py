@@ -20,6 +20,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.utils.run_progress import format_run_elapsed, log, log_step_line
+
 
 def load_config(config_path: str | Path) -> dict:
     import yaml
@@ -170,7 +172,7 @@ def run_test1_inference_speed(
 
     if real_model is not None:
         # Real benchmark: 50 prompts, measure wall time and token count
-        print(f"Test 1: inference speed — running {num_prompts} prompts...")
+        log(f"Test 1: inference speed — {num_prompts} prompts (logprobs on)...")
         prompts = [f"Complete this sentence: The quick brown fox " * (i % 3 + 1) for i in range(num_prompts)]
         latencies = []
         total_tokens = 0
@@ -186,7 +188,7 @@ def run_test1_inference_speed(
                 n_out = max(1, len(text) // 4)
             total_tokens += n_out
             if (i + 1) % progress_interval == 0 or (i + 1) == num_prompts:
-                print(f"  Test 1: {i + 1}/{num_prompts} prompts done")
+                log(f"Test 1: prompt {i + 1}/{num_prompts} done")
         elapsed_total = sum(latencies)
         tokens_per_sec = total_tokens / elapsed_total if elapsed_total > 0 else 0.0
         n = len(latencies)
@@ -217,7 +219,7 @@ def run_test1_inference_speed(
 
 def run_test2_token_entropy(config: dict, *, real_model=None) -> dict:
     """Test 2: TLE extraction from real logprobs when available; else synthetic."""
-    print("Running Test 2: token entropy...")
+    log("Test 2: token entropy — start")
     from src.signals.token_entropy import compute_tle, extract_tle_from_response
 
     if real_model is None:
@@ -259,7 +261,7 @@ def run_test2_token_entropy(config: dict, *, real_model=None) -> dict:
 
 def run_test3_verbalized_confidence(config: dict, *, real_model=None) -> dict:
     """Test 3: VC parsing from real generations when available; else static strings."""
-    print("Running Test 3: verbalized confidence...")
+    log("Test 3: verbalized confidence — start")
     from src.signals.verbalized_confidence import parse_confidence
 
     if real_model is None:
@@ -297,7 +299,7 @@ def run_test3_verbalized_confidence(config: dict, *, real_model=None) -> dict:
 
 def run_test4_textworld(config: dict) -> dict:
     """Test 4: TextWorld mini env — reset, step, observation."""
-    print("Running Test 4: TextWorld env...")
+    log("Test 4: TextWorld stub env — reset/step")
     from src.environments.textworld_env import TextWorldEnv
     env = TextWorldEnv(max_steps=5)
     obs = env.reset()
@@ -314,7 +316,7 @@ def run_test_tower_of_hanoi_parseability(
     Completion-plan add-on: Tower of Hanoi move parseability on real outputs.
     Measures fraction of steps where env recorded a parsed move (action_parsed != None).
     """
-    print("Running Tower of Hanoi parseability test...")
+    log("Tower of Hanoi parseability — start (C0; per-step progress below)")
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
@@ -338,13 +340,35 @@ def run_test_tower_of_hanoi_parseability(
         num_disks_range=(num_disks, num_disks),
         partial_start_range=(0, 0),
     )
+    worst_lm = num_episodes * max_steps
+    log(f"ToH parseability: {num_episodes} episodes × up to {max_steps} steps → ≤{worst_lm} LM calls (C0)")
     parseable_steps = 0
     total_steps = 0
     episodes_data: list[dict[str, Any]] = []
     for i, task in enumerate(tasks):
+
+        def _make_toh_on_step(ep_i: int, ep_total: int):
+            def _inner(info: dict) -> None:
+                log_step_line(f"pilot ToH ep {ep_i + 1}/{ep_total}", info)
+
+            return _inner
+
         env = TowerOfHanoiEnv(task=task, max_steps=max_steps)
         step_fn = get_step_fn("C0")
-        result = run_episode(env, model, "C0", step_fn=step_fn, max_steps=max_steps)
+        log(f"ToH parseability: episode {i + 1}/{num_episodes} — running (max {max_steps} steps)...")
+        result = run_episode(
+            env,
+            model,
+            "C0",
+            step_fn=step_fn,
+            max_steps=max_steps,
+            on_step=_make_toh_on_step(i, num_episodes),
+        )
+        log(
+            f"ToH parseability: episode {i + 1}/{num_episodes} — done: steps={result['steps']} "
+            f"lm_calls={result.get('total_lm_calls', 0)} wall={result.get('wall_clock_time', 0):.2f}s "
+            f"success={result.get('task_success')}"
+        )
         ep_id = f"ep_tower_of_hanoi_{i}_C0_0"
         data = {
             "episode_id": ep_id,
@@ -384,7 +408,7 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
     """Test 5: instances x 3 stages x runs = episodes; structured JSON per episode.
     If real_model is provided, use it; otherwise use MockModel (stub env always).
     """
-    print("Running Test 5: end-to-end episodes...")
+    log("Test 5: end-to-end TextWorld episodes — start")
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.environments.textworld_env import TextWorldEnv
@@ -406,16 +430,37 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
     def _log_progress():
         episode_idx[0] += 1
         if episode_idx[0] % 5 == 0 or episode_idx[0] == total_episodes:
-            print(f"  Test 5: {episode_idx[0]}/{total_episodes} episodes done")
+            log(f"Test 5: batch progress {episode_idx[0]}/{total_episodes} episodes")
 
+    log(f"Test 5: plan {instances} instances × {len(stages)} stages × {runs} runs = {total_episodes} episodes (max 10 steps each)")
     episodes_data = []
     for inst in range(instances):
         for stage in stages:
             for run in range(runs):
+                ep_id = f"ep_textworld_{inst}_{stage}_{run}"
+
+                def _make_test5_on_step(eid: str):
+                    def _inner(info: dict) -> None:
+                        log_step_line(f"pilot Test5 {eid}", info)
+
+                    return _inner
+
                 env = TextWorldEnv(max_steps=10)
                 step_fn = get_step_fn(stage)
-                result = run_episode(env, model, stage, step_fn=step_fn, max_steps=10)
-                ep_id = f"ep_textworld_{inst}_{stage}_{run}"
+                log(f"Test 5: episode start {ep_id} (stage={stage})")
+                result = run_episode(
+                    env,
+                    model,
+                    stage,
+                    step_fn=step_fn,
+                    max_steps=10,
+                    on_step=_make_test5_on_step(ep_id),
+                )
+                log(
+                    f"Test 5: episode done {ep_id} — steps={result['steps']} "
+                    f"lm_calls={result.get('total_lm_calls', 0)} wall={result.get('wall_clock_time', 0):.2f}s "
+                    f"success={result.get('task_success')}"
+                )
                 data = {
                     "episode_id": ep_id,
                     "domain": "textworld",
@@ -425,6 +470,7 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
                     "task_success": result["task_success"],
                     "steps": result["steps"],
                     "lm_calls": result["lm_calls"],
+                    "total_lm_calls": int(result.get("total_lm_calls", 0)),
                     "tokens": result["tokens"],
                     "wall_clock_time": result["wall_clock_time"],
                     "tle_per_step": result.get("tle_per_step"),
@@ -438,7 +484,7 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
 
 def run_test6_logging_analysis(episodes_data: list[dict], output_dir: Path) -> dict:
     """Test 6: JSON round-trip + ECE on 15 data points."""
-    print("Running Test 6: logging analysis...")
+    log(f"Test 6: logging analysis — {len(episodes_data)} episodes")
     from src.analysis.calibration import compute_ece
     import json
     # Build predictions/correctness from episodes (use last VC or TLE as proxy)
@@ -494,54 +540,60 @@ def main() -> None:
         help="Use real model; auto-detect hf vs cuda if --pilot-mode is mock",
     )
     args = parser.parse_args()
+    t_pilot0 = time.perf_counter()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     config = load_config(config_path)
-    print(f"Config: {config_path}")
+    log(f"Pilot run start — config={config_path} output_dir={output_dir}")
 
     pilot_mode = _resolve_pilot_mode(args)
-    print(f"Pilot mode: {pilot_mode}")
+    log(f"Pilot mode: {pilot_mode}")
     if pilot_mode != "mock":
         model_name = config.get("model", {}).get("name", "?")
-        print(f"Creating model ({model_name})... (loading from cache may take ~1 min)")
+        log(f"Loading model ({model_name})... (cache load may take ~1 min)")
     real_model, real_model_err = _create_real_model(config, pilot_mode)
     _assert_real_model_or_raise(pilot_mode, real_model, real_model_err)
     if pilot_mode != "mock":
         config.setdefault("pilot", {})["use_real_model"] = True
-        print("Model ready.")
+        log("Model ready.")
 
     benchmark = {"pilot_mode": pilot_mode}
     benchmark["system"] = _try_gpu_info()
     if pilot_mode != "mock" and real_model is not None:
         benchmark["real_model_sanity"] = _sanity_check_real_inference(config, pilot_mode, real_model)
+        s = benchmark["real_model_sanity"]
+        log(
+            f"Real model sanity: ok={s.get('ok')} latency={s.get('latency_s', 0):.2f}s "
+            f"logprobs={s.get('has_logprobs')} tok_out≈{s.get('completion_tokens_observed')}"
+        )
     benchmark["test1"] = run_test1_inference_speed(config, output_dir, real_model=real_model)
-    print(f"Test 1 done (tokens/s: {benchmark['test1'].get('tokens_per_sec', 0):.1f})")
+    log(f"Test 1 done — tokens/s={benchmark['test1'].get('tokens_per_sec', 0):.1f}")
     benchmark["test2"] = run_test2_token_entropy(config, real_model=real_model)
-    print("Test 2 done.")
+    log("Test 2 done.")
     benchmark["test3"] = run_test3_verbalized_confidence(config, real_model=real_model)
-    print("Test 3 done.")
+    log("Test 3 done.")
     benchmark["test4"] = run_test4_textworld(config)
-    print("Test 4 done.")
+    log("Test 4 done.")
     benchmark["tower_of_hanoi_parseability"] = run_test_tower_of_hanoi_parseability(config, output_dir, real_model=real_model)
-    print(
-        f"Tower of Hanoi parseability done (rate: {benchmark['tower_of_hanoi_parseability'].get('parse_rate', 0):.2f})."
+    log(
+        f"Tower of Hanoi parseability done — parse_rate={benchmark['tower_of_hanoi_parseability'].get('parse_rate', 0):.2f}"
     )
     episodes = run_test5_e2e(config, output_dir, real_model=real_model)
     benchmark["test5_episodes"] = len(episodes)
-    print(f"Test 5 done ({len(episodes)} episodes).")
+    log(f"Test 5 done — {len(episodes)} episodes")
     benchmark["test6"] = run_test6_logging_analysis(episodes, output_dir)
-    print("Test 6 done.")
+    log(f"Test 6 done — wall {format_run_elapsed(time.perf_counter() - t_pilot0)} total")
 
     benchmark_path = output_dir / "pilot_benchmark.json"
     with open(benchmark_path, "w") as f:
         json.dump(benchmark, f, indent=2)
-    print(f"Wrote {benchmark_path}")
+    log(f"Wrote {benchmark_path}")
 
     calibration_path = output_dir / "pilot_calibration.json"
     with open(calibration_path, "w") as f:
         json.dump(episodes, f, indent=2)
-    print(f"Wrote {calibration_path}")
+    log(f"Wrote {calibration_path}")
 
     paths_cfg = config.get("paths", {})
     cost_md = paths_cfg.get("pilot_cost_validation")
@@ -549,14 +601,14 @@ def main() -> None:
         cost_path = output_dir / Path(cost_md).name if not Path(cost_md).is_absolute() else Path(cost_md)
         cost_path.parent.mkdir(parents=True, exist_ok=True)
         _write_pilot_cost_validation(benchmark, config, cost_path)
-        print(f"Wrote {cost_path}")
+        log(f"Wrote {cost_path}")
 
     feasibility_md = paths_cfg.get("pilot_feasibility_report")
     if feasibility_md:
         feas_path = output_dir / Path(feasibility_md).name if not Path(feasibility_md).is_absolute() else Path(feasibility_md)
         feas_path.parent.mkdir(parents=True, exist_ok=True)
         _write_pilot_feasibility_report(benchmark, episodes, config, feas_path)
-        print(f"Wrote {feas_path}")
+        log(f"Wrote {feas_path}")
 
 
 def _write_pilot_cost_validation(benchmark: dict, config: dict, path: Path) -> None:
