@@ -101,4 +101,4 @@ def test_e2e_mini_pipeline_6_episodes(mock_model, temp_results_dir):
     for f in files:
         with open(f) as fp:
             d = json.load(fp)
-        assert "episode_id" in d and "steps" in d and "lm_calls" in d and "tokens" in d
+        assert "episode_id" in d and "steps" in d and "lm_calls" in d and "total_lm_calls" in d and "tokens" in d

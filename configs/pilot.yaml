@@ -4,6 +4,7 @@
 model:
   # CUDA/vLLM candidate for RunPod pilot validation
   name: "Qwen/Qwen3.5-4B"
+  #name: "mlx-community/Qwen3.5-0.8B-MLX"
   dtype: float16
 
 inference:
@@ -46,7 +47,7 @@ test4_textworld:
 
 tower_of_hanoi:
   # Pilot add-on: parseability validation on 3-disk problems at C0
-  pilot_episodes: 20
+  pilot_episodes: 2
   pilot_num_disks: 3
   pilot_max_steps: 20
   task_generation_seed: 42

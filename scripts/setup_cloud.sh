@@ -8,7 +8,7 @@ echo "Installing Python dependencies..."
 pip install vllm transformers textworld numpy pandas scipy pyyaml
 
 # Optional: pre-download model to network volume (persistent)
-MODEL_NAME="${MODEL_NAME:-Qwen/Qwen2.5-3B-Instruct}"
+MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3.5-4B}"
 python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('$MODEL_NAME')"
 python -c "from transformers import AutoModelForCausalLM; AutoModelForCausalLM.from_pretrained('$MODEL_NAME')"
 
