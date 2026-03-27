@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RunPod Pod setup: install deps and optionally download Qwen2.5-3B-Instruct.
+# RunPod Pod setup: install deps and optionally download Qwen3.5-4B.
 # Run from repo root on the pod after clone/upload.
 # Usage: bash scripts/setup_cloud.sh
 
