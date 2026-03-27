@@ -17,10 +17,10 @@ inference:
   # lmstudio_api_key: "lm-studio"   # or set env LM_STUDIO_API_KEY / LM_STUDIO_BASE_URL
 
 pilot:
-  instances: 1 # 5 is default, 2 is for the pilot
+  instances: 5 # 5 is default, 2 is for the pilot
   compute_stages: 3   # C0, C1, C2
-  runs_per_instance: 1
-  # 5 * 3 * 1 = 15 episodes for Test 5
+  runs_per_instance: 3
+  # Test 5: instances × 3 stages × runs_per_instance = 5×3×3 = 45 episodes
 
 paths:
   pilot_benchmark: "data/results/pilot_benchmark.json"
@@ -29,7 +29,7 @@ paths:
   pilot_feasibility_report: "data/results/pilot_feasibility_report.md"
 
 test1_inference:
-  num_prompts: 3
+  num_prompts: 40
   # Completion plan target for RTX 3090 validation
   expected_tok_per_sec_min: 80
 
@@ -43,7 +43,7 @@ test4_textworld:
 
 tower_of_hanoi:
   # Pilot add-on: parseability validation on 3-disk problems at C0
-  pilot_episodes: 2
+  pilot_episodes: 20
   pilot_num_disks: 3
   pilot_max_steps: 20
   task_generation_seed: 42

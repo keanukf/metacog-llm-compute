@@ -163,10 +163,10 @@ bash scripts/setup_cloud.sh
 
 This installs: `vllm`, `transformers`, `textworld`, `numpy`, `pandas`, `scipy`, `pyyaml`.
 
-**Optional — pre-download the model** (saves time during the pilot; uncomment in `scripts/setup_cloud.sh` or run):
+**Optional — pre-download the model** (saves time during the pilot; `scripts/setup_cloud.sh` already does this using `MODEL_NAME`, default `Qwen/Qwen3.5-4B` to match `configs/pilot.yaml`; override if your pilot uses another id):
 
 ```bash
-export MODEL_NAME="Qwen/Qwen2.5-3B-Instruct"
+export MODEL_NAME="Qwen/Qwen3.5-4B"
 python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('$MODEL_NAME')"
 python -c "from transformers import AutoModelForCausalLM; AutoModelForCausalLM.from_pretrained('$MODEL_NAME')"
 ```
@@ -183,7 +183,7 @@ pip install pytest pytest-cov  # if not already installed by setup_cloud.sh
 python -m pytest tests/ -v
 ```
 
-All 21 tests should pass. This confirms the codebase and interfaces before you run the real pilot.
+All tests should pass (run `pytest` locally to see the current count). This confirms the codebase and interfaces before you run the real pilot.
 
 ### 5. Run the pilot with real model (GPU workload)
 
