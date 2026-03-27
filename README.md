@@ -1,6 +1,21 @@
 # Metacognitive Effort Allocation in Sequential LM Agents
 
-Thesis codebase: pilot tests, agent loop, signal extraction (TLE, VC), and experiment runners for RunPod Cloud GPU. See `blueprints/` for design and infrastructure.
+## General information
+
+**Repository goal.** This is the thesis codebase for **metacognitive effort allocation in sequential language-model agents**. The core idea is to use lightweight proxy signals—**token-level entropy (TLE)** and **verbalized confidence (VC)**—to decide how much compute to spend per step (direct answer vs chain-of-thought with verification vs best-of-N). The pipeline includes calibration, an agent loop with fixed compute stages (**C0 / C1 / C2**), environments such as TextWorld and delayed-cue recall, and runners for local pilots and cloud experiments (e.g. RunPod). Design choices, sample sizes, and infrastructure are documented under `blueprints/`.
+
+**Structure (high level).**
+
+| Location | Role |
+|----------|------|
+| `src/` | Main Python package: `agent/` (loop, stages, allocator), `signals/` (TLE, VC, etc.), `environments/` (tasks), `analysis/` (calibration, comparison, plots), `utils/` (model wrapper, logging, checkpoints). |
+| `configs/` | YAML experiment and pilot configs (no secrets; use env vars for API keys). |
+| `scripts/` | Entry points such as `run_pilot.py`, `run_phase1.py`, `run_phase2.py`, and helper utilities. |
+| `tests/` | `pytest` suite with mocks (no GPU required). |
+| `data/` | Task assets and run outputs (e.g. `data/tasks/`, `data/results/`); paths are configurable. |
+| `blueprints/` | Thesis design, pilot infrastructure, and related planning notes. |
+
+Run scripts from the **repository root** so imports resolve (see `run_pilot.py` pattern).
 
 ---
 
