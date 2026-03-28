@@ -205,14 +205,33 @@ You should see:
 
 ### 6. Download results from the pod
 
-From your **local machine**:
+From your **local machine** (repo root). RunPod shows **two** SSH options in the dashboard:
+
+| Connection | SCP / SFTP |
+|------------|------------|
+| `user@ssh.runpod.io` | **Not supported** — no reliable file copy |
+| **SSH over exposed TCP** (`root@IP -p PORT`) | **Supported** — use this for downloads |
+
+**Recommended:** copy **IP, port, and user** from **Pod → Connect → “SSH over exposed TCP”**, then:
 
 ```bash
-rsync -avz -e "ssh -i /path/to/key" \
-  user@POD_IP:/workspace/metacog-llm-compute/data/results/ ./data/results/
+./scripts/download_runpod_results.sh --tcp root YOUR_IP YOUR_PORT ~/.ssh/id_ed25519
 ```
 
-Or use `scp`. Then run analysis locally (e.g. ECE on `pilot_calibration.json` via `src/analysis/calibration.py`).
+Or one-liner (note **`scp -P`** cap for port; `root` and path are typical for TCP SSH):
+
+```bash
+mkdir -p data/results/runpod_pilot
+scp -O -i ~/.ssh/id_ed25519 -P YOUR_PORT -r \
+  root@YOUR_IP:/workspace/metacog-llm-compute/data/results/ \
+  ./data/results/runpod_pilot/
+```
+
+The gateway URL (`ssh.runpod.io`) is fine for **interactive** `ssh`; for **scp/rsync** use **TCP** or workarounds (HTTP server on the pod, etc.).
+
+After download, look for `pilot_benchmark.json` directly under `data/results/runpod_pilot/` (not `…/runpod_pilot/results/`). The pod must be **running** for `scp` to succeed.
+
+Then run analysis locally (e.g. ECE on `pilot_calibration.json` via `src/analysis/calibration.py`).
 
 ---
 
