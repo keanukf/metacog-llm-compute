@@ -295,6 +295,33 @@ Phase runners resolve games from `paths.tasks_dir` in `experiment_core.yaml`: ei
 
 ---
 
+## Tower of Hanoi (manual play)
+
+The planning domain is implemented in `src/environments/tower_of_hanoi.py` (same `reset()` / `step(action)` API as other envs). To verify parsing, legality, and goal detection **without a model**, use the interactive CLI:
+
+```bash
+python scripts/play_tower_of_hanoi.py
+```
+
+Defaults: **3 disks**, classic start (all disks on peg A), seed **42**, step cap from the generated task. Moves accept the same text as the agent (e.g. `A->C`, `A → C`, or “move disk from A to C”). Type `quit`, `exit`, or `:q` to leave.
+
+Useful flags:
+
+| Flag | Meaning |
+|------|---------|
+| `--num-disks N` | Disk count (default 3). |
+| `--seed SEED` | Instance generation seed (default 42). |
+| `--partial-moves K` | Start after **K** optimal moves from the classic tower-on-A state (simulates mid-game; default 0). |
+| `--max-steps N` | Override the episode step cap (default: from generated task). |
+
+Example with a scrambled start:
+
+```bash
+python scripts/play_tower_of_hanoi.py --num-disks 3 --partial-moves 5 --seed 0
+```
+
+---
+
 ## Test suite layout (what each test file does)
 
 | Test file | What it does (unit test) | Pilot counterpart |
@@ -315,6 +342,7 @@ Shared fixtures (mock model, mock env, sample episode data, temp dir) are in `te
 - **Model:** `src/utils/model_wrapper.py` provides `VLLMWrapper`, `HFWrapper`, and `LMStudioWrapper` (OpenAI HTTP for LM Studio); `create_wrapper(backend, model_name, dtype)` returns the right wrapper. Pilot uses it when a real backend is requested; CUDA mode fails fast if the wrapper cannot load.
 - **Pilot script:** `run_pilot.py` runs inference benchmarks, real-output TLE/VC checks (when not mock), Tower of Hanoi parseability, TextWorld e2e, and writes reports. See `configs/pilot.yaml`.
 - **TextWorld:** `TextWorldEnv` loads real `.z8`/`.ulx` games via `textworld.gym` when the file exists; loads optional `.meta.json` sidecars; score-based step correctness for real games. Generate Cooking datasets with `scripts/generate_textworld_games.py` into `data/tasks/textworld/`. See **TextWorld Cooking dataset** above.
+- **Tower of Hanoi:** `TowerOfHanoiEnv` in `src/environments/tower_of_hanoi.py`. Interactive sanity check: `scripts/play_tower_of_hanoi.py` (no model; same move parsing as experiments).
 - **Reports:** Pilot writes `pilot_cost_validation.md` and `pilot_feasibility_report.md` when paths are set in config.
 - **Phase 1 / 2:** `run_phase1.py` and `run_phase2.py` support checkpointing and `--resume`; use `--real` for GPU/vLLM runs.
 
@@ -331,7 +359,7 @@ src/
   analysis/       # calibration, comparison, visualization
   utils/          # logging_utils, model_wrapper, checkpointing
 scripts/          # run_pilot/phase1/phase2, setup_cloud.sh, generate_textworld_games,
-                  # sweep_textworld_difficulty, play_textworld, build_textworld_manifest
+                  # sweep_textworld_difficulty, play_textworld, play_tower_of_hanoi, build_textworld_manifest
 data/tasks/       # e.g. data/tasks/textworld/ — TextWorld Cooking .z8 + Game .json + .meta.json, difficulty_manifest.json
 data/results/     # pilot_benchmark.json, pilot_calibration.json, pilot_*.md, phase1/2 episode JSONs
 tests/            # conftest.py, test_01_* … test_06_*
