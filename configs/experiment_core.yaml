@@ -42,6 +42,7 @@ logging:
   logprob_subdir: logprobs
   save_vc_distributions: false
   vc_export_format: json   # json | csv | both — VC follow-up sidecars (*_vc.json)
+  vc_subdir: vc
 
 # Verbalized confidence: separate short follow-up call (recommended) or parse from action text (inline).
 vc:

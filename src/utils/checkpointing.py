@@ -20,7 +20,7 @@ def list_completed_episodes(checkpoint_dir: str | Path) -> set[str]:
     checkpoint_dir = Path(checkpoint_dir)
     if not checkpoint_dir.exists():
         return set()
-    return {p.stem for p in checkpoint_dir.glob("*.json")}
+    return {p.stem for p in checkpoint_dir.glob("ep_*.json")}
 
 
 def save_episode_checkpoint(
@@ -42,4 +42,4 @@ def save_episode_checkpoint(
     """
     from src.utils.logging_utils import log_episode
 
-    return log_episode(episode_id, data, checkpoint_dir)
+    return log_episode(episode_id, data, checkpoint_dir, compact=True)

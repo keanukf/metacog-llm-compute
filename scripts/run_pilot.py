@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
 Pilot study runner: inference benchmarks, TLE/VC checks, TextWorld e2e, Tower of Hanoi,
-and feasibility JSON. Writes per-step JSON under --output-dir.
+and feasibility JSON.
+
+By default creates a timestamped subfolder under --output-dir (``pilot_YYYYMMDD_HHMMSS``) with
+``run_info.json``; use ``--no-timestamp-run`` to write directly to ``--output-dir``.
 
 Usage:
   python scripts/run_pilot.py --config configs/pilot.yaml [--output-dir data/results] [--real]
   python scripts/run_pilot.py --only test2 --config configs/pilot.yaml ...   # TLE only
+  python scripts/run_pilot.py --no-timestamp-run ...  # flat layout (e.g. merge feasibility inputs)
 """
 from __future__ import annotations
 
@@ -43,7 +47,7 @@ def _vc_export_settings(config: dict) -> tuple[bool, str, str]:
     return (
         bool(lg.get("save_vc_distributions", False)),
         str(lg.get("vc_export_format", "json")).lower(),
-        str(lg.get("logprob_subdir", "logprobs")),
+        str(lg.get("vc_subdir", "vc")),
     )
 
 
@@ -925,7 +929,12 @@ def main() -> None:
         "(default: configs/lmstudio_config.yaml; env LMSTUDIO_CONFIG_PATH). "
         "Use enabled: false in that file to keep base pilot.yaml only.",
     )
-    parser.add_argument("--output-dir", default="data/results", help="Output directory")
+    parser.add_argument("--output-dir", default="data/results", help="Base output directory")
+    parser.add_argument(
+        "--no-timestamp-run",
+        action="store_true",
+        help="Write directly under --output-dir instead of creating a timestamped subfolder (run_*_UTC).",
+    )
     parser.add_argument(
         "--pilot-mode",
         type=parse_pilot_mode_arg,
@@ -953,8 +962,14 @@ def main() -> None:
     args = parser.parse_args()
     t_pilot0 = time.perf_counter()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
-    output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    base_output = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
+    base_output.mkdir(parents=True, exist_ok=True)
+    if args.no_timestamp_run:
+        output_dir = base_output
+    else:
+        from src.utils.run_output_layout import make_run_subdirectory
+
+        output_dir = make_run_subdirectory(base_output, prefix="pilot")
     pilot_mode = _resolve_pilot_mode(args)
     config, lmstudio_note, lmstudio_applied = load_pilot_config_with_lmstudio_override(
         config_path, pilot_mode, REPO_ROOT, getattr(args, "lmstudio_config", None)
@@ -963,6 +978,22 @@ def main() -> None:
     only_set = frozenset(only_steps)
 
     log(f"Pilot run start — config={config_path} output_dir={output_dir}")
+    if not args.no_timestamp_run:
+        from src.utils.run_output_layout import write_short_run_info
+
+        write_short_run_info(
+            output_dir,
+            script="run_pilot.py",
+            config_path=config_path,
+            extra={
+                "output_dir_resolved": str(output_dir.resolve()),
+                "pilot_mode": pilot_mode,
+                "only_steps": only_steps,
+                "lmstudio_config_applied": lmstudio_applied,
+                "model_name": config.get("model", {}).get("name"),
+            },
+        )
+        log(f"Wrote {output_dir / 'run_info.json'}")
     if lmstudio_note:
         log(lmstudio_note)
     log(f"Pilot mode: {pilot_mode}")

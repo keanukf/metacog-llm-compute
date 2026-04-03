@@ -149,6 +149,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/experiment_core.yaml")
     parser.add_argument("--checkpoint-dir", default="data/results/phase1")
+    parser.add_argument(
+        "--no-timestamp-run",
+        action="store_true",
+        help="Write checkpoints directly under --checkpoint-dir instead of a new phase1_*_UTC folder. "
+        "Ignored when --resume (resume always uses the given directory).",
+    )
     parser.add_argument("--resume", action="store_true", help="Skip completed episodes")
     parser.add_argument("--real", action="store_true", help="Use real model (vLLM/HF) when available")
     parser.add_argument("--progress-every", type=int, default=0, help="Print progress every N new episodes (0=use config/default)")
@@ -156,10 +162,18 @@ def main() -> None:
     parser.add_argument("--verbose-steps", action="store_true", help="Log each environment step (very noisy)")
     args = parser.parse_args()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
-    checkpoint_dir = Path(args.checkpoint_dir)
-    if not checkpoint_dir.is_absolute():
-        checkpoint_dir = REPO_ROOT / checkpoint_dir
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_base = Path(args.checkpoint_dir)
+    if not checkpoint_base.is_absolute():
+        checkpoint_base = REPO_ROOT / checkpoint_base
+    checkpoint_base.mkdir(parents=True, exist_ok=True)
+    if args.resume:
+        checkpoint_dir = checkpoint_base
+    elif args.no_timestamp_run:
+        checkpoint_dir = checkpoint_base
+    else:
+        from src.utils.run_output_layout import make_run_subdirectory
+
+        checkpoint_dir = make_run_subdirectory(checkpoint_base, prefix="phase1")
     config = load_config(config_path)
     lg = config.get("logging") or {}
     save_logprob_distributions = bool(lg.get("save_logprob_distributions", False))
@@ -167,6 +181,7 @@ def main() -> None:
     logprob_export_format = str(lg.get("logprob_export_format", "json")).lower()
     vc_export_format = str(lg.get("vc_export_format", "json")).lower()
     logprob_subdir = str(lg.get("logprob_subdir", "logprobs"))
+    vc_subdir = str(lg.get("vc_subdir", "vc"))
 
     from src.utils.checkpointing import list_completed_episodes, save_episode_checkpoint
     from src.agent.base_agent import run_episode
@@ -178,9 +193,11 @@ def main() -> None:
         write_vc_distribution_artifacts,
     )
     from src.utils.vc_config import vc_step_fn_kwargs
+    from src.utils.run_output_layout import write_short_run_info
     from src.utils.run_progress import format_run_elapsed, log, log_episode_line, log_step_line, print_batch_progress
 
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
+    log(f"Checkpoint directory: {checkpoint_dir.resolve()}")
     phase1 = config.get("phase1", {})
     domains = phase1.get("domains", ["textworld", "tower_of_hanoi"])
     instances_per_domain = phase1.get("instances_per_domain", 50)
@@ -209,6 +226,20 @@ def main() -> None:
         total_episodes_planned=int(total),
         resumed_from=int(len(completed)),
         repo_root=REPO_ROOT,
+    )
+    write_short_run_info(
+        checkpoint_dir,
+        script="run_phase1.py",
+        config_path=config_path,
+        extra={
+            "checkpoint_dir_resolved": str(checkpoint_dir.resolve()),
+            "resume": args.resume,
+            "real": args.real,
+            "domains": list(domains),
+            "total_episodes_planned": int(total),
+            "already_completed": int(len(completed)),
+            "model_name": str(model_cfg.get("name", "unknown")),
+        },
     )
     errors_path = checkpoint_dir / "errors.jsonl"
     run_summary_path = checkpoint_dir / "run_summary.json"
@@ -302,7 +333,7 @@ def main() -> None:
                                 result["vc_detail_per_step"],
                                 checkpoint_dir,
                                 export_format=vc_export_format,
-                                vc_subdir=logprob_subdir,
+                                vc_subdir=vc_subdir,
                             ):
                                 log(f"Wrote {p}")
                         completed_ok += 1
