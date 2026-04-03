@@ -67,6 +67,31 @@ def _suggests_unknown_command(info: dict[str, Any], observation: str) -> bool:
     return any(h in text for h in _UNKNOWN_CMD_HINTS)
 
 
+def _append_admissible_to_observation(observation: str, info: dict[str, Any]) -> str:
+    """
+    When TextWorld exposes ``admissible_commands`` in ``info``, append a single line so the
+    policy can align with parser-legal actions (similar to Tower of Hanoi ``Valid moves``).
+    """
+    adm = info.get("admissible_commands")
+    if adm is None:
+        return observation
+    try:
+        cmds = [str(c).strip() for c in adm if str(c).strip()]
+    except TypeError:
+        return observation
+    if not cmds:
+        return observation
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for c in cmds:
+        if c not in seen:
+            seen.add(c)
+            ordered.append(c)
+    suffix = ", ".join(ordered)
+    base = observation.rstrip()
+    return f"{base}\n\nValid commands this turn: {suffix}"
+
+
 def _normalize_command_key(cmd: str) -> str:
     return " ".join(cmd.strip().split())
 
@@ -212,8 +237,12 @@ class TextWorldEnv:
                 obs = result
             self.observation = obs if isinstance(obs, str) else str(obs)
             self._last_score = self._parse_score(info)
+            self.observation = _append_admissible_to_observation(self.observation, info)
             return self.observation
-        self.observation = "You are in a small room. Exits: north."
+        self.observation = (
+            "You are in a small room. Exits: north.\n\n"
+            "(Enter one parser command per turn, e.g. go north.)"
+        )
         return self.observation
 
     def step(self, action: str) -> str:
@@ -224,6 +253,7 @@ class TextWorldEnv:
             result = self._gym_env.step(action)
             obs, reward, done, info = _unpack_gym_step(result)
             self.observation = obs if isinstance(obs, str) else str(obs)
+            self.observation = _append_admissible_to_observation(self.observation, info)
             self.done = done
             score_before = self._last_score
             score_after = self._parse_score(info)
@@ -295,7 +325,10 @@ class TextWorldEnv:
             self.done = True
             self.observation = "Max steps reached."
         else:
-            self.observation = "You moved. Exits: north, south."
+            self.observation = (
+                "You moved. Exits: north, south.\n\n"
+                "(Enter one parser command per turn, e.g. go north.)"
+            )
         self.step_results.append(
             {
                 "step_index": self.current_step,
