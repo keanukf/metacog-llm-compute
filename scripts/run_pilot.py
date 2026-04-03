@@ -176,12 +176,14 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
                 "LM_STUDIO_BASE_URL", "http://localhost:1234/v1"
             )
             api_key = inf.get("lmstudio_api_key") or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
+            top_k = int(inf.get("lmstudio_top_logprobs", 5))
             return (
                 create_wrapper(
                     backend="lmstudio",
                     model_name=model_name,
                     base_url=base_url,
                     lmstudio_api_key=api_key,
+                    lmstudio_top_logprobs=top_k,
                 ),
                 None,
             )

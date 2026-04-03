@@ -6,7 +6,11 @@ from __future__ import annotations
 
 import pytest
 
-from src.signals.token_entropy import compute_tle, extract_tle_from_response
+from src.signals.token_entropy import (
+    compute_tle,
+    entropy_shannon_from_top_logprobs,
+    extract_tle_from_response,
+)
 
 
 def test_compute_tle_returns_mean_and_max():
@@ -45,3 +49,40 @@ def test_extract_tle_from_response_with_logprobs():
 def test_extract_tle_from_response_without_logprobs():
     out = extract_tle_from_response("answer", None)
     assert out is None
+
+
+def test_entropy_shannon_from_top_logprobs_two_candidates_nonzero():
+    top = [
+        {"token": "a", "logprob": -0.1},
+        {"token": "b", "logprob": -3.0},
+    ]
+    h = entropy_shannon_from_top_logprobs(top)
+    assert h > 0.01
+
+
+def test_entropy_shannon_single_candidate_zero():
+    assert entropy_shannon_from_top_logprobs([{"token": "x", "logprob": -0.1}]) == 0.0
+
+
+def test_compute_tle_with_top_logprobs_per_token():
+    logprobs = [
+        {
+            "token": "a",
+            "logprob": -0.1,
+            "top_logprobs": [
+                {"token": "a", "logprob": -0.1},
+                {"token": "b", "logprob": -2.0},
+            ],
+        },
+        {
+            "token": "b",
+            "logprob": -0.2,
+            "top_logprobs": [
+                {"token": "b", "logprob": -0.2},
+                {"token": "c", "logprob": -1.5},
+            ],
+        },
+    ]
+    out = compute_tle(logprobs)
+    assert out["mean_entropy"] > 0.01
+    assert out["max_entropy"] >= out["mean_entropy"]
