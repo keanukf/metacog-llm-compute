@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thesis Dependency Map</title>
+<style>
+:root {
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f5f5f4;
+  --color-background-warning: #faeeda;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #6b6b6b;
+  --color-text-tertiary: #9b9b9b;
+  --color-text-warning: #854f0b;
+  --color-border-tertiary: rgba(0,0,0,0.15);
+  --color-border-secondary: rgba(0,0,0,0.3);
+  --color-border-warning: #ef9f27;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background-primary: #1a1a1a;
+    --color-background-secondary: #2c2c2a;
+    --color-background-warning: #412402;
+    --color-text-primary: #e8e8e8;
+    --color-text-secondary: #a0a0a0;
+    --color-text-tertiary: #707070;
+    --color-text-warning: #fac775;
+    --color-border-tertiary: rgba(255,255,255,0.15);
+    --color-border-secondary: rgba(255,255,255,0.3);
+    --color-border-warning: #ef9f27;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-sans); background: var(--color-background-primary); color: var(--color-text-primary); padding: 1.5rem; max-width: 720px; margin: 0 auto; }
+h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+.subtitle { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 16px; }
+.track-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); margin: 0 0 6px 4px; }
+.node { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 10px 12px; margin: 0 0 6px; cursor: pointer; transition: border-color 0.15s; position: relative; }
+.node:hover { border-color: var(--color-border-secondary); }
+.node-id { font-size: 11px; font-weight: 500; color: var(--color-text-secondary); }
+.node-title { font-size: 13px; font-weight: 500; color: var(--color-text-primary); margin: 2px 0 0; }
+.node-deps { font-size: 11px; color: var(--color-text-tertiary); margin: 3px 0 0; }
+.node-detail { font-size: 12px; color: var(--color-text-secondary); margin: 6px 0 0; display: none; line-height: 1.5; }
+.node.expanded .node-detail { display: block; }
+.gate { border: 2px solid var(--color-border-warning); border-radius: var(--border-radius-md); padding: 10px 12px; margin: 8px 0; background: var(--color-background-warning); }
+.gate .node-title { color: var(--color-text-warning); }
+.gate .node-id { color: var(--color-text-warning); }
+.status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.s-blocked { background: var(--color-text-tertiary); }
+.s-active { background: #ef9f27; }
+.s-done { background: #639922; }
+.s-critical { background: #e24b4a; }
+.connector { text-align: center; color: var(--color-text-tertiary); font-size: 16px; line-height: 1; margin: 2px 0; }
+.tracks { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin: 12px 0; }
+.track { min-width: 0; }
+.legend { display: flex; gap: 16px; margin: 8px 0 16px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--color-text-secondary); }
+</style>
+</head>
+<body>
+
+<h1>Thesis dependency map</h1>
+<p class="subtitle">Metacognitive Effort Allocation — Critical path and gates (March 30, 2026, v2)</p>
+
+<div class="legend">
+  <div class="legend-item"><span class="status s-critical"></span> Blocker</div>
+  <div class="legend-item"><span class="status s-active"></span> In progress</div>
+  <div class="legend-item"><span class="status s-done"></span> Done</div>
+  <div class="legend-item"><span class="status s-blocked"></span> Blocked</div>
+</div>
+
+<div class="track-label">Layer 0 — Infrastructure + Model Selection</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-critical"></span><span class="node-id">L0.1</span></div>
+  <div class="node-title">Logprobs from vLLM</div>
+  <div class="node-deps">Blocks: TLE extraction, all calibration, model selection benchmark</div>
+  <div class="node-detail">vLLM must return per-token logprobs via SamplingParams(logprobs=1). Currently returning empty/null on first smoke test. Must work before any candidate model can be evaluated. Check vLLM version compatibility, test with a minimal prompt, inspect raw output. Without this, TLE is impossible and no model can be selected.</div>
+</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-critical"></span><span class="node-id">L0.2</span></div>
+  <div class="node-title">Structured output format</div>
+  <div class="node-deps">Blocks: action parsing, VC parsing, model selection benchmark</div>
+  <div class="node-detail">Pipeline must handle action parsing and VC extraction generically across model families. System prompt constrains output ("respond with exactly one line: your move"), stop sequences cut off reasoning, post-processing strips think-tags. For models with thinking mode (Qwen3, SmolLM3), enable_thinking=False must be enforced. VC needs a separate short call or enforced two-line format.</div>
+</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-active"></span><span class="node-id">L0.3</span></div>
+  <div class="node-title">Local pipeline validation (M1 + LM Studio)</div>
+  <div class="node-deps">Needs: pipeline code ready. Zero GPU cost.</div>
+  <div class="node-detail">Test all 7 candidate models (quantized GGUFs) locally via LM Studio's OpenAI-compatible API. Validate: (a) logprobs returned in expected schema, (b) action parsing produces valid moves, (c) VC extraction returns 0–100 values, (d) token_entropy.py computes non-null TLE. Run 3–5 TextWorld episodes per candidate. Absolute signal values will differ from full-precision vLLM, but pipeline mechanics are identical. Also write an integration test asserting the logprobs schema; run it locally against LM Studio, then against vLLM on first cloud session. Candidates: Qwen2.5-3B-Instruct, Qwen3-4B, Qwen3-8B, Llama-3.2-3B-Instruct, Phi-4-mini-instruct, SmolLM3-3B, Gemma-3-4B-IT.</div>
+</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-blocked"></span><span class="node-id">L0.4</span></div>
+  <div class="node-title">Model selection benchmark (RunPod, ~3h GPU)</div>
+  <div class="node-deps">Needs: L0.1 + L0.2 resolved, L0.3 passed</div>
+  <div class="node-detail">Run 20 episodes per candidate model per domain at C0 via vLLM at full precision. Measure four hard criteria: (1) logprob availability (binary), (2) action parseability (>80% threshold), (3) VC parseability (>80% threshold), (4) signal discrimination (AUROC of TLE vs. step-level correctness). Task performance is NOT a selection criterion (difficulty is calibrated separately in L3.1). Output: comparison table for §4.7 (Model Selection). Only dense transformer architectures evaluated; MoE and hybrid-attention (e.g. Qwen3.5 DeltaNet) excluded to avoid routing/attention confounds on TLE interpretation.</div>
+</div>
+
+<div class="connector">↓</div>
+<div class="gate" onclick="toggle(this)">
+  <div><span class="node-id">GATE 0</span></div>
+  <div class="node-title">Model selected and documented</div>
+  <div class="node-detail">One model chosen based on benchmark results. Selection rationale documented for §4.7: functional requirements derived from design, candidate pool, empirical comparison, winner. SLM definition operationalized in methodology: fewer than 10B parameters, single GPU (≤32 GB VRAM), dense architecture only. All subsequent work uses this model exclusively. If no candidate passes all four criteria, revisit candidate pool or adjust criteria thresholds.</div>
+</div>
+
+<div class="connector">↓</div>
+<div class="track-label">Layer 1 — Environments playable by LM</div>
+<div class="tracks">
+  <div class="track">
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-active"></span><span class="node-id">L1.1</span></div>
+      <div class="node-title">TextWorld: LM plays</div>
+      <div class="node-deps">Needs: GATE 0 → confirmed model</div>
+      <div class="node-detail">Run 10 TextWorld Cooking episodes with the selected model. Check: >80% actions parseable, game state advances, score changes tracked for step-level correctness. Manual play module already works.</div>
+    </div>
+  </div>
+  <div class="track">
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-active"></span><span class="node-id">L1.2</span></div>
+      <div class="node-title">Tower of Hanoi: LM plays</div>
+      <div class="node-deps">Needs: GATE 0 → confirmed model</div>
+      <div class="node-detail">Run 10 ToH episodes (3-disk) with the selected model. Check: >80% moves parseable, legal moves change state, optimal tracking works. Manual play verified. Valid moves listed in observation to help parseability.</div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↓</div>
+<div class="track-label">Layer 2 — Signals extractable</div>
+<div class="tracks">
+  <div class="track">
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-blocked"></span><span class="node-id">L2.1</span></div>
+      <div class="node-title">TLE extraction works</div>
+      <div class="node-deps">Needs: L0.1 (logprobs arrive) + GATE 0</div>
+      <div class="node-detail">With logprobs fixed and model confirmed, verify compute_tle produces non-null values, that TLE differs between easy and hard prompts, and that per-step TLE values are logged correctly in episode JSONs.</div>
+    </div>
+  </div>
+  <div class="track">
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-blocked"></span><span class="node-id">L2.2</span></div>
+      <div class="node-title">VC extraction works</div>
+      <div class="node-deps">Needs: L0.2 (structured output) + GATE 0</div>
+      <div class="node-detail">With clean output format and model confirmed, verify parse_confidence returns values 0–100 reliably. Options: two-line format (move / confidence), separate VC call after action call, or few-shot examples. Must produce non-null VC for >80% of steps.</div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↓</div>
+<div class="gate" onclick="toggle(this)">
+  <div><span class="node-id">GATE 1</span></div>
+  <div class="node-title">Parseability check (>80% parseable moves per domain)</div>
+  <div class="node-detail">Run 20 episodes per domain at C0 with the selected model. Count parseable moves / total moves. If &lt;80% after prompt fixes → add action-space constraining. If still fails → revisit model choice (re-run L0.4 with remaining candidates). This gate must pass before any GPU budget is committed to overnight runs.</div>
+</div>
+
+<div class="connector">↓</div>
+<div class="track-label">Layer 3 — Pre-experiment validation</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-blocked"></span><span class="node-id">L3.1</span></div>
+  <div class="node-title">Difficulty calibration</div>
+  <div class="node-deps">Needs: L1.1 + L1.2 + GATE 1</div>
+  <div class="node-detail">Run Always-C0 across difficulty levels with the selected model. TextWorld: vary rooms/ingredients. ToH: vary disks (3/4) and partial starts. Target: 30–50% C0 success rate. Output: difficulty_manifest.json. Task performance is tuned here, not during model selection.</div>
+</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-blocked"></span><span class="node-id">L3.2</span></div>
+  <div class="node-title">Signal discrimination (AUROC > 0.6)</div>
+  <div class="node-deps">Needs: L2.1 + L2.2 + L3.1</div>
+  <div class="node-detail">From the difficulty calibration data, compute AUROC of TLE and VC as predictors of step-level correctness at the calibrated difficulty. This reconfirms the model selection benchmark finding (L0.4) at the final task configuration. If AUROC &lt; 0.6 for both signals at this stage → signals don't predict correctness at the chosen difficulty → adjust difficulty or revisit model.</div>
+</div>
+
+<div class="connector">↓</div>
+<div class="gate" onclick="toggle(this)">
+  <div><span class="node-id">GATE 2</span></div>
+  <div class="node-title">Go/No-Go for Phase 1 (signals discriminate, difficulty calibrated)</div>
+  <div class="node-detail">Both domains at 30–50% C0 success. At least one signal shows AUROC > 0.6. Logprobs and VC reliably extracted. If all pass → commit to Phase 1 overnight runs.</div>
+</div>
+
+<div class="connector">↓</div>
+<div class="track-label">Layer 4–5 — Phase 1 experiment</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-blocked"></span><span class="node-id">L4</span></div>
+  <div class="node-title">Phase 1 runs (1500 episodes, ~16h GPU)</div>
+  <div class="node-deps">Needs: GATE 2</div>
+  <div class="node-detail">50 instances × 3 stages × 5 runs × 2 domains = 1500 episodes. Run overnight on RunPod GPU. TextWorld one night, ToH one night.</div>
+</div>
+<div class="connector">↓</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-blocked"></span><span class="node-id">L5</span></div>
+  <div class="node-title">Phase 1 analysis + threshold optimization</div>
+  <div class="node-deps">Needs: L4 data</div>
+  <div class="node-detail">ECE, Brier scores, reliability diagrams, step-position calibration curves, cross-domain comparison. Grid search θ₁, θ₂ on 10% validation split.</div>
+</div>
+
+<div class="connector">↓</div>
+<div class="gate" onclick="toggle(this)">
+  <div><span class="node-id">GATE 3</span></div>
+  <div class="node-title">Thresholds determined → Phase 2 can run</div>
+  <div class="node-detail">θ₁ and θ₂ optimized from Phase 1. Phase 2 adaptive allocator configured.</div>
+</div>
+
+<div class="connector">↓</div>
+<div class="track-label">Layer 6–7 — Phase 2 experiment</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-blocked"></span><span class="node-id">L6</span></div>
+  <div class="node-title">Phase 2 runs (3000 episodes, ~31h GPU)</div>
+  <div class="node-deps">Needs: GATE 3 + Phase 2 script functional</div>
+  <div class="node-detail">6 strategies × 50 instances × 5 runs × 2 domains = 3000 episodes.</div>
+</div>
+<div class="connector">↓</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-blocked"></span><span class="node-id">L7</span></div>
+  <div class="node-title">Phase 2 analysis</div>
+  <div class="node-deps">Needs: L6 data + analysis code</div>
+  <div class="node-detail">Success rates, compute efficiency, mixed-effects models, pairwise contrasts, effect sizes, allocation patterns.</div>
+</div>
+
+<div class="connector" style="margin: 12px 0 4px;">↓ ↓</div>
+<div class="track-label">Writing track (parallel where possible)</div>
+<div class="tracks">
+  <div class="track">
+    <div style="font-size: 11px; font-weight: 500; color: var(--color-text-secondary); margin-bottom: 4px;">No data needed</div>
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-blocked"></span><span class="node-id">W1</span></div>
+      <div class="node-title">Ch2 Theoretical Background (20pp)</div>
+      <div class="node-deps">Ready now — claim matrix v3 exists</div>
+    </div>
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-blocked"></span><span class="node-id">W2</span></div>
+      <div class="node-title">Ch3 Related Work (10pp)</div>
+      <div class="node-deps">Ready now — claim matrix v1 exists</div>
+    </div>
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-blocked"></span><span class="node-id">W3</span></div>
+      <div class="node-title">Ch4 RQ + Hypotheses (4pp)</div>
+      <div class="node-deps">Needs: W1 + W2</div>
+    </div>
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-blocked"></span><span class="node-id">W4</span></div>
+      <div class="node-title">Ch5 Methodology (10pp)</div>
+      <div class="node-deps">Needs: GATE 0 (model selected) + GATE 2 (confirmed parameters)</div>
+      <div class="node-detail">§4.7 Model Selection requires GATE 0 outputs: candidate pool, benchmark table, selection rationale, SLM definition. Remaining sections (design, operationalization, baselines, analysis plan) require GATE 2 for final confirmed parameters.</div>
+    </div>
+  </div>
+  <div class="track">
+    <div style="font-size: 11px; font-weight: 500; color: var(--color-text-secondary); margin-bottom: 4px;">Needs experiment data</div>
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-blocked"></span><span class="node-id">W5</span></div>
+      <div class="node-title">Ch6 Results: Calibration (6pp)</div>
+      <div class="node-deps">Needs: L5 (Phase 1 analysis)</div>
+    </div>
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-blocked"></span><span class="node-id">W6</span></div>
+      <div class="node-title">Ch7 Results: Allocation (8pp)</div>
+      <div class="node-deps">Needs: L7 (Phase 2 analysis)</div>
+    </div>
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-blocked"></span><span class="node-id">W7</span></div>
+      <div class="node-title">Ch8 Discussion (10pp)</div>
+      <div class="node-deps">Needs: W5 + W6</div>
+    </div>
+    <div class="node" onclick="toggle(this)">
+      <div><span class="status s-blocked"></span><span class="node-id">W8</span></div>
+      <div class="node-title">Ch1 Intro + Ch9 Conclusion (7pp)</div>
+      <div class="node-deps">Needs: W7</div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↓</div>
+<div class="track-label">Final — Revision + Submission</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-blocked"></span><span class="node-id">F1</span></div>
+  <div class="node-title">Revision pass 1 + 2</div>
+  <div class="node-deps">Needs: all W1–W8 drafted</div>
+</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-blocked"></span><span class="node-id">F2</span></div>
+  <div class="node-title">Word formatting, APA, front/back matter</div>
+  <div class="node-deps">Needs: F1</div>
+</div>
+<div class="node" onclick="toggle(this)">
+  <div><span class="status s-blocked"></span><span class="node-id">F3</span></div>
+  <div class="node-title">Turnitin submission</div>
+  <div class="node-deps">Needs: F2. Deadline: April 30, 23:59</div>
+</div>
+
+<script>
+function toggle(el) { el.classList.toggle('expanded'); }
+</script>
+</body>
+</html>
