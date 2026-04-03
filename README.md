@@ -127,6 +127,17 @@ Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; def
 
 After a non-mock pilot, `pilot_test1_inference.json` includes realistic `tokens_per_sec` for that device/endpoint.
 
+### Multi-model batch (`run_pilot_models.py`)
+
+Run the full pilot once per model id with one command. Each run writes under `data/results/pilot_batch_<UTC>/pilot_<UTC>_<slug>/` and optional `pilot_batch_manifest.json` lists `model_id`, output path, exit code, and wall time. For **L0.3** (local LM Studio spot-checks of several GGUF/MLX candidates), use `--pilot-mode lmstudio --real` and load each model in LM Studio (or point `LM_STUDIO_BASE_URL` at the right server) before the corresponding subprocess. For **L0.4** (RunPod vLLM model-selection benchmark), use `--pilot-mode cuda --real` and swap the served model on the Pod between runs. Example:
+
+```bash
+python scripts/run_pilot_models.py --config configs/pilot.yaml --pilot-mode lmstudio --real \
+  --models "id1,id2"
+# or: --models-file path/to/models.yaml  (list of strings or models: [ ... ])
+# Default list: edit configs/models.yaml and omit --models / --models-file to use it
+```
+
 ---
 
 ## Running on RunPod Cloud GPU

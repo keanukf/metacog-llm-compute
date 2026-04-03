@@ -994,6 +994,12 @@ def main() -> None:
             "(pilot_test*.json, ep_textworld_*.json, pilot_test5_toh.json)."
         ),
     )
+    parser.add_argument(
+        "--model-name",
+        default=None,
+        metavar="ID",
+        help="Override model.name after config (and LM Studio YAML merge). Used by run_pilot_models.py.",
+    )
     args = parser.parse_args()
     t_pilot0 = time.perf_counter()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
@@ -1009,6 +1015,8 @@ def main() -> None:
     config, lmstudio_note, lmstudio_applied = load_pilot_config_with_lmstudio_override(
         config_path, pilot_mode, REPO_ROOT, getattr(args, "lmstudio_config", None)
     )
+    if getattr(args, "model_name", None):
+        config.setdefault("model", {})["name"] = args.model_name
     only_steps = _only_steps_in_order(frozenset(args.only)) if args.only else list(PILOT_STEPS_ORDER)
     only_set = frozenset(only_steps)
 

@@ -13,7 +13,7 @@ Thesis codebase for **metacognitive effort allocation in sequential LM agents**:
 - **Config:** YAML in `configs/` (e.g. `pilot.yaml`, `experiment_core.yaml`). Do not commit secrets in YAML; use environment variables for API keys (e.g. LM Studio).
 - **Package:** `src/` is the main package; run scripts from repo root so `sys.path` includes repo root (see `run_pilot.py`).
 - **Tests:** pytest in `tests/`; unit tests with mocks (no GPU). Run: `python -m pytest tests/ -v`. Shared fixtures in `tests/conftest.py`.
-- **Scripts:** Entry points live in `scripts/` (e.g. `run_pilot.py`, `run_phase1.py`). Use `--config`, `--output-dir`, `--pilot-mode`, `--real` as in README.
+- **Scripts:** Entry points live in `scripts/` (e.g. `run_pilot.py`, `run_pilot_models.py`, `run_phase1.py`). Use `--config`, `--output-dir`, `--pilot-mode`, `--real` as in README.
 
 ## Key conventions
 
