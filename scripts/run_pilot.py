@@ -23,7 +23,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.utils.logging_utils import write_logprob_distribution_artifacts
+from src.utils.logging_utils import write_logprob_distribution_artifacts, write_vc_distribution_artifacts
+from src.utils.vc_config import vc_step_fn_kwargs
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
 from src.utils.run_progress import format_run_elapsed, log, log_step_line
 
@@ -33,6 +34,15 @@ def _logprob_export_settings(config: dict) -> tuple[bool, str, str]:
     return (
         bool(lg.get("save_logprob_distributions", False)),
         str(lg.get("logprob_export_format", "json")).lower(),
+        str(lg.get("logprob_subdir", "logprobs")),
+    )
+
+
+def _vc_export_settings(config: dict) -> tuple[bool, str, str]:
+    lg = config.get("logging") or {}
+    return (
+        bool(lg.get("save_vc_distributions", False)),
+        str(lg.get("vc_export_format", "json")).lower(),
         str(lg.get("logprob_subdir", "logprobs")),
     )
 
@@ -51,6 +61,24 @@ def _maybe_write_logprob_artifacts(
         return
     for p in write_logprob_distribution_artifacts(
         episode_id, raw, output_dir, export_format=fmt, logprob_subdir=sub
+    ):
+        log(f"Wrote {p}")
+
+
+def _maybe_write_vc_artifacts(
+    config: dict,
+    episode_id: str,
+    result: dict[str, Any],
+    output_dir: Path,
+) -> None:
+    save, fmt, sub = _vc_export_settings(config)
+    if not save:
+        return
+    raw = result.get("vc_detail_per_step")
+    if not raw:
+        return
+    for p in write_vc_distribution_artifacts(
+        episode_id, raw, output_dir, export_format=fmt, vc_subdir=sub
     ):
         log(f"Wrote {p}")
 
@@ -522,12 +550,17 @@ def run_test5_tower_of_hanoi(
 
     class MockModel:
         def generate(self, prompt, logprobs=False, **kwargs):
-            text = "A->B\nConfidence: 50"
+            if "You just chose the action:" in (prompt or ""):
+                t = "50"
+                lp = [{"logprob": -0.2}] * 2 if logprobs else None
+                return t, lp
+            text = "A->B"
             lp = [{"logprob": -0.5}] * 5 if logprobs else None
             return text, lp
 
     model = real_model if real_model is not None else MockModel()
     save_lp, _, _ = _logprob_export_settings(config)
+    save_vc, _, _ = _vc_export_settings(config)
     toh_cfg = config.get("tower_of_hanoi", {})
     num_episodes = int(toh_cfg.get("pilot_episodes", 20))
     num_disks = int(toh_cfg.get("pilot_num_disks", 3))
@@ -555,7 +588,12 @@ def run_test5_tower_of_hanoi(
             return _inner
 
         env = TowerOfHanoiEnv(task=task, max_steps=max_steps)
-        step_fn = get_step_fn("C0", save_logprob_distributions=save_lp)
+        step_fn = get_step_fn(
+            "C0",
+            save_logprob_distributions=save_lp,
+            save_vc_distributions=save_vc,
+            **vc_step_fn_kwargs(config, "tower_of_hanoi"),
+        )
         log(f"Test 5: ToH episode {i + 1}/{num_episodes} — running (max {max_steps} steps)...")
         result = run_episode(
             env,
@@ -565,6 +603,7 @@ def run_test5_tower_of_hanoi(
             max_steps=max_steps,
             on_step=_make_toh_on_step(i, num_episodes),
             save_logprob_distributions=save_lp,
+            save_vc_distributions=save_vc,
         )
         log(
             f"Test 5: ToH episode done {i + 1}/{num_episodes} — steps={result['steps']} "
@@ -588,8 +627,11 @@ def run_test5_tower_of_hanoi(
             "steps_detail": result.get("steps_detail"),
             "step_correctness": result.get("step_correctness"),
         }
+        if result.get("vc_detail_per_step") is not None:
+            data["vc_detail_per_step"] = result["vc_detail_per_step"]
         log_episode(ep_id, data, output_dir)
         _maybe_write_logprob_artifacts(config, ep_id, result, output_dir)
+        _maybe_write_vc_artifacts(config, ep_id, result, output_dir)
         episodes_data.append(data)
         step_corr = result.get("step_correctness") or []
         for d in step_corr:
@@ -618,12 +660,17 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
 
     class MockModel:
         def generate(self, prompt, logprobs=False, **kwargs):
+            if "You just chose the action:" in (prompt or ""):
+                t = "80"
+                lp = [{"logprob": -0.15}] * 2 if logprobs else None
+                return t, lp
             text = "go north"
             lp = [{"logprob": -0.5}] * 5 if logprobs else None
             return text, lp
 
     model = real_model if real_model is not None else MockModel()
     save_lp, _, _ = _logprob_export_settings(config)
+    save_vc, _, _ = _vc_export_settings(config)
     instances = config.get("pilot", {}).get("instances", 5)
     stages = ["C0", "C1", "C2"]
     runs = config.get("pilot", {}).get("runs_per_instance", 1)
@@ -652,7 +699,12 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     return _inner
 
                 env = TextWorldEnv(max_steps=10)
-                step_fn = get_step_fn(stage, save_logprob_distributions=save_lp)
+                step_fn = get_step_fn(
+                    stage,
+                    save_logprob_distributions=save_lp,
+                    save_vc_distributions=save_vc,
+                    **vc_step_fn_kwargs(config, "textworld"),
+                )
                 log(f"Test 4: episode start {ep_id} (stage={stage})")
                 result = run_episode(
                     env,
@@ -662,6 +714,7 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     max_steps=10,
                     on_step=_make_test5_on_step(ep_id),
                     save_logprob_distributions=save_lp,
+                    save_vc_distributions=save_vc,
                 )
                 log(
                     f"Test 4: episode done {ep_id} — steps={result['steps']} "
@@ -683,8 +736,11 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     "tle_per_step": result.get("tle_per_step"),
                     "vc_per_step": result.get("vc_per_step"),
                 }
+                if result.get("vc_detail_per_step") is not None:
+                    data["vc_detail_per_step"] = result["vc_detail_per_step"]
                 log_episode(ep_id, data, output_dir)
                 _maybe_write_logprob_artifacts(config, ep_id, result, output_dir)
+                _maybe_write_vc_artifacts(config, ep_id, result, output_dir)
                 episodes_data.append(data)
                 _log_progress()
     return episodes_data

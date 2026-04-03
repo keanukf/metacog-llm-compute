@@ -33,6 +33,16 @@ logging:
   save_logprob_distributions: true
   logprob_export_format: json   # json | csv | both
   logprob_subdir: logprobs
+  save_vc_distributions: true
+  vc_export_format: json
+
+vc:
+  mode: followup
+  followup_max_tokens: 8
+  followup_temperature: 0.0
+  prompt_prefix: {}
+  action_max_tokens: {}
+  tower_of_hanoi_default_action_max_tokens: 32
 
 paths:
   pilot_benchmark: "data/results/pilot_benchmark.json"

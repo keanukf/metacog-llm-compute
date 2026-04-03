@@ -372,3 +372,102 @@ def write_logprob_distribution_artifacts(
                         )
         written.append(p_csv)
     return written
+
+
+def write_vc_distribution_artifacts(
+    episode_id: str,
+    vc_detail_per_step: list[dict[str, Any] | None] | None,
+    output_dir: str | Path,
+    *,
+    export_format: str = "json",
+    vc_subdir: str = "logprobs",
+) -> list[Path]:
+    """
+    Write optional sidecar JSON/CSV for verbalized-confidence follow-up calls (per env step).
+
+    Each step may contain ``vc_prompt``, ``vc_raw_text``, ``vc_value``, ``vc_logprobs`` (per-token rows).
+    """
+    from src.signals.token_entropy import softmax_probs_from_top_logprobs
+
+    if not vc_detail_per_step:
+        return []
+    out_dir = Path(output_dir) / vc_subdir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = f"{episode_id}_vc"
+    steps_payload: list[dict[str, Any]] = []
+    for i, d in enumerate(vc_detail_per_step):
+        if d is None:
+            steps_payload.append({"step_index": i, "vc_record": None})
+        else:
+            steps_payload.append({"step_index": i, "vc_record": dict(d)})
+    body: dict[str, Any] = {
+        "episode_id": episode_id,
+        "schema_version": 1,
+        "description": "Per env step: VC follow-up metadata and optional per-token vc_logprobs.",
+        "steps": steps_payload,
+    }
+    written: list[Path] = []
+    fmt = export_format.strip().lower()
+    if fmt in ("json", "both"):
+        p = out_dir / f"{stem}.json"
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(body, f, indent=2)
+        written.append(p)
+    if fmt in ("csv", "both"):
+        p_csv = out_dir / f"{stem}.csv"
+        with open(p_csv, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(
+                [
+                    "episode_id",
+                    "env_step_index",
+                    "vc_token_index",
+                    "rank_in_topk",
+                    "token",
+                    "logprob",
+                    "p_renorm_topk",
+                ]
+            )
+            for env_i, d in enumerate(vc_detail_per_step):
+                if not isinstance(d, dict):
+                    continue
+                lp_list = d.get("vc_logprobs")
+                if not isinstance(lp_list, list) or not lp_list:
+                    continue
+                for tok_i, tok in enumerate(lp_list):
+                    if not isinstance(tok, dict):
+                        continue
+                    top = tok.get("top_logprobs")
+                    if isinstance(top, list) and top:
+                        cands = [
+                            x
+                            for x in top
+                            if isinstance(x, dict) and x.get("logprob") is not None
+                        ]
+                        probs = softmax_probs_from_top_logprobs(top)
+                        for rank, (cand, pr) in enumerate(zip(cands, probs)):
+                            w.writerow(
+                                [
+                                    episode_id,
+                                    env_i,
+                                    tok_i,
+                                    rank,
+                                    cand.get("token", ""),
+                                    cand.get("logprob", ""),
+                                    f"{pr:.8g}",
+                                ]
+                            )
+                    else:
+                        w.writerow(
+                            [
+                                episode_id,
+                                env_i,
+                                tok_i,
+                                0,
+                                tok.get("token", ""),
+                                tok.get("logprob", ""),
+                                "1.0",
+                            ]
+                        )
+        written.append(p_csv)
+    return written
