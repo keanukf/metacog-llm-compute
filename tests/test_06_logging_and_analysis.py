@@ -10,12 +10,25 @@ import json
 import pytest
 
 from src.analysis.calibration import compute_ece
-from src.utils.logging_utils import log_episode, write_vc_distribution_artifacts
+from src.utils.logging_utils import compact_episode_for_storage, log_episode, write_vc_distribution_artifacts
+
+
+def test_compact_episode_drops_verbose_keys():
+    d = {
+        "episode_id": "ep_x",
+        "steps_detail": [{"step_index": 0}],
+        "vc_detail_per_step": [{"vc_value": 1.0}],
+        "logprob_raw_per_step": [[{"logprob": 0.0}]],
+        "tle_per_step": [{"mean_entropy": 0.1}],
+    }
+    c = compact_episode_for_storage(d)
+    assert "steps_detail" not in c and "vc_detail_per_step" not in c and "logprob_raw_per_step" not in c
+    assert c["tle_per_step"] == [{"mean_entropy": 0.1}]
 
 
 def test_log_episode_round_trip(sample_episode_data, temp_results_dir):
     ep_id = sample_episode_data["episode_id"]
-    path = log_episode(ep_id, sample_episode_data, temp_results_dir)
+    path = log_episode(ep_id, sample_episode_data, temp_results_dir, compact=False)
     assert path.exists()
     with open(path) as f:
         loaded = json.load(f)
@@ -46,10 +59,11 @@ def test_write_vc_distribution_artifacts_json(temp_results_dir):
         [detail, None],
         temp_results_dir,
         export_format="json",
-        vc_subdir="logprobs",
+        vc_subdir="vc",
     )
     assert len(paths) == 1
     assert paths[0].name == "ep_test_vc_0_vc.json"
+    assert paths[0].parent.name == "vc"
     import json
 
     with open(paths[0]) as f:

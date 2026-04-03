@@ -16,12 +16,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Omitted from main episode JSON when ``compact=True`` — full detail lives in logprob / VC sidecars.
+_EPISODE_STORAGE_DETAIL_KEYS = frozenset({"steps_detail", "vc_detail_per_step", "logprob_raw_per_step"})
+
+
+def compact_episode_for_storage(data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Drop per-step verbose fields meant for sidecar files only.
+
+    Keeps summary vectors like ``tle_per_step``, ``vc_per_step``, ``step_correctness``.
+    """
+    return {k: v for k, v in data.items() if k not in _EPISODE_STORAGE_DETAIL_KEYS}
+
 
 def log_episode(
     episode_id: str,
     data: dict[str, Any],
     path: str | Path,
     tracker: Any = None,
+    *,
+    compact: bool = True,
 ) -> Path:
     """
     Write a single episode's data as one JSON file.
@@ -32,6 +46,8 @@ def log_episode(
         total_lm_calls, tokens, wall_clock_time.
         path: Directory or full file path; if directory, file is path / f"{episode_id}.json".
         tracker: Reserved for optional hooks; ignored by this function (file write only).
+        compact: If True (default), omit ``steps_detail``, ``vc_detail_per_step``, and
+            ``logprob_raw_per_step`` — use sidecar JSONs under ``logprobs/`` / ``vc/`` for those.
 
     Returns:
         Path to the written file.
@@ -40,8 +56,9 @@ def log_episode(
     if path.suffix != ".json":
         path = path / f"{episode_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
+    to_write = compact_episode_for_storage(data) if compact else dict(data)
     with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+        json.dump(to_write, f, indent=2)
     return path
 
 
@@ -380,18 +397,19 @@ def write_vc_distribution_artifacts(
     output_dir: str | Path,
     *,
     export_format: str = "json",
-    vc_subdir: str = "logprobs",
+    vc_subdir: str = "vc",
 ) -> list[Path]:
     """
     Write optional sidecar JSON/CSV for verbalized-confidence follow-up calls (per env step).
 
     Each step may contain ``vc_prompt``, ``vc_raw_text``, ``vc_value``, ``vc_logprobs`` (per-token rows).
+    Default ``vc_subdir`` is ``vc`` (parallel to ``logprobs/`` for TLE sidecars).
     """
     from src.signals.token_entropy import softmax_probs_from_top_logprobs
 
     if not vc_detail_per_step:
         return []
-    out_dir = Path(output_dir) / vc_subdir
+    out_dir = Path(output_dir) / str(vc_subdir)
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{episode_id}_vc"
     steps_payload: list[dict[str, Any]] = []

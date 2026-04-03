@@ -35,6 +35,7 @@ logging:
   logprob_subdir: logprobs
   save_vc_distributions: true
   vc_export_format: json
+  vc_subdir: vc   # sidecar folder for VC follow-up distributions (parallel to logprob_subdir)
 
 vc:
   mode: followup
