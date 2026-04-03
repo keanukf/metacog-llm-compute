@@ -30,7 +30,7 @@ pilot:
 # Default off — size scales with env_steps × completion_tokens × top_k. Episode JSON stays summary-only (TLE mean/max).
 # Stored TLE entropy uses softmax renormalized over the returned top-k only (not full vocabulary).
 logging:
-  save_logprob_distributions: false
+  save_logprob_distributions: true
   logprob_export_format: json   # json | csv | both
   logprob_subdir: logprobs
 
@@ -55,7 +55,7 @@ test4_textworld:
 
 tower_of_hanoi:
   # Pilot add-on: parseability validation on 3-disk problems at C0
-  pilot_episodes: 5
+  pilot_episodes: 20
   pilot_num_disks: 3
   pilot_max_steps: 20
   task_generation_seed: 42
