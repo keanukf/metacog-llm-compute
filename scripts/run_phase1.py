@@ -161,12 +161,16 @@ def main() -> None:
         checkpoint_dir = REPO_ROOT / checkpoint_dir
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     config = load_config(config_path)
+    lg = config.get("logging") or {}
+    save_logprob_distributions = bool(lg.get("save_logprob_distributions", False))
+    logprob_export_format = str(lg.get("logprob_export_format", "json")).lower()
+    logprob_subdir = str(lg.get("logprob_subdir", "logprobs"))
 
     from src.utils.checkpointing import list_completed_episodes, save_episode_checkpoint
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.utils.experiment_env import create_experiment_model, make_experiment_env
-    from src.utils.logging_utils import write_run_metadata
+    from src.utils.logging_utils import write_logprob_distribution_artifacts, write_run_metadata
     from src.utils.run_progress import format_run_elapsed, log, log_episode_line, log_step_line, print_batch_progress
 
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
@@ -222,7 +226,7 @@ def main() -> None:
                     t_ep0 = time.perf_counter()
                     try:
                         env = make_experiment_env(domain, inst, config, max_steps, REPO_ROOT)
-                        step_fn = get_step_fn(stage)
+                        step_fn = get_step_fn(stage, save_logprob_distributions=save_logprob_distributions)
                         on_step = None
                         if args.verbose_steps:
 
@@ -240,6 +244,7 @@ def main() -> None:
                             step_fn=step_fn,
                             max_steps=max_steps,
                             on_step=on_step,
+                            save_logprob_distributions=save_logprob_distributions,
                         )
                         data = {
                             "episode_id": ep_id,
@@ -267,6 +272,15 @@ def main() -> None:
                         if result.get("step_correctness") is not None:
                             data["step_correctness"] = result["step_correctness"]
                         save_episode_checkpoint(checkpoint_dir, ep_id, data)
+                        if save_logprob_distributions and result.get("logprob_raw_per_step"):
+                            for p in write_logprob_distribution_artifacts(
+                                ep_id,
+                                result["logprob_raw_per_step"],
+                                checkpoint_dir,
+                                export_format=logprob_export_format,
+                                logprob_subdir=logprob_subdir,
+                            ):
+                                log(f"Wrote {p}")
                         completed_ok += 1
                         done_count += 1
                         ep_wall = time.perf_counter() - t_ep0

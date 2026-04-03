@@ -23,8 +23,36 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.utils.logging_utils import write_logprob_distribution_artifacts
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
 from src.utils.run_progress import format_run_elapsed, log, log_step_line
+
+
+def _logprob_export_settings(config: dict) -> tuple[bool, str, str]:
+    lg = config.get("logging") or {}
+    return (
+        bool(lg.get("save_logprob_distributions", False)),
+        str(lg.get("logprob_export_format", "json")).lower(),
+        str(lg.get("logprob_subdir", "logprobs")),
+    )
+
+
+def _maybe_write_logprob_artifacts(
+    config: dict,
+    episode_id: str,
+    result: dict[str, Any],
+    output_dir: Path,
+) -> None:
+    save, fmt, sub = _logprob_export_settings(config)
+    if not save:
+        return
+    raw = result.get("logprob_raw_per_step")
+    if not raw:
+        return
+    for p in write_logprob_distribution_artifacts(
+        episode_id, raw, output_dir, export_format=fmt, logprob_subdir=sub
+    ):
+        log(f"Wrote {p}")
 
 # Canonical order for --only (subset runs in this order).
 PILOT_STEPS_ORDER = (
@@ -308,16 +336,61 @@ def run_test1_inference_speed(
     return result
 
 
-def run_test2_token_entropy(config: dict, *, real_model=None) -> dict:
+def run_test2_token_entropy(config: dict, output_dir: Path, *, real_model=None) -> dict:
     """Test 2: TLE extraction from real logprobs when available; else synthetic."""
     log("Test 2: token entropy — start")
     from src.signals.token_entropy import compute_tle, extract_tle_from_response
+
+    save_lp, lp_fmt, lp_sub = _logprob_export_settings(config)
 
     if real_model is None:
         # Synthetic logprobs: easy (low entropy) vs hard (high entropy)
         easy = [{"logprob": -0.1}] * 10
         hard = [{"logprob": -2.0}] * 10
-        return {"mode": "synthetic", "easy_tle": compute_tle(easy), "hard_tle": compute_tle(hard)}
+        out = {"mode": "synthetic", "easy_tle": compute_tle(easy), "hard_tle": compute_tle(hard)}
+        if save_lp:
+            out_dir = output_dir / lp_sub if lp_sub else output_dir
+            out_dir.mkdir(parents=True, exist_ok=True)
+            dist = {
+                "mode": "synthetic",
+                "per_prompt_logprob_tokens": {"easy": easy, "hard": hard},
+            }
+            dist_path = out_dir / "pilot_test2_tle_distributions.json"
+            with open(dist_path, "w") as f:
+                json.dump(dist, f, indent=2)
+            log(f"Wrote {dist_path}")
+            if lp_fmt in ("csv", "both"):
+                import csv
+
+                from src.signals.token_entropy import softmax_probs_from_top_logprobs
+
+                csv_path = out_dir / "pilot_test2_tle_distributions.csv"
+                per_prompt_logprob_tokens = {"easy": easy, "hard": hard}
+                with open(csv_path, "w", encoding="utf-8", newline="") as cf:
+                    w = csv.writer(cf)
+                    w.writerow(
+                        ["prompt_name", "completion_token_index", "rank_in_topk", "token", "logprob", "p_renorm_topk"]
+                    )
+                    for pname, lp_list in per_prompt_logprob_tokens.items():
+                        for tok_i, tok in enumerate(lp_list or []):
+                            if not isinstance(tok, dict):
+                                continue
+                            top = tok.get("top_logprobs")
+                            if isinstance(top, list) and top:
+                                cands = [
+                                    x
+                                    for x in top
+                                    if isinstance(x, dict) and x.get("logprob") is not None
+                                ]
+                                probs = softmax_probs_from_top_logprobs(top)
+                                for rank, (cand, pr) in enumerate(zip(cands, probs)):
+                                    w.writerow(
+                                        [pname, tok_i, rank, cand.get("token", ""), cand.get("logprob", ""), f"{pr:.8g}"]
+                                    )
+                            else:
+                                w.writerow([pname, tok_i, 0, tok.get("token", ""), tok.get("logprob", ""), "1.0"])
+                log(f"Wrote {csv_path}")
+        return out
 
     inf_cfg = config.get("inference", {})
     max_tokens = int(inf_cfg.get("max_tokens", 128))
@@ -329,6 +402,7 @@ def run_test2_token_entropy(config: dict, *, real_model=None) -> dict:
     out: dict[str, Any] = {"mode": "real", "per_prompt": {}}
     mean_entropies: list[float] = []
     max_entropies: list[float] = []
+    per_prompt_logprob_tokens: dict[str, Any] = {}
     for name, p in prompts.items():
         text, logprobs = real_model.generate(p, logprobs=True, max_tokens=max_tokens, temperature=temperature)
         tle = extract_tle_from_response(text, logprobs) if logprobs else None
@@ -336,6 +410,8 @@ def run_test2_token_entropy(config: dict, *, real_model=None) -> dict:
             "tle": tle,
             "completion_tokens_observed": len(logprobs) if logprobs else 0,
         }
+        if save_lp and logprobs:
+            per_prompt_logprob_tokens[name] = logprobs
         if isinstance(tle, dict):
             me = tle.get("mean_entropy")
             mx = tle.get("max_entropy")
@@ -347,6 +423,48 @@ def run_test2_token_entropy(config: dict, *, real_model=None) -> dict:
         "mean_entropy_avg": (sum(mean_entropies) / len(mean_entropies)) if mean_entropies else None,
         "max_entropy_avg": (sum(max_entropies) / len(max_entropies)) if max_entropies else None,
     }
+    if save_lp and per_prompt_logprob_tokens:
+        out_dir = output_dir / lp_sub if lp_sub else output_dir
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dist_path = out_dir / "pilot_test2_tle_distributions.json"
+        with open(dist_path, "w") as f:
+            json.dump(
+                {
+                    "mode": "real",
+                    "per_prompt_logprob_tokens": per_prompt_logprob_tokens,
+                },
+                f,
+                indent=2,
+            )
+        log(f"Wrote {dist_path}")
+        if lp_fmt in ("csv", "both"):
+            import csv
+
+            csv_path = out_dir / "pilot_test2_tle_distributions.csv"
+            from src.signals.token_entropy import softmax_probs_from_top_logprobs
+
+            with open(csv_path, "w", encoding="utf-8", newline="") as cf:
+                w = csv.writer(cf)
+                w.writerow(
+                    ["prompt_name", "completion_token_index", "rank_in_topk", "token", "logprob", "p_renorm_topk"]
+                )
+                for pname, lp_list in per_prompt_logprob_tokens.items():
+                    for tok_i, tok in enumerate(lp_list or []):
+                        if not isinstance(tok, dict):
+                            continue
+                        top = tok.get("top_logprobs")
+                        if isinstance(top, list) and top:
+                            cands = [
+                                x
+                                for x in top
+                                if isinstance(x, dict) and x.get("logprob") is not None
+                            ]
+                            probs = softmax_probs_from_top_logprobs(top)
+                            for rank, (cand, pr) in enumerate(zip(cands, probs)):
+                                w.writerow([pname, tok_i, rank, cand.get("token", ""), cand.get("logprob", ""), f"{pr:.8g}"])
+                        else:
+                            w.writerow([pname, tok_i, 0, tok.get("token", ""), tok.get("logprob", ""), "1.0"])
+            log(f"Wrote {csv_path}")
     return out
 
 
@@ -409,6 +527,7 @@ def run_test5_tower_of_hanoi(
             return text, lp
 
     model = real_model if real_model is not None else MockModel()
+    save_lp, _, _ = _logprob_export_settings(config)
     toh_cfg = config.get("tower_of_hanoi", {})
     num_episodes = int(toh_cfg.get("pilot_episodes", 20))
     num_disks = int(toh_cfg.get("pilot_num_disks", 3))
@@ -436,7 +555,7 @@ def run_test5_tower_of_hanoi(
             return _inner
 
         env = TowerOfHanoiEnv(task=task, max_steps=max_steps)
-        step_fn = get_step_fn("C0")
+        step_fn = get_step_fn("C0", save_logprob_distributions=save_lp)
         log(f"Test 5: ToH episode {i + 1}/{num_episodes} — running (max {max_steps} steps)...")
         result = run_episode(
             env,
@@ -445,6 +564,7 @@ def run_test5_tower_of_hanoi(
             step_fn=step_fn,
             max_steps=max_steps,
             on_step=_make_toh_on_step(i, num_episodes),
+            save_logprob_distributions=save_lp,
         )
         log(
             f"Test 5: ToH episode done {i + 1}/{num_episodes} — steps={result['steps']} "
@@ -469,6 +589,7 @@ def run_test5_tower_of_hanoi(
             "step_correctness": result.get("step_correctness"),
         }
         log_episode(ep_id, data, output_dir)
+        _maybe_write_logprob_artifacts(config, ep_id, result, output_dir)
         episodes_data.append(data)
         step_corr = result.get("step_correctness") or []
         for d in step_corr:
@@ -502,6 +623,7 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
             return text, lp
 
     model = real_model if real_model is not None else MockModel()
+    save_lp, _, _ = _logprob_export_settings(config)
     instances = config.get("pilot", {}).get("instances", 5)
     stages = ["C0", "C1", "C2"]
     runs = config.get("pilot", {}).get("runs_per_instance", 1)
@@ -530,7 +652,7 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     return _inner
 
                 env = TextWorldEnv(max_steps=10)
-                step_fn = get_step_fn(stage)
+                step_fn = get_step_fn(stage, save_logprob_distributions=save_lp)
                 log(f"Test 4: episode start {ep_id} (stage={stage})")
                 result = run_episode(
                     env,
@@ -539,6 +661,7 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     step_fn=step_fn,
                     max_steps=10,
                     on_step=_make_test5_on_step(ep_id),
+                    save_logprob_distributions=save_lp,
                 )
                 log(
                     f"Test 4: episode done {ep_id} — steps={result['steps']} "
@@ -561,6 +684,7 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     "vc_per_step": result.get("vc_per_step"),
                 }
                 log_episode(ep_id, data, output_dir)
+                _maybe_write_logprob_artifacts(config, ep_id, result, output_dir)
                 episodes_data.append(data)
                 _log_progress()
     return episodes_data
@@ -827,7 +951,7 @@ def main() -> None:
         log(f"Test 1 done — tokens/s={test1.get('tokens_per_sec', 0):.1f}")
 
     if "test2" in only_set:
-        test2 = run_test2_token_entropy(config, real_model=real_model)
+        test2 = run_test2_token_entropy(config, output_dir, real_model=real_model)
         _save_json(output_dir, "pilot_test2_tle", test2)
         log("Test 2 done.")
 
