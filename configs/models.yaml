@@ -1,0 +1,18 @@
+# Default model ids for `scripts/run_pilot_models.py`.
+# Used when you omit both `--models` and `--models-file` and this file exists.
+#
+# Each entry must be the exact `model.name` your backend expects:
+# - LM Studio: id shown for API requests (often `publisher/model-...-MLX-4bit`)
+# - vLLM / RunPod: served model name
+# - HuggingFace (`--pilot-mode hf`): repo id, e.g. Qwen/Qwen2.5-3B-Instruct
+#
+# L0.3 local spot-checks: swap/load each weights bundle in LM Studio (or point
+# LM_STUDIO_BASE_URL at the right server) before the corresponding subprocess.
+# Thesis candidate pool (uncomment / edit to match your local builds):
+#   - Qwen2.5-3B-Instruct, Qwen3-4B, Qwen3-8B, Llama-3.2-3B-Instruct,
+#     Phi-4-mini-instruct, SmolLM3-3B, Gemma-3-4B-IT (see blueprints/thesis_dependency_map.html)
+
+models:
+  - "lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit"
+  # - "lmstudio-community/Qwen2.5-3B-Instruct-MLX-4bit"
+  # - "lmstudio-community/Llama-3.2-3B-Instruct-MLX-4bit"
