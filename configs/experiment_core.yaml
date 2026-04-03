@@ -40,6 +40,18 @@ logging:
   save_logprob_distributions: false
   logprob_export_format: json
   logprob_subdir: logprobs
+  save_vc_distributions: false
+  vc_export_format: json   # json | csv | both — VC follow-up sidecars (*_vc.json)
+
+# Verbalized confidence: separate short follow-up call (recommended) or parse from action text (inline).
+vc:
+  mode: followup
+  followup_max_tokens: 8
+  followup_temperature: 0.0
+  # Per-domain instruction prepended to the env observation (tower_of_hanoi defaults in code if omitted).
+  prompt_prefix: {}
+  action_max_tokens: {}
+  tower_of_hanoi_default_action_max_tokens: 32
 
 episode:
   max_steps_per_episode: 20

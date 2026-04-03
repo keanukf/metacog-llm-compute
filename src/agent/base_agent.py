@@ -24,23 +24,43 @@ StepFn = Callable[
 
 def _normalize_step_result(
     result: tuple,
-) -> tuple[str, dict | None, float | None, int, int, list[dict[str, Any]] | None]:
+) -> tuple[
+    str,
+    dict | None,
+    float | None,
+    int,
+    int,
+    list[dict[str, Any]] | None,
+    dict[str, Any] | None,
+]:
     """
-    Unpack step result as (action, tle, vc, tokens_used, lm_calls_this_step, logprobs_raw).
+    Unpack step result as (action, tle, vc, tokens_used, lm_calls_this_step, logprobs_raw, vc_detail).
 
     Backward compatibility:
-    - 3-tuple -> tokens_used=0, lm_calls_this_step=1, logprobs_raw=None
+    - 3-tuple -> tokens_used=0, lm_calls_this_step=1, logprobs_raw=None, vc_detail=None
     - 4-tuple -> lm_calls_this_step=1
-    - 6-tuple -> last element is raw per-token logprob list from the model (optional save)
+    - 6-tuple -> legacy: last element is raw per-token logprob list (optional save)
+    - 7-tuple -> (..., action_logprobs, vc_detail dict from follow-up)
     """
     raw_lp: list[dict[str, Any]] | None = None
-    if len(result) >= 6:
+    vc_detail: dict[str, Any] | None = None
+    n = len(result)
+    if n >= 7:
         raw_lp = result[5]  # type: ignore[assignment]
-    if len(result) >= 5:
-        return result[0], result[1], result[2], int(result[3]), int(result[4]), raw_lp
+        vc_detail = result[6]  # type: ignore[assignment]
+    elif n == 6:
+        sixth = result[5]
+        if isinstance(sixth, dict) and (
+            "vc_prompt" in sixth or "vc_raw_text" in sixth or "vc_value" in sixth
+        ):
+            vc_detail = sixth
+        else:
+            raw_lp = sixth  # type: ignore[assignment]
+    if n >= 5:
+        return result[0], result[1], result[2], int(result[3]), int(result[4]), raw_lp, vc_detail
     if len(result) >= 4:
-        return result[0], result[1], result[2], int(result[3]), 1, raw_lp
-    return result[0], result[1], result[2], 0, 1, raw_lp
+        return result[0], result[1], result[2], int(result[3]), 1, raw_lp, vc_detail
+    return result[0], result[1], result[2], 0, 1, raw_lp, vc_detail
 
 
 def _copy_step_results(env: Any) -> list[dict[str, Any]] | None:
@@ -73,6 +93,7 @@ def run_episode(
     on_step: Callable[[dict[str, Any]], None] | None = None,
     *,
     save_logprob_distributions: bool = False,
+    save_vc_distributions: bool = False,
 ) -> dict[str, Any]:
     """
     Run one episode: reset env, then loop observation -> step_fn -> env.step until done.
@@ -85,14 +106,17 @@ def run_episode(
         max_steps: Cap on steps per episode.
         on_step: Optional callback after each env step; dict keys include step_index,
             episode_steps, max_steps, env_done, compute_stage, lm_calls_this_step, total_lm_calls.
-        save_logprob_distributions: If True, ``step_fn`` must return 6-tuples with raw logprob
-            lists; result includes ``logprob_raw_per_step`` for sidecar export.
+        save_logprob_distributions: If True, ``step_fn`` should return 7-tuples with raw action
+            logprob lists; result includes ``logprob_raw_per_step`` for sidecar export.
+        save_vc_distributions: If True, include full VC follow-up records in ``vc_detail_per_step``
+            (and sidecar JSON when the runner writes it).
 
     Returns:
         Dict with keys: steps, task_success, lm_calls, tokens, wall_clock_time,
         tle_per_step (optional), vc_per_step (optional),
         step_correctness (optional): shallow copy of env.step_results when present.
         logprob_raw_per_step (optional): list of per-token logprob dicts per env step when enabled.
+        vc_detail_per_step (optional): rich VC metadata per step when follow-up VC is used.
     """
     obs = env.reset()
     history: list[str] = []
@@ -102,6 +126,7 @@ def run_episode(
     tle_per_step: list[dict | None] = []
     vc_per_step: list[float | None] = []
     logprob_raw_per_step: list[list[dict[str, Any]] | None] = []
+    vc_detail_per_step: list[dict[str, Any] | None] = []
     steps_detail: list[dict[str, Any]] = []
     if step_fn is None:
         def _stub_step(o: str, h: list[str], m: Any) -> tuple[str, dict | None, float | None, int, int]:
@@ -113,27 +138,34 @@ def run_episode(
         t0 = time.perf_counter()
         raw = step_fn(step_obs, history, model)
         step_wall_time_s = time.perf_counter() - t0
-        action, tle, vc, tokens_used, lm_calls_this_step, log_raw = _normalize_step_result(raw)
+        action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det = _normalize_step_result(raw)
         tle_per_step.append(tle)
         vc_per_step.append(vc)
         if save_logprob_distributions:
             logprob_raw_per_step.append(log_raw)
+        vc_detail_per_step.append(vc_det)
         total_tokens_generated += tokens_used
         total_lm_calls += lm_calls_this_step
-        steps_detail.append(
-            {
-                "step_index": steps,
-                "compute_stage": compute_stage,
-                "action": action,
-                "tokens_generated": int(tokens_used),
-                "lm_calls_this_step": int(lm_calls_this_step),
-                "step_wall_time_s": float(step_wall_time_s),
-                "tle": tle,
-                "vc": vc,
-                "correctness": None,
-                "observation_length_chars": len(step_obs or ""),
-            }
-        )
+        row: dict[str, Any] = {
+            "step_index": steps,
+            "compute_stage": compute_stage,
+            "action": action,
+            "tokens_generated": int(tokens_used),
+            "lm_calls_this_step": int(lm_calls_this_step),
+            "step_wall_time_s": float(step_wall_time_s),
+            "tle": tle,
+            "vc": vc,
+            "correctness": None,
+            "observation_length_chars": len(step_obs or ""),
+        }
+        if vc_det:
+            row["vc_prompt"] = vc_det.get("vc_prompt")
+            row["vc_raw_text"] = vc_det.get("vc_raw_text")
+            row["vc_pattern_matched"] = vc_det.get("vc_pattern_matched")
+            row["vc_tokens_used"] = vc_det.get("vc_tokens_used")
+            if save_vc_distributions and vc_det.get("vc_logprobs") is not None:
+                row["vc_logprobs"] = vc_det.get("vc_logprobs")
+        steps_detail.append(row)
         obs = env.step(action)
         history.append(obs)
         steps += 1
@@ -192,6 +224,8 @@ def run_episode(
     }
     if save_logprob_distributions:
         out["logprob_raw_per_step"] = logprob_raw_per_step
+    if any(x is not None for x in vc_detail_per_step):
+        out["vc_detail_per_step"] = vc_detail_per_step
     return out
 
 
@@ -206,6 +240,13 @@ def run_adaptive_episode(
     step_fn_for_stage: Callable[[str], StepFn] | None = None,
     on_step: Callable[[dict[str, Any]], None] | None = None,
     save_logprob_distributions: bool = False,
+    save_vc_distributions: bool = False,
+    vc_mode: str = "inline",
+    prompt_prefix: str = "",
+    action_max_tokens: int | None = None,
+    action_temperature: float | None = None,
+    followup_max_tokens: int = 8,
+    followup_temperature: float = 0.0,
 ) -> dict[str, Any]:
     """
     Run an episode where each step's compute stage comes from ``allocate_fn`` (default: allocator.allocate).
@@ -224,7 +265,17 @@ def run_adaptive_episode(
     else:
 
         def resolve(stage: str) -> StepFn:
-            return get_step_fn(stage, save_logprob_distributions=save_logprob_distributions)
+            return get_step_fn(
+                stage,
+                save_logprob_distributions=save_logprob_distributions,
+                save_vc_distributions=save_vc_distributions,
+                vc_mode=vc_mode,
+                prompt_prefix=prompt_prefix,
+                action_max_tokens=action_max_tokens,
+                action_temperature=action_temperature,
+                followup_max_tokens=followup_max_tokens,
+                followup_temperature=followup_temperature,
+            )
 
     obs = env.reset()
     history: list[str] = []
@@ -234,6 +285,7 @@ def run_adaptive_episode(
     tle_per_step: list[dict | None] = []
     vc_per_step: list[float | None] = []
     logprob_raw_per_step: list[list[dict[str, Any]] | None] = []
+    vc_detail_per_step: list[dict[str, Any] | None] = []
     stage_per_step: list[str] = []
     steps_detail: list[dict[str, Any]] = []
     signal: dict[str, Any] | None = None
@@ -247,27 +299,34 @@ def run_adaptive_episode(
         t0 = time.perf_counter()
         raw = step_fn(step_obs, history, model)
         step_wall_time_s = time.perf_counter() - t0
-        action, tle, vc, tokens_used, lm_calls_this_step, log_raw = _normalize_step_result(raw)
+        action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det = _normalize_step_result(raw)
         tle_per_step.append(tle)
         vc_per_step.append(vc)
         if save_logprob_distributions:
             logprob_raw_per_step.append(log_raw)
+        vc_detail_per_step.append(vc_det)
         total_tokens_generated += tokens_used
         total_lm_calls += lm_calls_this_step
-        steps_detail.append(
-            {
-                "step_index": steps,
-                "compute_stage": stage,
-                "action": action,
-                "tokens_generated": int(tokens_used),
-                "lm_calls_this_step": int(lm_calls_this_step),
-                "step_wall_time_s": float(step_wall_time_s),
-                "tle": tle,
-                "vc": vc,
-                "correctness": None,
-                "observation_length_chars": len(step_obs or ""),
-            }
-        )
+        row_a: dict[str, Any] = {
+            "step_index": steps,
+            "compute_stage": stage,
+            "action": action,
+            "tokens_generated": int(tokens_used),
+            "lm_calls_this_step": int(lm_calls_this_step),
+            "step_wall_time_s": float(step_wall_time_s),
+            "tle": tle,
+            "vc": vc,
+            "correctness": None,
+            "observation_length_chars": len(step_obs or ""),
+        }
+        if vc_det:
+            row_a["vc_prompt"] = vc_det.get("vc_prompt")
+            row_a["vc_raw_text"] = vc_det.get("vc_raw_text")
+            row_a["vc_pattern_matched"] = vc_det.get("vc_pattern_matched")
+            row_a["vc_tokens_used"] = vc_det.get("vc_tokens_used")
+            if save_vc_distributions and vc_det.get("vc_logprobs") is not None:
+                row_a["vc_logprobs"] = vc_det.get("vc_logprobs")
+        steps_detail.append(row_a)
         obs = env.step(action)
         history.append(obs)
         steps += 1
@@ -330,4 +389,6 @@ def run_adaptive_episode(
     }
     if save_logprob_distributions:
         adaptive_out["logprob_raw_per_step"] = logprob_raw_per_step
+    if any(x is not None for x in vc_detail_per_step):
+        adaptive_out["vc_detail_per_step"] = vc_detail_per_step
     return adaptive_out

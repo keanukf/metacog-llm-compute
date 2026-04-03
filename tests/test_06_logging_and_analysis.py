@@ -10,7 +10,7 @@ import json
 import pytest
 
 from src.analysis.calibration import compute_ece
-from src.utils.logging_utils import log_episode
+from src.utils.logging_utils import log_episode, write_vc_distribution_artifacts
 
 
 def test_log_episode_round_trip(sample_episode_data, temp_results_dir):
@@ -35,3 +35,24 @@ def test_compute_ece_on_15_points():
     correctness = [1 if p > 0.5 else 0 for p in predictions]
     ece = compute_ece(predictions, correctness, n_bins=5)
     assert 0 <= ece <= 1
+
+
+def test_write_vc_distribution_artifacts_json(temp_results_dir):
+    from src.signals.verbalized_confidence import extract_vc_from_followup
+
+    detail = extract_vc_from_followup("p", "90", [{"token": "9", "logprob": -0.1}])
+    paths = write_vc_distribution_artifacts(
+        "ep_test_vc_0",
+        [detail, None],
+        temp_results_dir,
+        export_format="json",
+        vc_subdir="logprobs",
+    )
+    assert len(paths) == 1
+    assert paths[0].name == "ep_test_vc_0_vc.json"
+    import json
+
+    with open(paths[0]) as f:
+        body = json.load(f)
+    assert body["steps"][0]["vc_record"]["vc_value"] == 90.0
+    assert body["steps"][1]["vc_record"] is None

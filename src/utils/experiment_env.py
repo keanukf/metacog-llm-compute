@@ -11,6 +11,15 @@ class MockExperimentModel:
     """Lightweight stand-in when ``--real`` is off or model creation fails."""
 
     def generate(self, prompt, logprobs=False, **kwargs):
+        # VC follow-up prompt (matches compute_stages._vc_followup_prompt)
+        if "You just chose the action:" in (prompt or ""):
+            text = "75"
+            lp = (
+                [{"token": "7", "logprob": -0.1}, {"token": "5", "logprob": -0.05}]
+                if logprobs
+                else None
+            )
+            return text, lp
         text = "go north"
         lp = [{"logprob": -0.5}] * 5 if logprobs else None
         return text, lp

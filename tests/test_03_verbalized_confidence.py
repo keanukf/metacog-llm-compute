@@ -6,7 +6,11 @@ from __future__ import annotations
 
 import pytest
 
-from src.signals.verbalized_confidence import parse_confidence
+from src.signals.verbalized_confidence import (
+    extract_vc_from_followup,
+    parse_confidence,
+    parse_confidence_with_meta,
+)
 
 
 def test_parse_confidence_explicit_label():
@@ -34,3 +38,20 @@ def test_parse_confidence_ignores_out_of_range():
     # Parser may still find 999 in text; our patterns restrict 0-100
     s = "Confidence: 85. So 999 is not valid."
     assert parse_confidence(s) == 85.0
+
+
+def test_parse_confidence_with_meta_returns_pattern():
+    val, pat = parse_confidence_with_meta("Confidence: 42")
+    assert val == 42.0
+    assert pat == "confidence_label"
+
+
+def test_extract_vc_from_followup_builds_record():
+    lp = [{"token": "8", "logprob": -0.1, "top_logprobs": []}]
+    d = extract_vc_from_followup("prompt here", "82", lp)
+    assert d["vc_value"] == 82.0
+    assert d["vc_raw_text"] == "82"
+    assert d["vc_prompt"] == "prompt here"
+    assert d["vc_tokens_used"] == 1
+    assert d["vc_logprobs"] is lp
+    assert d["vc_pattern_matched"] == "tail_fallback"
