@@ -20,13 +20,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
 from src.utils.run_progress import format_run_elapsed, log, log_step_line
 
 
 def load_config(config_path: str | Path) -> dict:
-    import yaml
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+    """Load a single YAML file (no LM Studio merge). Prefer ``load_pilot_config`` in main."""
+    return load_yaml_path(Path(config_path))
 
 
 def parse_pilot_mode_arg(value: str) -> str:
@@ -514,6 +514,14 @@ def main() -> None:
         description="Run pilot study (Tests 1-6). mock | hf (HF+MPS) | cuda | lmstudio (OpenAI API)."
     )
     parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
+    parser.add_argument(
+        "--lmstudio-config",
+        default=None,
+        metavar="PATH",
+        help="When --pilot-mode lmstudio: optional YAML deep-merged on top of --config "
+        "(default: configs/lmstudio_config.yaml; env LMSTUDIO_CONFIG_PATH). "
+        "Use enabled: false in that file to keep base pilot.yaml only.",
+    )
     parser.add_argument("--output-dir", default="data/results", help="Output directory")
     parser.add_argument(
         "--pilot-mode",
@@ -531,10 +539,13 @@ def main() -> None:
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    config = load_config(config_path)
-    log(f"Pilot run start — config={config_path} output_dir={output_dir}")
-
     pilot_mode = _resolve_pilot_mode(args)
+    config, lmstudio_note, lmstudio_applied = load_pilot_config_with_lmstudio_override(
+        config_path, pilot_mode, REPO_ROOT, getattr(args, "lmstudio_config", None)
+    )
+    log(f"Pilot run start — config={config_path} output_dir={output_dir}")
+    if lmstudio_note:
+        log(lmstudio_note)
     log(f"Pilot mode: {pilot_mode}")
     if pilot_mode != "mock":
         model_name = config.get("model", {}).get("name", "?")
@@ -546,6 +557,8 @@ def main() -> None:
         log("Model ready.")
 
     benchmark = {"pilot_mode": pilot_mode}
+    benchmark["config_path"] = str(config_path)
+    benchmark["lmstudio_config_override"] = str(lmstudio_applied) if lmstudio_applied else None
     benchmark["system"] = _try_gpu_info()
     if pilot_mode != "mock" and real_model is not None:
         benchmark["real_model_sanity"] = _sanity_check_real_inference(config, pilot_mode, real_model)

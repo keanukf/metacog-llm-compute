@@ -1,0 +1,37 @@
+# LM Studio-only overrides (merged into configs/pilot.yaml when using --pilot-mode lmstudio).
+# Set enabled: true and fill model / inference below so you do not have to edit pilot.yaml
+# when switching between local MLX/CUDA and LM Studio.
+#
+# When enabled is false or this file is missing, LM Studio runs use pilot.yaml as-is.
+
+enabled: true
+
+model:
+  name: "mlx-community/qwen2.5-3b-instruct-mlx-4bit"
+  dtype: int4
+
+inference:
+  backend: mlx
+
+pilot:
+  instances: 1 # 5 is default, 2 is for the pilot
+  compute_stages: 3   # C0, C1, C2
+  runs_per_instance: 1
+
+test1_inference:
+  num_prompts: 10
+  expected_tok_per_sec_min: 30
+
+test3_verbalized_confidence:
+  num_easy: 5
+  num_hard: 5
+
+test4_textworld:
+  num_mini_envs: 3
+  max_rooms: 5
+
+tower_of_hanoi:
+  pilot_episodes: 2
+  pilot_num_disks: 3
+  pilot_max_steps: 20
+  task_generation_seed: 42
