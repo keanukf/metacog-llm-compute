@@ -72,7 +72,15 @@ No real model, stub environments. Confirms the script and output format:
 python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results
 ```
 
-You get `pilot_benchmark.json` and `pilot_calibration.json` with **mock** numbers (e.g. unrealistic tokens_per_sec). Reports are still written from config paths.
+You get per-step JSON under `--output-dir` (e.g. `pilot_test1_inference.json`, `pilot_test2_tle.json`, …) plus `ep_textworld_*.json` / `ep_tower_of_hanoi_*.json` for episodes and `pilot_feasibility.json`. In **mock** mode, metrics are synthetic (e.g. unrealistic `tokens_per_sec`).
+
+Run individual steps without the full pipeline:
+
+```bash
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --only test2
+```
+
+`--only` accepts one or more of: `sanity`, `test1`, `test2`, `test3`, `test4`, `test5`, `feasibility` (executed in that order). For `feasibility`, missing inputs are filled from JSON already present in `output_dir` when available.
 
 ### Pilot 1 — HuggingFace on Apple Silicon (hf)
 
@@ -109,12 +117,11 @@ Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; def
 
 - **Test 1:** Real prompts → measured tokens/s, latency, VRAM (CUDA only).
 - **Tests 2–3:** With a real model, TLE and VC are evaluated on **real generations**; in mock mode they use synthetic/static checks.
-- **Test 4:** TextWorld env (stub or real `.ulx` if provided).
-- **Tower of Hanoi parseability:** 20× C0 episodes on generated 3-disk instances (when not mock).
-- **Test 5:** Same model runs the e2e TextWorld episode loop.
-- **Test 6:** ECE and logging on the episode data.
+- **Test 4:** TextWorld e2e episodes (stub env unless a real game file is wired in).
+- **Test 5:** Tower of Hanoi parseability (C0; count from `configs/pilot.yaml`).
+- **Feasibility:** Go/No-Go checklist and ECE (from TextWorld episodes), written to `pilot_feasibility.json`.
 
-After a non-mock pilot you get realistic `tokens_per_sec` (for that device/endpoint) in `pilot_benchmark.json`. The benchmark JSON includes `"pilot_mode": "mock" | "hf" | "cuda" | "lmstudio"` so you know which run it was.
+After a non-mock pilot, `pilot_test1_inference.json` includes realistic `tokens_per_sec` for that device/endpoint.
 
 ---
 
@@ -340,10 +347,10 @@ Shared fixtures (mock model, mock env, sample episode data, temp dir) are in `te
 ## Current implementation (high level)
 
 - **Model:** `src/utils/model_wrapper.py` provides `VLLMWrapper`, `HFWrapper`, and `LMStudioWrapper` (OpenAI HTTP for LM Studio); `create_wrapper(backend, model_name, dtype)` returns the right wrapper. Pilot uses it when a real backend is requested; CUDA mode fails fast if the wrapper cannot load.
-- **Pilot script:** `run_pilot.py` runs inference benchmarks, real-output TLE/VC checks (when not mock), Tower of Hanoi parseability, TextWorld e2e, and writes reports. See `configs/pilot.yaml`.
+- **Pilot script:** `run_pilot.py` runs inference benchmarks, TLE/VC checks, TextWorld e2e, Tower of Hanoi parseability, and feasibility JSON; optional `--only` runs a subset. See `configs/pilot.yaml`.
 - **TextWorld:** `TextWorldEnv` loads real `.z8`/`.ulx` games via `textworld.gym` when the file exists; loads optional `.meta.json` sidecars; score-based step correctness for real games. Generate Cooking datasets with `scripts/generate_textworld_games.py` into `data/tasks/textworld/`. See **TextWorld Cooking dataset** above.
 - **Tower of Hanoi:** `TowerOfHanoiEnv` in `src/environments/tower_of_hanoi.py`. Interactive sanity check: `scripts/play_tower_of_hanoi.py` (no model; same move parsing as experiments).
-- **Reports:** Pilot writes `pilot_cost_validation.md` and `pilot_feasibility_report.md` when paths are set in config.
+- **Reports:** Pilot writes per-step JSON and `pilot_feasibility.json` under the results directory.
 - **Phase 1 / 2:** `run_phase1.py` and `run_phase2.py` support checkpointing and `--resume`; use `--real` for GPU/vLLM runs.
 
 ---
@@ -361,7 +368,7 @@ src/
 scripts/          # run_pilot/phase1/phase2, setup_cloud.sh, generate_textworld_games,
                   # sweep_textworld_difficulty, play_textworld, play_tower_of_hanoi, build_textworld_manifest
 data/tasks/       # e.g. data/tasks/textworld/ — TextWorld Cooking .z8 + Game .json + .meta.json, difficulty_manifest.json
-data/results/     # pilot_benchmark.json, pilot_calibration.json, pilot_*.md, phase1/2 episode JSONs
+data/results/     # pilot_test*.json, pilot_feasibility.json, ep_*.json, phase1/2 checkpoints
 tests/            # conftest.py, test_01_* … test_06_*
 ```
 
