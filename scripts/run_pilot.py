@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """
-Pilot study runner: runs Tests 1-6 in order, writes pilot_benchmark.json,
-pilot_calibration.json, and optional markdown reports.
-Usage: python scripts/run_pilot.py --config configs/pilot.yaml [--output-dir data/results] [--real]
+Pilot study runner: inference benchmarks, TLE/VC checks, TextWorld e2e, Tower of Hanoi,
+and feasibility JSON. Writes per-step JSON under --output-dir.
+
+Usage:
+  python scripts/run_pilot.py --config configs/pilot.yaml [--output-dir data/results] [--real]
+  python scripts/run_pilot.py --only test2 --config configs/pilot.yaml ...   # TLE only
 """
 from __future__ import annotations
 
@@ -23,6 +26,19 @@ if str(REPO_ROOT) not in sys.path:
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
 from src.utils.run_progress import format_run_elapsed, log, log_step_line
 
+# Canonical order for --only (subset runs in this order).
+PILOT_STEPS_ORDER = (
+    "sanity",
+    "test1",
+    "test2",
+    "test3",
+    "test4",
+    "test5",
+    "feasibility",
+)
+# Steps that call the model wrapper (real or mock path inside each test).
+PILOT_STEPS_NEED_MODEL = frozenset({"sanity", "test1", "test2", "test3", "test4", "test5"})
+
 
 def load_config(config_path: str | Path) -> dict:
     """Load a single YAML file (no LM Studio merge). Prefer ``load_pilot_config`` in main."""
@@ -40,6 +56,54 @@ def _save_json(output_dir: Path, filename_stem: str, data: dict[str, Any]) -> Pa
         json.dump(data, f, indent=2)
     log(f"Wrote {path}")
     return path
+
+
+def _only_steps_in_order(selected: frozenset[str]) -> list[str]:
+    """Deduplicate and order user --only choices by PILOT_STEPS_ORDER."""
+    return [s for s in PILOT_STEPS_ORDER if s in selected]
+
+
+def _load_json_optional(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    with open(path) as f:
+        data = json.load(f)
+    return data if isinstance(data, dict) else None
+
+
+def _load_episode_jsons(output_dir: Path, pattern: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for p in sorted(output_dir.glob(pattern)):
+        try:
+            with open(p) as f:
+                ep = json.load(f)
+            if isinstance(ep, dict):
+                out.append(ep)
+        except Exception:
+            continue
+    return out
+
+
+def _prepare_feasibility_inputs(
+    output_dir: Path,
+    *,
+    test1: dict[str, Any],
+    test2: dict[str, Any],
+    test3: dict[str, Any],
+    episodes: list[dict[str, Any]],
+    toh: dict[str, Any],
+    sanity: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], dict[str, Any], dict[str, Any] | None]:
+    """
+    Merge in-session results with prior JSON artifacts on disk so --only test2 feasibility works.
+    """
+    t1 = test1 or (_load_json_optional(output_dir / "pilot_test1_inference.json") or {})
+    t2 = test2 or (_load_json_optional(output_dir / "pilot_test2_tle.json") or {})
+    t3 = test3 or (_load_json_optional(output_dir / "pilot_test3_vc.json") or {})
+    eps = episodes if episodes else _load_episode_jsons(output_dir, "ep_textworld_*.json")
+    th = toh or (_load_json_optional(output_dir / "pilot_test5_toh.json") or {})
+    san = sanity if sanity is not None else _load_json_optional(output_dir / "pilot_sanity.json")
+    return t1, t2, t3, eps, th, san
 
 
 def _run_mock_inference_speed_benchmark(num_prompts: int, tokens_per_call: int = 200) -> dict[str, Any]:
@@ -691,6 +755,19 @@ def main() -> None:
         action="store_true",
         help="Use real model; auto-detect hf vs cuda if --pilot-mode is mock",
     )
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="STEP",
+        choices=list(PILOT_STEPS_ORDER),
+        default=None,
+        help=(
+            "Run only these pilot steps (canonical order). "
+            "Steps: sanity, test1, test2, test3, test4, test5, feasibility. "
+            "Example: --only test2. For feasibility, prior results in output_dir are merged "
+            "(pilot_test*.json, ep_textworld_*.json, pilot_test5_toh.json)."
+        ),
+    )
     args = parser.parse_args()
     t_pilot0 = time.perf_counter()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
@@ -700,61 +777,97 @@ def main() -> None:
     config, lmstudio_note, lmstudio_applied = load_pilot_config_with_lmstudio_override(
         config_path, pilot_mode, REPO_ROOT, getattr(args, "lmstudio_config", None)
     )
+    only_steps = _only_steps_in_order(frozenset(args.only)) if args.only else list(PILOT_STEPS_ORDER)
+    only_set = frozenset(only_steps)
+
     log(f"Pilot run start — config={config_path} output_dir={output_dir}")
     if lmstudio_note:
         log(lmstudio_note)
     log(f"Pilot mode: {pilot_mode}")
-    if pilot_mode != "mock":
-        model_name = config.get("model", {}).get("name", "?")
-        log(f"Loading model ({model_name})... (cache load may take ~1 min)")
-    real_model, real_model_err = _create_real_model(config, pilot_mode)
-    _assert_real_model_or_raise(pilot_mode, real_model, real_model_err)
-    if pilot_mode != "mock":
+    if args.only:
+        log(f"Steps: {' '.join(only_steps)}")
+
+    needs_model = (pilot_mode != "mock") and bool(only_set & PILOT_STEPS_NEED_MODEL)
+    real_model: Any | None = None
+    real_model_err: str | None = None
+    if needs_model:
+        if pilot_mode != "mock":
+            model_name = config.get("model", {}).get("name", "?")
+            log(f"Loading model ({model_name})... (cache load may take ~1 min)")
+        real_model, real_model_err = _create_real_model(config, pilot_mode)
+        _assert_real_model_or_raise(pilot_mode, real_model, real_model_err)
         config.setdefault("pilot", {})["use_real_model"] = True
         log("Model ready.")
 
     system = _try_gpu_info()
     sanity: dict[str, Any] | None = None
-    if pilot_mode != "mock" and real_model is not None:
-        sanity = _sanity_check_real_inference(config, pilot_mode, real_model)
-        _save_json(output_dir, "pilot_sanity", sanity)
-        s = sanity
-        log(
-            f"Real model sanity: ok={s.get('ok')} latency={s.get('latency_s', 0):.2f}s "
-            f"logprobs={s.get('has_logprobs')} tok_out≈{s.get('completion_tokens_observed')}"
+    test1: dict[str, Any] = {}
+    test2: dict[str, Any] = {}
+    test3: dict[str, Any] = {}
+    episodes: list[dict[str, Any]] = []
+    toh: dict[str, Any] = {}
+
+    if "sanity" in only_set:
+        if pilot_mode != "mock" and real_model is not None:
+            sanity = _sanity_check_real_inference(config, pilot_mode, real_model)
+            _save_json(output_dir, "pilot_sanity", sanity)
+            s = sanity
+            log(
+                f"Real model sanity: ok={s.get('ok')} latency={s.get('latency_s', 0):.2f}s "
+                f"logprobs={s.get('has_logprobs')} tok_out≈{s.get('completion_tokens_observed')}"
+            )
+        elif pilot_mode == "mock" and args.only:
+            log("Skipping sanity (mock mode).")
+
+    if "test1" in only_set:
+        test1 = run_test1_inference_speed(config, output_dir, real_model=real_model)
+        _save_json(output_dir, "pilot_test1_inference", test1)
+        log(f"Test 1 done — tokens/s={test1.get('tokens_per_sec', 0):.1f}")
+
+    if "test2" in only_set:
+        test2 = run_test2_token_entropy(config, real_model=real_model)
+        _save_json(output_dir, "pilot_test2_tle", test2)
+        log("Test 2 done.")
+
+    if "test3" in only_set:
+        test3 = run_test3_verbalized_confidence(config, real_model=real_model)
+        _save_json(output_dir, "pilot_test3_vc", test3)
+        log("Test 3 done.")
+
+    if "test4" in only_set:
+        episodes = run_test4_textworld_e2e(config, output_dir, real_model=real_model)
+        log(f"Test 4 done — {len(episodes)} episodes")
+
+    if "test5" in only_set:
+        toh = run_test5_tower_of_hanoi(config, output_dir, real_model=real_model)
+        _save_json(output_dir, "pilot_test5_toh", toh)
+        log(f"Test 5 done — parse_rate={toh.get('parse_rate', 0):.2f}")
+
+    if "feasibility" in only_set:
+        t1, t2, t3, eps, th, san = _prepare_feasibility_inputs(
+            output_dir,
+            test1=test1,
+            test2=test2,
+            test3=test3,
+            episodes=episodes,
+            toh=toh,
+            sanity=sanity,
         )
+        feasibility = _build_feasibility_report(
+            pilot_mode=pilot_mode,
+            system=system,
+            sanity=san,
+            test1=t1,
+            test2=t2,
+            test3=t3,
+            textworld_episodes=eps,
+            toh=th,
+            config=config,
+            wall_clock_total_s=(time.perf_counter() - t_pilot0),
+        )
+        _save_json(output_dir, "pilot_feasibility", feasibility)
+        log(f"Feasibility done — go={feasibility.get('go')} passed={feasibility.get('passed')}/{feasibility.get('total')}")
 
-    test1 = run_test1_inference_speed(config, output_dir, real_model=real_model)
-    _save_json(output_dir, "pilot_test1_inference", test1)
-    log(f"Test 1 done — tokens/s={test1.get('tokens_per_sec', 0):.1f}")
-
-    test2 = run_test2_token_entropy(config, real_model=real_model)
-    _save_json(output_dir, "pilot_test2_tle", test2)
-    log("Test 2 done.")
-
-    test3 = run_test3_verbalized_confidence(config, real_model=real_model)
-    _save_json(output_dir, "pilot_test3_vc", test3)
-    log("Test 3 done.")
-
-    episodes = run_test4_textworld_e2e(config, output_dir, real_model=real_model)
-    log(f"Test 4 done — {len(episodes)} episodes")
-
-    toh = run_test5_tower_of_hanoi(config, output_dir, real_model=real_model)
-    log(f"Test 5 done — parse_rate={toh.get('parse_rate', 0):.2f}")
-
-    feasibility = _build_feasibility_report(
-        pilot_mode=pilot_mode,
-        system=system,
-        sanity=sanity,
-        test1=test1,
-        test2=test2,
-        test3=test3,
-        textworld_episodes=episodes,
-        toh=toh,
-        config=config,
-        wall_clock_total_s=(time.perf_counter() - t_pilot0),
-    )
-    _save_json(output_dir, "pilot_feasibility", feasibility)
     log(f"Pilot done — wall {format_run_elapsed(time.perf_counter() - t_pilot0)} total")
 
 
