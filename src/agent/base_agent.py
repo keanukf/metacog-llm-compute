@@ -22,19 +22,25 @@ StepFn = Callable[
 ]
 
 
-def _normalize_step_result(result: tuple) -> tuple[str, dict | None, float | None, int, int]:
+def _normalize_step_result(
+    result: tuple,
+) -> tuple[str, dict | None, float | None, int, int, list[dict[str, Any]] | None]:
     """
-    Unpack step result as (action, tle, vc, tokens_used, lm_calls_this_step).
+    Unpack step result as (action, tle, vc, tokens_used, lm_calls_this_step, logprobs_raw).
 
     Backward compatibility:
-    - 3-tuple -> tokens_used=0, lm_calls_this_step=1
+    - 3-tuple -> tokens_used=0, lm_calls_this_step=1, logprobs_raw=None
     - 4-tuple -> lm_calls_this_step=1
+    - 6-tuple -> last element is raw per-token logprob list from the model (optional save)
     """
+    raw_lp: list[dict[str, Any]] | None = None
+    if len(result) >= 6:
+        raw_lp = result[5]  # type: ignore[assignment]
     if len(result) >= 5:
-        return result[0], result[1], result[2], int(result[3]), int(result[4])
+        return result[0], result[1], result[2], int(result[3]), int(result[4]), raw_lp
     if len(result) >= 4:
-        return result[0], result[1], result[2], int(result[3]), 1
-    return result[0], result[1], result[2], 0, 1
+        return result[0], result[1], result[2], int(result[3]), 1, raw_lp
+    return result[0], result[1], result[2], 0, 1, raw_lp
 
 
 def _copy_step_results(env: Any) -> list[dict[str, Any]] | None:
@@ -65,6 +71,8 @@ def run_episode(
     step_fn: StepFn | None = None,
     max_steps: int = 20,
     on_step: Callable[[dict[str, Any]], None] | None = None,
+    *,
+    save_logprob_distributions: bool = False,
 ) -> dict[str, Any]:
     """
     Run one episode: reset env, then loop observation -> step_fn -> env.step until done.
@@ -77,11 +85,14 @@ def run_episode(
         max_steps: Cap on steps per episode.
         on_step: Optional callback after each env step; dict keys include step_index,
             episode_steps, max_steps, env_done, compute_stage, lm_calls_this_step, total_lm_calls.
+        save_logprob_distributions: If True, ``step_fn`` must return 6-tuples with raw logprob
+            lists; result includes ``logprob_raw_per_step`` for sidecar export.
 
     Returns:
         Dict with keys: steps, task_success, lm_calls, tokens, wall_clock_time,
         tle_per_step (optional), vc_per_step (optional),
         step_correctness (optional): shallow copy of env.step_results when present.
+        logprob_raw_per_step (optional): list of per-token logprob dicts per env step when enabled.
     """
     obs = env.reset()
     history: list[str] = []
@@ -90,6 +101,7 @@ def run_episode(
     total_tokens_generated = 0
     tle_per_step: list[dict | None] = []
     vc_per_step: list[float | None] = []
+    logprob_raw_per_step: list[list[dict[str, Any]] | None] = []
     steps_detail: list[dict[str, Any]] = []
     if step_fn is None:
         def _stub_step(o: str, h: list[str], m: Any) -> tuple[str, dict | None, float | None, int, int]:
@@ -101,9 +113,11 @@ def run_episode(
         t0 = time.perf_counter()
         raw = step_fn(step_obs, history, model)
         step_wall_time_s = time.perf_counter() - t0
-        action, tle, vc, tokens_used, lm_calls_this_step = _normalize_step_result(raw)
+        action, tle, vc, tokens_used, lm_calls_this_step, log_raw = _normalize_step_result(raw)
         tle_per_step.append(tle)
         vc_per_step.append(vc)
+        if save_logprob_distributions:
+            logprob_raw_per_step.append(log_raw)
         total_tokens_generated += tokens_used
         total_lm_calls += lm_calls_this_step
         steps_detail.append(
@@ -176,6 +190,8 @@ def run_episode(
         "step_correctness": step_correctness,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     }
+    if save_logprob_distributions:
+        out["logprob_raw_per_step"] = logprob_raw_per_step
     return out
 
 
@@ -189,6 +205,7 @@ def run_adaptive_episode(
     allocate_fn: Callable[..., str] | None = None,
     step_fn_for_stage: Callable[[str], StepFn] | None = None,
     on_step: Callable[[dict[str, Any]], None] | None = None,
+    save_logprob_distributions: bool = False,
 ) -> dict[str, Any]:
     """
     Run an episode where each step's compute stage comes from ``allocate_fn`` (default: allocator.allocate).
@@ -202,7 +219,12 @@ def run_adaptive_episode(
     """
     rng = rng or random.Random()
     alloc = allocate_fn or allocate
-    resolve = step_fn_for_stage or get_step_fn
+    if step_fn_for_stage is not None:
+        resolve = step_fn_for_stage
+    else:
+
+        def resolve(stage: str) -> StepFn:
+            return get_step_fn(stage, save_logprob_distributions=save_logprob_distributions)
 
     obs = env.reset()
     history: list[str] = []
@@ -211,6 +233,7 @@ def run_adaptive_episode(
     total_tokens_generated = 0
     tle_per_step: list[dict | None] = []
     vc_per_step: list[float | None] = []
+    logprob_raw_per_step: list[list[dict[str, Any]] | None] = []
     stage_per_step: list[str] = []
     steps_detail: list[dict[str, Any]] = []
     signal: dict[str, Any] | None = None
@@ -224,9 +247,11 @@ def run_adaptive_episode(
         t0 = time.perf_counter()
         raw = step_fn(step_obs, history, model)
         step_wall_time_s = time.perf_counter() - t0
-        action, tle, vc, tokens_used, lm_calls_this_step = _normalize_step_result(raw)
+        action, tle, vc, tokens_used, lm_calls_this_step, log_raw = _normalize_step_result(raw)
         tle_per_step.append(tle)
         vc_per_step.append(vc)
+        if save_logprob_distributions:
+            logprob_raw_per_step.append(log_raw)
         total_tokens_generated += tokens_used
         total_lm_calls += lm_calls_this_step
         steps_detail.append(
@@ -285,7 +310,7 @@ def run_adaptive_episode(
     efficiency_score = (
         (float(task_success) / normalized_compute_cost) if normalized_compute_cost > 0 else None
     )
-    return {
+    adaptive_out: dict[str, Any] = {
         "steps": steps,  # legacy
         "episode_length_steps": steps,
         "task_success": task_success,
@@ -303,3 +328,6 @@ def run_adaptive_episode(
         "steps_detail": steps_detail,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     }
+    if save_logprob_distributions:
+        adaptive_out["logprob_raw_per_step"] = logprob_raw_per_step
+    return adaptive_out

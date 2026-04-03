@@ -4,6 +4,7 @@ One JSON file per episode; used for pilot_calibration and phase1/phase2 results.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import platform
@@ -276,3 +277,98 @@ def load_steps(checkpoint_dir: str | Path):
         return pd.DataFrame(rows)
     except Exception:
         return rows
+
+
+def write_logprob_distribution_artifacts(
+    episode_id: str,
+    logprob_raw_per_step: list[list[dict[str, Any]] | None] | None,
+    output_dir: str | Path,
+    *,
+    export_format: str = "json",
+    logprob_subdir: str = "logprobs",
+) -> list[Path]:
+    """
+    Write optional sidecar files with per-env-step completion token logprob rows (top-k optional).
+
+    ``export_format``: ``json``, ``csv``, or ``both``. JSON is the canonical nested structure;
+    CSV is a long tidy table for pandas (one row per top-k rank at each completion token).
+    """
+    from src.signals.token_entropy import softmax_probs_from_top_logprobs
+
+    if not logprob_raw_per_step:
+        return []
+    out_dir = Path(output_dir) / logprob_subdir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = f"{episode_id}_logprobs"
+    steps_payload = [
+        {"step_index": i, "logprob_tokens": lp if lp is not None else []}
+        for i, lp in enumerate(logprob_raw_per_step)
+    ]
+    body: dict[str, Any] = {
+        "episode_id": episode_id,
+        "schema_version": 1,
+        "description": "Per env step: list of per-completion-token records (token, logprob, optional top_logprobs).",
+        "steps": steps_payload,
+    }
+    written: list[Path] = []
+    fmt = export_format.strip().lower()
+    if fmt in ("json", "both"):
+        p = out_dir / f"{stem}.json"
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(body, f, indent=2)
+        written.append(p)
+    if fmt in ("csv", "both"):
+        p_csv = out_dir / f"{stem}.csv"
+        with open(p_csv, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(
+                [
+                    "episode_id",
+                    "env_step_index",
+                    "completion_token_index",
+                    "rank_in_topk",
+                    "token",
+                    "logprob",
+                    "p_renorm_topk",
+                ]
+            )
+            for env_i, lp_list in enumerate(logprob_raw_per_step):
+                if not lp_list:
+                    continue
+                for tok_i, tok in enumerate(lp_list):
+                    if not isinstance(tok, dict):
+                        continue
+                    top = tok.get("top_logprobs")
+                    if isinstance(top, list) and top:
+                        cands = [
+                            x
+                            for x in top
+                            if isinstance(x, dict) and x.get("logprob") is not None
+                        ]
+                        probs = softmax_probs_from_top_logprobs(top)
+                        for rank, (cand, pr) in enumerate(zip(cands, probs)):
+                            w.writerow(
+                                [
+                                    episode_id,
+                                    env_i,
+                                    tok_i,
+                                    rank,
+                                    cand.get("token", ""),
+                                    cand.get("logprob", ""),
+                                    f"{pr:.8g}",
+                                ]
+                            )
+                    else:
+                        w.writerow(
+                            [
+                                episode_id,
+                                env_i,
+                                tok_i,
+                                0,
+                                tok.get("token", ""),
+                                tok.get("logprob", ""),
+                                "1.0",
+                            ]
+                        )
+        written.append(p_csv)
+    return written

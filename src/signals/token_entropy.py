@@ -50,6 +50,30 @@ def entropy_shannon_from_top_logprobs(top: list[dict[str, Any]]) -> float:
     return h
 
 
+def softmax_probs_from_top_logprobs(top: list[dict[str, Any]]) -> list[float]:
+    """
+    Renormalized probability masses over the top-k candidates (same softmax as Shannon TLE).
+    Parallel order to ``top`` entries that have ``logprob``.
+    """
+    if not top:
+        return []
+    lps: list[float] = []
+    for x in top:
+        if isinstance(x, dict) and x.get("logprob") is not None:
+            lps.append(float(x["logprob"]))
+    if not lps:
+        return []
+    if len(lps) == 1:
+        return [1.0]
+    m = max(lps)
+    exps = [math.exp(lp - m) for lp in lps]
+    s = sum(exps)
+    if s <= 0:
+        n = len(lps)
+        return [1.0 / n] * n
+    return [e / s for e in exps]
+
+
 def compute_tle(logprobs: list[dict[str, Any]] | list[float]) -> dict[str, float]:
     """
     Compute token-level entropy from a list of per-token records.
