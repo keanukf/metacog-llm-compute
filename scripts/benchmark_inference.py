@@ -27,12 +27,20 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 import run_pilot  # noqa: E402
 
+from src.utils.pilot_config import load_pilot_config_with_lmstudio_override  # noqa: E402
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Benchmark LM inference speed (tokens/s, latency). Uses pilot Test 1 harness."
     )
     parser.add_argument("--config", default="configs/pilot.yaml", help="YAML with model, inference, optional test1_inference")
+    parser.add_argument(
+        "--lmstudio-config",
+        default=None,
+        metavar="PATH",
+        help="When --pilot-mode lmstudio: YAML merged on top of --config (see run_pilot.py).",
+    )
     parser.add_argument(
         "--output-dir",
         default="data/results",
@@ -60,15 +68,19 @@ def main() -> None:
     output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    config = run_pilot.load_config(config_path)
-    print(f"Config: {config_path}")
-
     pilot_mode = run_pilot._resolve_pilot_mode(args)
+    config, lmstudio_note, lmstudio_applied = load_pilot_config_with_lmstudio_override(
+        config_path, pilot_mode, REPO_ROOT, getattr(args, "lmstudio_config", None)
+    )
+    print(f"Config: {config_path}")
+    if lmstudio_note:
+        print(lmstudio_note)
+
     print(f"Pilot mode: {pilot_mode}")
     if pilot_mode != "mock":
         model_name = config.get("model", {}).get("name", "?")
         print(f"Loading model: {model_name} ...")
-    real_model = run_pilot._create_real_model(config, pilot_mode)
+    real_model, _err = run_pilot._create_real_model(config, pilot_mode)
     if pilot_mode != "mock" and real_model is None:
         print("Warning: real model could not be created; falling back to mock benchmark.")
         pilot_mode = "mock"
@@ -79,6 +91,7 @@ def main() -> None:
     out: dict = {
         "pilot_mode": pilot_mode,
         "config_path": str(config_path),
+        "lmstudio_config_override": str(lmstudio_applied) if lmstudio_applied else None,
         **result,
     }
 

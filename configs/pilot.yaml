@@ -1,14 +1,16 @@
 # Pilot study configuration — feasibility validation (~2 GPU-hours).
 # See blueprints/infrastructureplan_pilot.md Section V.
+#
+# Default for all backends: edit model/inference here. For LM Studio only, optional
+# configs/lmstudio_config.yaml is deep-merged on top when enabled: true (see that file).
 
 model:
-  # CUDA/vLLM candidate for RunPod pilot validation
+  #CUDA/vLLM candidate for RunPod pilot validation
   name: "Qwen/Qwen3.5-4B"
-  #name: "mlx-community/Qwen3.5-0.8B-MLX"
   dtype: float16
 
 inference:
-  backend: vllm
+  backend: mlx
   temperature: 0.3
   max_tokens: 256
   avg_tokens_per_call: 200  # input ~120, output ~80
