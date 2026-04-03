@@ -123,8 +123,9 @@ class TowerOfHanoiEnv:
             f"  Peg B: {self._state['B']}",
             f"  Peg C: {self._state['C']}",
             "Goal: Move all disks to Peg C.",
-            f"Valid moves: {valid}",
-            "Enter your move (e.g., 'Move disk from A to C'):",
+            "Rules: move only the top disk from a peg; never put a larger disk on a smaller one.",
+            f"Valid moves: {valid} — choose exactly one of these.",
+            "Reply with a single move: peg letters only, e.g. A->C or A to C.",
         ]
         if self._error_message:
             lines.insert(0, f"Illegal move: {self._error_message}")

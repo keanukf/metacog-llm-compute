@@ -98,3 +98,15 @@ def test_action_in_admissible():
     assert parsed == "go north"
     _, ok2 = _action_in_admissible("take apple", ["go north"])
     assert not ok2
+
+
+def test_append_admissible_to_observation():
+    from src.environments.textworld_env import _append_admissible_to_observation
+
+    out = _append_admissible_to_observation("A room.", {"admissible_commands": ["go north", "look"]})
+    assert out.startswith("A room.")
+    assert "Valid commands this turn:" in out
+    assert "go north" in out and "look" in out
+
+    assert _append_admissible_to_observation("x", {}) == "x"
+    assert _append_admissible_to_observation("x", {"admissible_commands": []}) == "x"

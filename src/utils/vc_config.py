@@ -6,15 +6,21 @@ from __future__ import annotations
 from typing import Any
 
 _DEFAULT_TOH_PREFIX = (
-    "You are solving a Tower of Hanoi puzzle. Respond with ONLY your move in the format "
-    "X->Y (e.g., A->C). Do not explain your reasoning."
+    "You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty "
+    "peg or on a larger-numbered disk. Each turn you must choose exactly one move from the "
+    "line starting with \"Valid moves:\" in the task text—do not output any other peg pair. "
+    "Respond with ONLY your move as X->Y using peg letters A, B, or C (e.g. A->C). "
+    "Do not use disk numbers. Do not explain your reasoning."
 )
 
 _DEFAULT_TEXTWORLD_PREFIX = (
-    "You are playing a text adventure game. "
-    "Respond with exactly one command on a single line "
-    "(e.g., 'go north', 'take knife', 'open door'). "
-    "Do not explain your reasoning."
+    "You are playing a parser-based text adventure (interactive fiction). "
+    "Base each reply on the latest game text shown below. "
+    "Output exactly one imperative command on a single line—typical forms include movement "
+    "(go north), looking (look), and object use (take knife, open door). "
+    "Do not add narration, quotes around the command, role-play, multiple commands, or reasoning. "
+    "If the text includes a line starting with \"Valid commands this turn:\", choose one of "
+    "those commands when possible."
 )
 
 
