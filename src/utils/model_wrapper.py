@@ -362,6 +362,8 @@ class HFWrapper(ModelWrapper):
 
         self._ensure_loaded()
         inputs = self._tokenizer(prompt, return_tensors="pt").to(self._model.device)
+        # HuggingFace ``generate`` does not accept OpenAI-style ``stop``; agent uses first-line extraction instead.
+        hf_kwargs = {k: v for k, v in kwargs.items() if k != "stop"}
         gen_kw: dict[str, Any] = {
             "max_new_tokens": max_tokens,
             "temperature": temperature if temperature > 0 else 1e-7,
@@ -371,7 +373,7 @@ class HFWrapper(ModelWrapper):
         if logprobs:
             gen_kw["output_scores"] = True
             gen_kw["return_dict_in_generate"] = True
-        gen_kw.update(kwargs)
+        gen_kw.update(hf_kwargs)
 
         generated = self._model.generate(
             inputs["input_ids"],

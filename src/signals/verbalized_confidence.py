@@ -37,6 +37,7 @@ def parse_confidence_with_meta(text: str) -> tuple[float | None, str | None]:
         return None, None
     text = text.strip()
     patterns: list[tuple[str, str]] = [
+        ("bare_number", r"^\s*(\d{1,3}(?:\.\d+)?)\s*$"),
         ("confidence_label", r"(?:confidence|conf)\s*[:\s]+\s*(\d+(?:\.\d+)?)\s*%?"),
         ("0_100_label", r"(?:0-100|0–100)\s*[:\s]+\s*(\d+(?:\.\d+)?)"),
         ("percent_suffix", r"\b(\d+(?:\.\d+)?)\s*%\s*(?:confidence)?"),

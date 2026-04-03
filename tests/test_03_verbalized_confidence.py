@@ -54,4 +54,10 @@ def test_extract_vc_from_followup_builds_record():
     assert d["vc_prompt"] == "prompt here"
     assert d["vc_tokens_used"] == 1
     assert d["vc_logprobs"] is lp
-    assert d["vc_pattern_matched"] == "tail_fallback"
+    assert d["vc_pattern_matched"] == "bare_number"
+
+
+def test_bare_number_pattern():
+    val, pat = parse_confidence_with_meta("75")
+    assert val == 75.0
+    assert pat == "bare_number"

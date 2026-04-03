@@ -19,15 +19,27 @@ def _build_prompt(observation: str, history: list[str], prompt_prefix: str) -> s
     return body
 
 
+def _extract_first_line(text: str) -> str:
+    """First non-empty line of model output; used as the env action (defense in depth)."""
+    for line in (text or "").strip().splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return (text or "").strip()
+
+
 def _action_generate_kwargs(
     action_max_tokens: int | None,
     action_temperature: float | None,
+    action_stop: list[str] | None = None,
 ) -> dict[str, Any]:
     kw: dict[str, Any] = {}
     if action_max_tokens is not None:
         kw["max_tokens"] = int(action_max_tokens)
     if action_temperature is not None:
         kw["temperature"] = float(action_temperature)
+    if action_stop:
+        kw["stop"] = action_stop
     return kw
 
 
@@ -37,8 +49,9 @@ def _vc_followup_prompt(action_text: str) -> str:
         truncated = truncated[:500] + "…"
     return (
         f"You just chose the action:\n{truncated}\n\n"
-        "Rate your confidence that this action is correct for the current task, "
-        "from 0 (no confidence) to 100 (certain). Respond with only a number."
+        "Rate your confidence that this action is correct for the current "
+        "task, from 0 (no confidence) to 100 (certain).\n"
+        "Respond with ONLY a single integer. Example: 75"
     )
 
 
@@ -104,20 +117,23 @@ def _c0_step_core(
     prompt_prefix: str,
     action_max_tokens: int | None,
     action_temperature: float | None,
+    action_stop: list[str] | None,
     followup_max_tokens: int,
     followup_temperature: float,
     vc_followup_logprobs: bool,
 ) -> StepReturn:
     prompt = _build_prompt(observation, history, prompt_prefix)
-    gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature)
+    gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
     text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
     tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
     tokens_used = len(logprobs) if logprobs else 0
     lm_calls = 1
 
+    action = _extract_first_line(text)
+
     vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
         model,
-        text.strip(),
+        action,
         vc_mode=vc_mode,
         inline_text=text,
         vc_followup_logprobs=vc_followup_logprobs,
@@ -128,7 +144,7 @@ def _c0_step_core(
     lm_calls += extra_calls
 
     lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
-    return (text.strip(), tle, vc, tokens_used, lm_calls, lp_out, vc_detail)
+    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail)
 
 
 def _c1_step_core(
@@ -141,6 +157,7 @@ def _c1_step_core(
     prompt_prefix: str,
     action_max_tokens: int | None,
     action_temperature: float | None,
+    action_stop: list[str] | None,
     followup_max_tokens: int,
     followup_temperature: float,
     vc_followup_logprobs: bool,
@@ -154,6 +171,7 @@ def _c1_step_core(
         prompt_prefix=prompt_prefix,
         action_max_tokens=action_max_tokens,
         action_temperature=action_temperature,
+        action_stop=action_stop,
         followup_max_tokens=followup_max_tokens,
         followup_temperature=followup_temperature,
         vc_followup_logprobs=vc_followup_logprobs,
@@ -184,30 +202,33 @@ def _c2_step_core(
     prompt_prefix: str,
     action_max_tokens: int | None,
     action_temperature: float | None,
+    action_stop: list[str] | None,
     followup_max_tokens: int,
     followup_temperature: float,
     vc_followup_logprobs: bool,
 ) -> StepReturn:
     prompt = _build_prompt(observation, history, prompt_prefix)
-    gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature)
-    samples: list[tuple[str, Any]] = []
+    gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
+    # (first_line_action, raw_text, logprobs) per sample — TLE uses full completion; vote uses first line.
+    samples: list[tuple[str, str, Any]] = []
     total_tokens = 0
     for _ in range(n_samples):
         text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
-        samples.append((text.strip(), logprobs))
+        first = _extract_first_line(text)
+        samples.append((first, text, logprobs))
         total_tokens += len(logprobs) if logprobs else 0
     actions = [s[0] for s in samples]
     winner = _majority_vote(actions)
     tle = None
     win_logprobs: list[dict[str, Any]] | None = None
-    for text, logprobs in samples:
-        if text == winner:
-            tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
+    for first, raw_text, logprobs in samples:
+        if first == winner:
+            tle = token_entropy.extract_tle_from_response(raw_text, logprobs) if logprobs else None
             win_logprobs = logprobs
             break
     if tle is None and samples:
-        text, logprobs = samples[0]
-        tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
+        _first, raw_text, logprobs = samples[0]
+        tle = token_entropy.extract_tle_from_response(raw_text, logprobs) if logprobs else None
         win_logprobs = logprobs
 
     vc: float | None = None
@@ -216,12 +237,12 @@ def _c2_step_core(
     extra_calls = 0
     mode = (vc_mode or "inline").strip().lower()
     if mode == "inline":
-        for text, _lp in samples:
-            if text == winner:
-                vc = verbalized_confidence.parse_confidence(text)
+        for first, raw_text, _lp in samples:
+            if first == winner:
+                vc = verbalized_confidence.parse_confidence(raw_text)
                 break
         if vc is None and samples:
-            vc = verbalized_confidence.parse_confidence(samples[0][0])
+            vc = verbalized_confidence.parse_confidence(samples[0][1])
     elif mode == "none":
         vc = None
     else:
@@ -254,7 +275,8 @@ def c0_step(
         prompt_prefix="",
         action_max_tokens=None,
         action_temperature=None,
-        followup_max_tokens=8,
+        action_stop=None,
+        followup_max_tokens=4,
         followup_temperature=0.0,
         vc_followup_logprobs=False,
     )
@@ -287,7 +309,8 @@ def c2_step(
         prompt_prefix="",
         action_max_tokens=None,
         action_temperature=None,
-        followup_max_tokens=8,
+        action_stop=None,
+        followup_max_tokens=4,
         followup_temperature=0.0,
         vc_followup_logprobs=False,
     )
@@ -303,7 +326,8 @@ def get_step_fn(
     prompt_prefix: str = "",
     action_max_tokens: int | None = None,
     action_temperature: float | None = None,
-    followup_max_tokens: int = 8,
+    action_stop: list[str] | None = None,
+    followup_max_tokens: int = 4,
     followup_temperature: float = 0.0,
 ):
     """
@@ -338,6 +362,7 @@ def get_step_fn(
                 prompt_prefix=prompt_prefix,
                 action_max_tokens=action_max_tokens,
                 action_temperature=action_temperature,
+                action_stop=action_stop,
                 followup_max_tokens=followup_max_tokens,
                 followup_temperature=followup_temperature,
                 vc_followup_logprobs=vc_followup_logprobs,
@@ -355,9 +380,11 @@ def get_step_fn(
             prompt_prefix=prompt_prefix,
             action_max_tokens=action_max_tokens,
             action_temperature=action_temperature,
+            action_stop=action_stop,
             followup_max_tokens=followup_max_tokens,
             followup_temperature=followup_temperature,
             vc_followup_logprobs=vc_followup_logprobs,
         )
 
     return _w
+

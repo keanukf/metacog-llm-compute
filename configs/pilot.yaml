@@ -39,11 +39,12 @@ logging:
 
 vc:
   mode: followup
-  followup_max_tokens: 8
+  followup_max_tokens: 4
   followup_temperature: 0.0
   prompt_prefix: {}
   action_max_tokens: {}
   tower_of_hanoi_default_action_max_tokens: 32
+  textworld_default_action_max_tokens: 32
 
 paths:
   pilot_benchmark: "data/results/pilot_benchmark.json"

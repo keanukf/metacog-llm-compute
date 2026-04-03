@@ -245,8 +245,9 @@ def run_adaptive_episode(
     prompt_prefix: str = "",
     action_max_tokens: int | None = None,
     action_temperature: float | None = None,
-    followup_max_tokens: int = 8,
+    followup_max_tokens: int = 4,
     followup_temperature: float = 0.0,
+    action_stop: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Run an episode where each step's compute stage comes from ``allocate_fn`` (default: allocator.allocate).
@@ -273,6 +274,7 @@ def run_adaptive_episode(
                 prompt_prefix=prompt_prefix,
                 action_max_tokens=action_max_tokens,
                 action_temperature=action_temperature,
+                action_stop=action_stop,
                 followup_max_tokens=followup_max_tokens,
                 followup_temperature=followup_temperature,
             )
