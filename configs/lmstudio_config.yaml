@@ -12,6 +12,8 @@ model:
 
 inference:
   backend: mlx
+  # POST /v1/responses top_logprobs width (Shannon TLE over renormalized top-k)
+  lmstudio_top_logprobs: 5
 
 pilot:
   instances: 1 # 5 is default, 2 is for the pilot

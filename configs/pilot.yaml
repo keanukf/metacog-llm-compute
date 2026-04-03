@@ -17,6 +17,8 @@ inference:
   # For pilot-mode lmstudio: LM Studio local server (OpenAI-compatible). URL may be …/v1 or host:port only.
   # lmstudio_base_url: "http://192.168.178.173:1234/v1"
   # lmstudio_api_key: "lm-studio"   # or set env LM_STUDIO_API_KEY / LM_STUDIO_BASE_URL
+  # LM Studio 0.4+: TLE uses POST /v1/responses; width of top-k distribution per token
+  # lmstudio_top_logprobs: 5
 
 pilot:
   instances: 5 # 5 is default, 2 is for the pilot

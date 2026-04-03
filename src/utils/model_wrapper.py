@@ -4,7 +4,11 @@ Abstract interface: generate(prompt, logprobs=False) -> text, optional logprobs.
 """
 from __future__ import annotations
 
+import json
+import warnings
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
 def normalize_openai_base_url(base_url: str) -> str:
@@ -60,6 +64,144 @@ def _openai_completion_logprobs_to_list(raw_lp: Any) -> list[dict[str, Any]] | N
                 out.append({"logprob": float(lp)})
         return out if out else None
     return None
+
+
+def parse_lmstudio_responses_json(data: dict[str, Any]) -> tuple[str, list[dict[str, Any]] | None]:
+    """
+    Parse LM Studio POST /v1/responses JSON into (assistant_text, per_token_records).
+
+    Expected shapes include output[].content[] parts with type output_text, text, and logprobs[]
+    (each entry may have token, logprob, top_logprobs[]). Structure may vary slightly by version;
+    this function tries several common layouts.
+    """
+    if not isinstance(data, dict):
+        return "", None
+    token_records: list[dict[str, Any]] = []
+    text_chunks: list[str] = []
+
+    def _consume_logprobs_list(raw: Any) -> None:
+        if not isinstance(raw, list):
+            return
+        for tok in raw:
+            if not isinstance(tok, dict):
+                continue
+            rec: dict[str, Any] = {
+                "token": str(tok.get("token", "")),
+                "logprob": float(tok.get("logprob", 0.0)),
+            }
+            top = tok.get("top_logprobs")
+            if isinstance(top, list) and top:
+                rec["top_logprobs"] = []
+                for x in top:
+                    if isinstance(x, dict):
+                        rec["top_logprobs"].append(
+                            {
+                                "token": str(x.get("token", "")),
+                                "logprob": float(x.get("logprob", 0.0)),
+                            }
+                        )
+            token_records.append(rec)
+
+    out_blocks = data.get("output")
+    if isinstance(out_blocks, list):
+        for block in out_blocks:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "output_text":
+                t = block.get("text")
+                if isinstance(t, str) and t:
+                    text_chunks.append(t)
+                _consume_logprobs_list(block.get("logprobs"))
+                continue
+            parts = block.get("content")
+            if not isinstance(parts, list):
+                continue
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "output_text" or "logprobs" in part or "text" in part:
+                    t = part.get("text")
+                    if isinstance(t, str) and t:
+                        text_chunks.append(t)
+                    _consume_logprobs_list(part.get("logprobs"))
+
+    text = "".join(text_chunks).strip()
+    if not text and token_records:
+        text = "".join(rec.get("token", "") for rec in token_records).strip()
+    if not token_records:
+        return text, None
+    return text, token_records
+
+
+def _lmstudio_post_v1_responses(
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    max_tokens: int,
+    temperature: float,
+    top_logprobs: int,
+) -> dict[str, Any] | None:
+    """POST JSON to {base}/responses. Returns parsed dict or None on failure."""
+    api = normalize_openai_base_url(base_url).rstrip("/")
+    url = f"{api}/responses"
+    # LM Studio 0.4+ Responses API; field names aligned with OpenAI Responses where possible.
+    body: dict[str, Any] = {
+        "model": model,
+        "input": [{"role": "user", "content": prompt}],
+        "include": ["message.output_text.logprobs"],
+        "top_logprobs": int(top_logprobs),
+        "temperature": float(temperature),
+        "max_output_tokens": int(max_tokens),
+    }
+    payload = json.dumps(body).encode("utf-8")
+    req = Request(
+        url,
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+    try:
+        with urlopen(req, timeout=600) as resp:
+            raw = resp.read().decode("utf-8")
+            out = json.loads(raw)
+            return out if isinstance(out, dict) else None
+    except HTTPError as e:
+        try:
+            err_body = e.read().decode("utf-8", errors="replace")[:800]
+        except Exception:
+            err_body = ""
+        # Retry once with max_tokens if server rejects max_output_tokens
+        if e.code == 400 and "max_output_tokens" in body:
+            body2 = dict(body)
+            body2.pop("max_output_tokens", None)
+            body2["max_tokens"] = int(max_tokens)
+            try:
+                req2 = Request(
+                    url,
+                    data=json.dumps(body2).encode("utf-8"),
+                    method="POST",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}",
+                    },
+                )
+                with urlopen(req2, timeout=600) as resp2:
+                    raw2 = resp2.read().decode("utf-8")
+                    out2 = json.loads(raw2)
+                    return out2 if isinstance(out2, dict) else None
+            except Exception as e2:
+                warnings.warn(f"LM Studio POST /v1/responses failed (retry): {e2!s}; first error body: {err_body!r}")
+                return None
+        warnings.warn(f"LM Studio POST /v1/responses HTTP {e.code}: {err_body!r}")
+        return None
+    except (URLError, OSError, json.JSONDecodeError, ValueError) as e:
+        warnings.warn(f"LM Studio POST /v1/responses failed: {e!s}")
+        return None
 
 
 class ModelWrapper:
@@ -269,6 +411,11 @@ class HFWrapper(ModelWrapper):
 class LMStudioWrapper(ModelWrapper):
     """
     LM Studio (or compatible) OpenAI HTTP API. No local model load; calls base_url (e.g. http://host:1234/v1).
+
+    - ``logprobs=False``: uses ``/v1/completions`` (OpenAI client).
+    - ``logprobs=True``: uses ``POST /v1/responses`` with ``include: message.output_text.logprobs`` (LM Studio 0.4+).
+      Per-token records may include ``top_logprobs`` for Shannon TLE in ``token_entropy``.
+
     API key: pass api_key, or set LM_STUDIO_API_KEY (default placeholder used by LM Studio if unset).
     """
 
@@ -277,11 +424,14 @@ class LMStudioWrapper(ModelWrapper):
         model_name: str,
         base_url: str = "http://localhost:1234/v1",
         api_key: str | None = None,
+        *,
+        lmstudio_top_logprobs: int = 5,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
         self._base_url = base_url.strip()
         self._api_key = api_key
+        self._top_logprobs = max(1, int(lmstudio_top_logprobs))
         self._kwargs = kwargs
         self._client: Any = None
 
@@ -308,8 +458,31 @@ class LMStudioWrapper(ModelWrapper):
         temperature: float = 0.3,
         **kwargs: Any,
     ) -> tuple[str, list[dict[str, Any]] | None]:
-        client = self._ensure_client()
+        import os
+
         extra = {k: v for k, v in kwargs.items() if k not in ("prompt", "logprobs", "max_tokens", "temperature")}
+
+        if logprobs:
+            key = self._api_key or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
+            data = _lmstudio_post_v1_responses(
+                base_url=self._base_url,
+                api_key=key,
+                model=self._model_name,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_logprobs=self._top_logprobs,
+            )
+            if data is not None:
+                text, lp_list = parse_lmstudio_responses_json(data)
+                if lp_list:
+                    return text, lp_list
+                warnings.warn(
+                    "LM Studio /v1/responses returned no usable logprobs; falling back to /v1/completions "
+                    "with logprobs omitted (TLE unavailable)."
+                )
+
+        client = self._ensure_client()
         resp = client.completions.create(
             model=self._model_name,
             prompt=prompt,
@@ -324,14 +497,7 @@ class LMStudioWrapper(ModelWrapper):
         text = (choice.text or "").strip()
         raw_lp = getattr(choice, "logprobs", None)
         lp_list = _openai_completion_logprobs_to_list(raw_lp) if logprobs else None
-        # Many OpenAI-compatible servers omit token_logprobs; use usage for benchmark token counts.
-        if logprobs and not lp_list:
-            usage = getattr(resp, "usage", None)
-            ct = getattr(usage, "completion_tokens", None) if usage is not None else None
-            if ct is None and isinstance(usage, dict):
-                ct = usage.get("completion_tokens")
-            if isinstance(ct, int) and ct > 0:
-                lp_list = [{"logprob": 0.0} for _ in range(ct)]
+        # Do not fabricate fake logprobs when the server returns null (would yield misleading TLE=0).
         return text, lp_list
 
 
@@ -358,6 +524,13 @@ def create_wrapper(
         url = base_url or kwargs.get("lmstudio_base_url") or "http://localhost:1234/v1"
         api_key = kwargs.get("lmstudio_api_key") or kwargs.get("api_key")
         rest = {k: v for k, v in kwargs.items() if k not in ("lmstudio_base_url", "lmstudio_api_key", "api_key")}
-        return LMStudioWrapper(model_name=model_name, base_url=url, api_key=api_key, **rest)
+        top_k = int(rest.pop("lmstudio_top_logprobs", kwargs.get("lmstudio_top_logprobs", 5)))
+        return LMStudioWrapper(
+            model_name=model_name,
+            base_url=url,
+            api_key=api_key,
+            lmstudio_top_logprobs=top_k,
+            **rest,
+        )
     # Stub for tests / no model configured
     return ModelWrapper()
