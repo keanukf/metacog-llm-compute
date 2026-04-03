@@ -29,6 +29,45 @@ def load_config(config_path: str | Path) -> dict:
     return load_yaml_path(Path(config_path))
 
 
+def _save_json(output_dir: Path, filename_stem: str, data: dict[str, Any]) -> Path:
+    """
+    Save a single JSON artifact to output_dir with a predictable filename.
+    This is used for per-test outputs (not per-episode outputs).
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"{filename_stem}.json"
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+    log(f"Wrote {path}")
+    return path
+
+
+def _run_mock_inference_speed_benchmark(num_prompts: int, tokens_per_call: int = 200) -> dict[str, Any]:
+    """
+    Simulate a batch of prompts with fixed tokens and timings; return result dict.
+    Kept here so the pilot runner doesn't import from the pytest suite.
+    """
+    latencies: list[float] = []
+    total_tokens = 0
+    for _ in range(int(num_prompts)):
+        t0 = time.perf_counter()
+        time.sleep(0.001)
+        total_tokens += int(tokens_per_call)
+        latencies.append(time.perf_counter() - t0)
+    elapsed = sum(latencies)
+    tokens_per_sec = total_tokens / elapsed if elapsed > 0 else 0.0
+    mean_lat = (sum(latencies) / len(latencies)) if latencies else 0.0
+    variance = (sum((x - mean_lat) ** 2 for x in latencies) / len(latencies)) if latencies else 0.0
+    std_lat = variance**0.5
+    return {
+        "tokens_per_sec": float(tokens_per_sec),
+        "latency_mean": float(mean_lat),
+        "latency_std": float(std_lat),
+        "total_tokens": int(total_tokens),
+        "num_prompts": int(num_prompts),
+    }
+
+
 def parse_pilot_mode_arg(value: str) -> str:
     """CLI pilot mode: mock | hf | m1 (deprecated alias for hf) | cuda | lmstudio."""
     v = (value or "mock").lower().strip()
@@ -198,8 +237,7 @@ def run_test1_inference_speed(
             "total_tokens": total_tokens,
         }
     # Mock
-    from tests.test_01_inference_speed import _run_mock_benchmark
-    result = _run_mock_benchmark(num_prompts, tokens_per_call=200)
+    result = _run_mock_inference_speed_benchmark(num_prompts, tokens_per_call=200)
     result["vram_gb"] = 0.0
     return result
 
@@ -283,18 +321,7 @@ def run_test3_verbalized_confidence(config: dict, *, real_model=None) -> dict:
         "sample_text_prefixes": [t[:120] for t in texts],
     }
 
-
-def run_test4_textworld(config: dict) -> dict:
-    """Test 4: TextWorld mini env — reset, step, observation."""
-    log("Test 4: TextWorld stub env — reset/step")
-    from src.environments.textworld_env import TextWorldEnv
-    env = TextWorldEnv(max_steps=5)
-    obs = env.reset()
-    obs2 = env.step("go north")
-    return {"initial_obs_len": len(obs), "after_step_obs_len": len(obs2), "done": env.done}
-
-
-def run_test_tower_of_hanoi_parseability(
+def run_test5_tower_of_hanoi(
     config: dict,
     output_dir: Path,
     real_model=None,
@@ -303,7 +330,7 @@ def run_test_tower_of_hanoi_parseability(
     Completion-plan add-on: Tower of Hanoi move parseability on real outputs.
     Measures fraction of steps where env recorded a parsed move (action_parsed != None).
     """
-    log("Tower of Hanoi parseability — start (C0; per-step progress below)")
+    log("Test 5: Tower of Hanoi parseability — start (C0; per-step progress below)")
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
@@ -328,7 +355,9 @@ def run_test_tower_of_hanoi_parseability(
         partial_start_range=(0, 0),
     )
     worst_lm = num_episodes * max_steps
-    log(f"ToH parseability: {num_episodes} episodes × up to {max_steps} steps → ≤{worst_lm} LM calls (C0)")
+    log(
+        f"Test 5: ToH plan {num_episodes} episodes × up to {max_steps} steps → ≤{worst_lm} LM calls (C0)"
+    )
     parseable_steps = 0
     total_steps = 0
     episodes_data: list[dict[str, Any]] = []
@@ -342,7 +371,7 @@ def run_test_tower_of_hanoi_parseability(
 
         env = TowerOfHanoiEnv(task=task, max_steps=max_steps)
         step_fn = get_step_fn("C0")
-        log(f"ToH parseability: episode {i + 1}/{num_episodes} — running (max {max_steps} steps)...")
+        log(f"Test 5: ToH episode {i + 1}/{num_episodes} — running (max {max_steps} steps)...")
         result = run_episode(
             env,
             model,
@@ -352,7 +381,7 @@ def run_test_tower_of_hanoi_parseability(
             on_step=_make_toh_on_step(i, num_episodes),
         )
         log(
-            f"ToH parseability: episode {i + 1}/{num_episodes} — done: steps={result['steps']} "
+            f"Test 5: ToH episode done {i + 1}/{num_episodes} — steps={result['steps']} "
             f"lm_calls={result.get('total_lm_calls', 0)} wall={result.get('wall_clock_time', 0):.2f}s "
             f"success={result.get('task_success')}"
         )
@@ -390,12 +419,11 @@ def run_test_tower_of_hanoi_parseability(
         "parse_rate": parse_rate,
     }
 
-
-def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]:
-    """Test 5: instances x 3 stages x runs = episodes; structured JSON per episode.
+def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]:
+    """Test 4: instances x 3 stages x runs = episodes; structured JSON per episode.
     If real_model is provided, use it; otherwise use MockModel (stub env always).
     """
-    log("Test 5: end-to-end TextWorld episodes — start")
+    log("Test 4: end-to-end TextWorld episodes — start")
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.environments.textworld_env import TextWorldEnv
@@ -419,7 +447,10 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
         if episode_idx[0] % 5 == 0 or episode_idx[0] == total_episodes:
             log(f"Test 5: batch progress {episode_idx[0]}/{total_episodes} episodes")
 
-    log(f"Test 5: plan {instances} instances × {len(stages)} stages × {runs} runs = {total_episodes} episodes (max 10 steps each)")
+    log(
+        f"Test 4: plan {instances} instances × {len(stages)} stages × {runs} runs = "
+        f"{total_episodes} episodes (max 10 steps each)"
+    )
     episodes_data = []
     for inst in range(instances):
         for stage in stages:
@@ -428,13 +459,13 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
 
                 def _make_test5_on_step(eid: str):
                     def _inner(info: dict) -> None:
-                        log_step_line(f"pilot Test5 {eid}", info)
+                        log_step_line(f"pilot Test4 {eid}", info)
 
                     return _inner
 
                 env = TextWorldEnv(max_steps=10)
                 step_fn = get_step_fn(stage)
-                log(f"Test 5: episode start {ep_id} (stage={stage})")
+                log(f"Test 4: episode start {ep_id} (stage={stage})")
                 result = run_episode(
                     env,
                     model,
@@ -444,7 +475,7 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
                     on_step=_make_test5_on_step(ep_id),
                 )
                 log(
-                    f"Test 5: episode done {ep_id} — steps={result['steps']} "
+                    f"Test 4: episode done {ep_id} — steps={result['steps']} "
                     f"lm_calls={result.get('total_lm_calls', 0)} wall={result.get('wall_clock_time', 0):.2f}s "
                     f"success={result.get('task_success')}"
                 )
@@ -469,24 +500,150 @@ def run_test5_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]
     return episodes_data
 
 
-def run_test6_logging_analysis(episodes_data: list[dict], output_dir: Path) -> dict:
-    """Test 6: JSON round-trip + ECE on 15 data points."""
-    log(f"Test 6: logging analysis — {len(episodes_data)} episodes")
+def _last_non_null(values: list[Any]) -> Any | None:
+    for v in reversed(values or []):
+        if v is not None:
+            return v
+    return None
+
+
+def _build_feasibility_report(
+    *,
+    pilot_mode: str,
+    system: dict[str, Any],
+    sanity: dict[str, Any] | None,
+    test1: dict[str, Any],
+    test2: dict[str, Any],
+    test3: dict[str, Any],
+    textworld_episodes: list[dict[str, Any]],
+    toh: dict[str, Any],
+    config: dict[str, Any],
+    wall_clock_total_s: float,
+) -> dict[str, Any]:
     from src.analysis.calibration import compute_ece
-    import json
-    # Build predictions/correctness from episodes (use last VC or TLE as proxy)
-    predictions = []
-    correctness = []
-    for ep in episodes_data:
+
+    expected_min = float(config.get("test1_inference", {}).get("expected_tok_per_sec_min", 80))
+    tok_s = float(test1.get("tokens_per_sec", 0.0) or 0.0)
+
+    vc_parse_rate = None
+    if isinstance(test3, dict) and test3.get("mode") == "real":
+        vc_parse_rate = test3.get("parse_rate")
+
+    toh_parse_rate = toh.get("parse_rate")
+
+    # ECE on TextWorld episodes: use last non-null VC as confidence proxy; fallback 0.5.
+    predictions: list[float] = []
+    correctness: list[float] = []
+    for ep in textworld_episodes:
         vc = ep.get("vc_per_step") or []
-        pred = (vc[-1] / 100.0) if vc and vc[-1] is not None else 0.5
+        last_vc = _last_non_null(vc) if isinstance(vc, list) else None
+        pred = (float(last_vc) / 100.0) if isinstance(last_vc, (int, float)) else 0.5
         predictions.append(pred)
         correctness.append(1.0 if ep.get("task_success") else 0.0)
-    if len(predictions) < 2:
-        predictions = [0.5] * 15
-        correctness = [0, 1] * 7 + [1]
-    ece = compute_ece(predictions, correctness, n_bins=5)
-    return {"ece": ece, "n_points": len(episodes_data)}
+    ece = compute_ece(predictions, correctness, n_bins=5) if predictions else None
+
+    has_logprobs = False
+    if pilot_mode == "mock":
+        has_logprobs = True
+    elif isinstance(sanity, dict):
+        has_logprobs = bool(sanity.get("has_logprobs"))
+
+    # Keep questions/fallbacks aligned with the previous markdown report, but now JSON.
+    checks: list[dict[str, Any]] = []
+
+    def _add_check(id_: int, question: str, passed: bool, fallback: str) -> None:
+        checks.append({"id": id_, "question": question, "passed": bool(passed), "fallback": fallback})
+
+    _add_check(
+        1,
+        "Real model backend loads (no mock fallback)?",
+        bool(pilot_mode) and (pilot_mode == "mock" or bool((sanity or {}).get("ok"))),
+        "Fix model id / vLLM install",
+    )
+    _add_check(
+        2,
+        f"Inferenzgeschwindigkeit ≥{expected_min:g} tok/s?",
+        tok_s >= expected_min,
+        "Budget × 1.5",
+    )
+    _add_check(
+        3,
+        "Token-Level-Logprobs extrahierbar (real)?",
+        has_logprobs,
+        "Try different backend / vLLM version",
+    )
+    _add_check(
+        4,
+        "Verbalisierte Konfidenz parsebar (real)?",
+        (pilot_mode == "mock") or (isinstance(vc_parse_rate, (int, float)) and float(vc_parse_rate) >= 0.8),
+        "Add few-shot / enforce format",
+    )
+    _add_check(
+        5,
+        "TextWorld installierbar und lauffähig?",
+        isinstance(textworld_episodes, list) and len(textworld_episodes) > 0,
+        "Eigene Text-Envs",
+    )
+    _add_check(
+        6,
+        "Agent generiert valide Aktionen?",
+        isinstance(textworld_episodes, list) and len(textworld_episodes) > 0,
+        "Action-Space-Constraining",
+    )
+    _add_check(
+        7,
+        "Best-of-3 + Majority Vote (C2) implementiert?",
+        True,
+        "Konsistenzprüfung",
+    )
+    _add_check(
+        8,
+        "End-to-End produziert vollständige Logs?",
+        bool(textworld_episodes) and all(isinstance(e, dict) and "steps" in e for e in textworld_episodes),
+        "Logging debuggen",
+    )
+    _add_check(
+        9,
+        "Hochrechnung Core ≤70 GPU-Stunden?",
+        tok_s >= expected_min,
+        "Runs/Instanzen reduzieren",
+    )
+    _add_check(
+        10,
+        "Daten-Download + Analyse machbar?",
+        ece is not None and isinstance(ece, (int, float)),
+        "Volume als Zwischenspeicher",
+    )
+    _add_check(
+        11,
+        "Tower of Hanoi moves parseable ≥80%?",
+        (pilot_mode == "mock")
+        or (isinstance(toh_parse_rate, (int, float)) and float(toh_parse_rate) >= 0.8),
+        "Few-shot format / constrain action space",
+    )
+
+    passed = sum(1 for c in checks if c.get("passed"))
+    total = len(checks)
+    go = passed >= 8 or (total > 0 and (passed / total) >= 0.8)
+
+    return {
+        "pilot_mode": pilot_mode,
+        "system": system,
+        "summary": {
+            "tokens_per_sec": tok_s,
+            "expected_tok_per_sec_min": expected_min,
+            "vc_parse_rate": vc_parse_rate,
+            "toh_parse_rate": toh_parse_rate,
+            "ece": ece,
+            "n_episodes_textworld": int(len(textworld_episodes)),
+            "n_episodes_toh": int(toh.get("num_episodes") or 0),
+        },
+        "checks": checks,
+        "passed": int(passed),
+        "total": int(total),
+        "go": bool(go),
+        "wall_clock_total_s": float(wall_clock_total_s),
+    }
 
 
 def _resolve_pilot_mode(args) -> str:
@@ -556,163 +713,49 @@ def main() -> None:
         config.setdefault("pilot", {})["use_real_model"] = True
         log("Model ready.")
 
-    benchmark = {"pilot_mode": pilot_mode}
-    benchmark["config_path"] = str(config_path)
-    benchmark["lmstudio_config_override"] = str(lmstudio_applied) if lmstudio_applied else None
-    benchmark["system"] = _try_gpu_info()
+    system = _try_gpu_info()
+    sanity: dict[str, Any] | None = None
     if pilot_mode != "mock" and real_model is not None:
-        benchmark["real_model_sanity"] = _sanity_check_real_inference(config, pilot_mode, real_model)
-        s = benchmark["real_model_sanity"]
+        sanity = _sanity_check_real_inference(config, pilot_mode, real_model)
+        _save_json(output_dir, "pilot_sanity", sanity)
+        s = sanity
         log(
             f"Real model sanity: ok={s.get('ok')} latency={s.get('latency_s', 0):.2f}s "
             f"logprobs={s.get('has_logprobs')} tok_out≈{s.get('completion_tokens_observed')}"
         )
-    benchmark["test1"] = run_test1_inference_speed(config, output_dir, real_model=real_model)
-    log(f"Test 1 done — tokens/s={benchmark['test1'].get('tokens_per_sec', 0):.1f}")
-    benchmark["test2"] = run_test2_token_entropy(config, real_model=real_model)
+
+    test1 = run_test1_inference_speed(config, output_dir, real_model=real_model)
+    _save_json(output_dir, "pilot_test1_inference", test1)
+    log(f"Test 1 done — tokens/s={test1.get('tokens_per_sec', 0):.1f}")
+
+    test2 = run_test2_token_entropy(config, real_model=real_model)
+    _save_json(output_dir, "pilot_test2_tle", test2)
     log("Test 2 done.")
-    benchmark["test3"] = run_test3_verbalized_confidence(config, real_model=real_model)
+
+    test3 = run_test3_verbalized_confidence(config, real_model=real_model)
+    _save_json(output_dir, "pilot_test3_vc", test3)
     log("Test 3 done.")
-    benchmark["test4"] = run_test4_textworld(config)
-    log("Test 4 done.")
-    benchmark["tower_of_hanoi_parseability"] = run_test_tower_of_hanoi_parseability(config, output_dir, real_model=real_model)
-    log(
-        f"Tower of Hanoi parseability done — parse_rate={benchmark['tower_of_hanoi_parseability'].get('parse_rate', 0):.2f}"
+
+    episodes = run_test4_textworld_e2e(config, output_dir, real_model=real_model)
+    log(f"Test 4 done — {len(episodes)} episodes")
+
+    toh = run_test5_tower_of_hanoi(config, output_dir, real_model=real_model)
+    log(f"Test 5 done — parse_rate={toh.get('parse_rate', 0):.2f}")
+
+    feasibility = _build_feasibility_report(
+        pilot_mode=pilot_mode,
+        system=system,
+        sanity=sanity,
+        test1=test1,
+        test2=test2,
+        test3=test3,
+        textworld_episodes=episodes,
+        toh=toh,
+        config=config,
+        wall_clock_total_s=(time.perf_counter() - t_pilot0),
     )
-    episodes = run_test5_e2e(config, output_dir, real_model=real_model)
-    benchmark["test5_episodes"] = len(episodes)
-    log(f"Test 5 done — {len(episodes)} episodes")
-    benchmark["test6"] = run_test6_logging_analysis(episodes, output_dir)
-    log(f"Test 6 done — wall {format_run_elapsed(time.perf_counter() - t_pilot0)} total")
-
-    benchmark_path = output_dir / "pilot_benchmark.json"
-    with open(benchmark_path, "w") as f:
-        json.dump(benchmark, f, indent=2)
-    log(f"Wrote {benchmark_path}")
-
-    calibration_path = output_dir / "pilot_calibration.json"
-    with open(calibration_path, "w") as f:
-        json.dump(episodes, f, indent=2)
-    log(f"Wrote {calibration_path}")
-
-    paths_cfg = config.get("paths", {})
-    cost_md = paths_cfg.get("pilot_cost_validation")
-    if cost_md:
-        cost_path = output_dir / Path(cost_md).name if not Path(cost_md).is_absolute() else Path(cost_md)
-        cost_path.parent.mkdir(parents=True, exist_ok=True)
-        _write_pilot_cost_validation(benchmark, config, cost_path)
-        log(f"Wrote {cost_path}")
-
-    feasibility_md = paths_cfg.get("pilot_feasibility_report")
-    if feasibility_md:
-        feas_path = output_dir / Path(feasibility_md).name if not Path(feasibility_md).is_absolute() else Path(feasibility_md)
-        feas_path.parent.mkdir(parents=True, exist_ok=True)
-        _write_pilot_feasibility_report(benchmark, episodes, config, feas_path)
-        log(f"Wrote {feas_path}")
-
-
-def _write_pilot_cost_validation(benchmark: dict, config: dict, path: Path) -> None:
-    """Write pilot_cost_validation.md: measured vs expected compute (tok/s, VRAM, budget)."""
-    t1 = benchmark.get("test1", {})
-    tok_s = t1.get("tokens_per_sec", 0)
-    vram = t1.get("vram_gb", 0)
-    expected_min = config.get("test1_inference", {}).get("expected_tok_per_sec_min", 80)
-    blueprint_tok_s = 120
-    phase1_hours = 16
-    scale = (blueprint_tok_s / tok_s) if tok_s > 0 else float("inf")
-    gpu = benchmark.get("system", {}) or {}
-    gpu_name = gpu.get("gpu_name")
-    vram_total = gpu.get("vram_total_gb")
-    lines = [
-        "# Pilot Cost Validation",
-        "",
-        "## Hardware (best-effort)",
-        f"- **GPU:** {gpu_name if gpu_name else 'unknown'}",
-        f"- **VRAM total (GB):** {vram_total if vram_total is not None else 'unknown'}",
-        "",
-        "## Measured (Test 1)",
-        f"- **tokens/s:** {tok_s:.1f}",
-        f"- **VRAM (GB):** {vram:.2f}",
-        "",
-        "## Blueprint assumptions",
-        f"- Expected throughput: ~{blueprint_tok_s} tok/s (RTX 3090)",
-        f"- Phase 1 GPU time: ~{phase1_hours} h",
-        "",
-        "## Validation",
-        f"- tok/s ≥ {expected_min}? {'Yes' if tok_s >= expected_min else 'No'}",
-    ]
-    if tok_s > 0 and tok_s < blueprint_tok_s:
-        lines.append(f"- **Budget scale factor:** {scale:.2f}× (Phase 1 would be ~{phase1_hours * scale:.1f} h at this speed)")
-    lines.extend(["", "*(Generated by run_pilot.py)*"])
-    path.write_text("\n".join(lines), encoding="utf-8")
-
-
-def _write_pilot_feasibility_report(benchmark: dict, episodes: list[dict], config: dict, path: Path) -> None:
-    """Write pilot_feasibility_report.md: Go/No-Go checklist from pilot results."""
-    t1 = benchmark.get("test1", {})
-    t2 = benchmark.get("test2", {})
-    t3 = benchmark.get("test3", {})
-    t4 = benchmark.get("test4", {})
-    toh = benchmark.get("tower_of_hanoi_parseability", {}) or {}
-    sanity = benchmark.get("real_model_sanity", {}) or {}
-    t5_count = benchmark.get("test5_episodes", 0)
-    t6 = benchmark.get("test6", {})
-    expected_min = config.get("test1_inference", {}).get("expected_tok_per_sec_min", 80)
-    tok_s = t1.get("tokens_per_sec", 0)
-    vc_parse_rate = None
-    if isinstance(t3, dict) and t3.get("mode") == "real":
-        vc_parse_rate = t3.get("parse_rate")
-    toh_parse_rate = toh.get("parse_rate")
-    has_logprobs = bool(sanity.get("has_logprobs")) if isinstance(sanity, dict) else False
-    checks = [
-        (1, "Real model backend loads (no mock fallback)?", bool(benchmark.get("pilot_mode")) and (benchmark.get("pilot_mode") == "mock" or bool(sanity.get("ok"))), "Fix model id / vLLM install"),
-        (2, f"Inferenzgeschwindigkeit ≥{expected_min} tok/s?", tok_s >= expected_min, "Budget × 1.5"),
-        (3, "Token-Level-Logprobs extrahierbar (real)?", has_logprobs or benchmark.get("pilot_mode") == "mock", "Try different backend / vLLM version"),
-        (4, "Verbalisierte Konfidenz parsebar (real)?", (vc_parse_rate is None and benchmark.get("pilot_mode") == "mock") or (isinstance(vc_parse_rate, (int, float)) and vc_parse_rate >= 0.8), "Add few-shot / enforce format"),
-        (5, "TextWorld installierbar und lauffähig?", "initial_obs_len" in (t4 or {}), "Eigene Text-Envs"),
-        (6, "Agent generiert valide Aktionen?", t4 is not None and (t4.get("after_step_obs_len") is not None or t4.get("done") is not None), "Action-Space-Constraining"),
-        (7, "Best-of-3 + Majority Vote (C2) implementiert?", True, "Konsistenzprüfung"),
-        (8, "End-to-End produziert vollständige Logs?", t5_count > 0 and len(episodes) == t5_count and all("steps" in e for e in episodes), "Logging debuggen"),
-        (9, "Hochrechnung Core ≤70 GPU-Stunden?", tok_s >= expected_min, "Runs/Instanzen reduzieren"),
-        (10, "Daten-Download + Analyse machbar?", bool(t6.get("ece") is not None) and t6.get("n_points", 0) > 0, "Volume als Zwischenspeicher"),
-    ]
-    # Completion-plan specific: Tower-of-Hanoi parseability (keep as extra line-item; still count towards pass rate)
-    checks.append(
-        (
-            11,
-            "Tower of Hanoi moves parseable ≥80%?",
-            (toh_parse_rate is None and benchmark.get("pilot_mode") == "mock")
-            or (isinstance(toh_parse_rate, (int, float)) and toh_parse_rate >= 0.8),
-            "Few-shot format / constrain action space",
-        )
-    )
-    passed = sum(1 for _, _, ok, _ in checks if ok)
-    total_checks = len(checks)
-    lines = [
-        "# Pilot Feasibility Report (Go/No-Go)",
-        "",
-        "## Summary metrics",
-        "",
-        f"- **pilot_mode:** {benchmark.get('pilot_mode')}",
-        f"- **tokens/s (Test 1):** {tok_s:.1f}",
-        f"- **VC parse rate (Test 3):** {vc_parse_rate if vc_parse_rate is not None else 'n/a'}",
-        f"- **ToH parse rate:** {toh_parse_rate if toh_parse_rate is not None else 'n/a'}",
-        "",
-        "## Checklist",
-        "",
-        "| # | Frage | Ergebnis | Fallback |",
-        "|---|-------|----------|----------|",
-    ]
-    for num, q, ok, fallback in checks:
-        lines.append(f"| {num} | {q} | {'Ja' if ok else 'Nein'} | {fallback} |")
-    lines.extend([
-        "",
-        f"**Ergebnis:** {passed}/{total_checks} erfüllt.",
-        "Go-Kriterium: ≥8 mit Ja (oder >=80% der Checks bestanden).",
-        "",
-        "*(Generated by run_pilot.py)*",
-    ])
-    path.write_text("\n".join(lines), encoding="utf-8")
+    _save_json(output_dir, "pilot_feasibility", feasibility)
+    log(f"Pilot done — wall {format_run_elapsed(time.perf_counter() - t_pilot0)} total")
 
 
 if __name__ == "__main__":
