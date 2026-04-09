@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import random
 import time
+import warnings
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 from src.agent.allocator import allocate
 from src.agent.compute_stages import get_step_fn
+from src.utils.logging_utils import write_step_trace_line
 
 # Compute stage step: (observation, history, model) -> (action, tle_or_none, vc_or_none, tokens_used, lm_calls_this_step)
 # Backward compat: step may return 3- or 4-tuple; defaults fill in missing values.
@@ -32,19 +35,30 @@ def _normalize_step_result(
     int,
     list[dict[str, Any]] | None,
     dict[str, Any] | None,
+    str | None,
+    str | None,
 ]:
     """
-    Unpack step result as (action, tle, vc, tokens_used, lm_calls_this_step, logprobs_raw, vc_detail).
+    Unpack step result as (action, tle, vc, tokens_used, lm_calls_this_step, logprobs_raw,
+    vc_detail, prompt_full, response_full).
 
     Backward compatibility:
-    - 3-tuple -> tokens_used=0, lm_calls_this_step=1, logprobs_raw=None, vc_detail=None
+    - 3-tuple -> tokens_used=0, lm_calls_this_step=1, logprobs_raw=None, vc_detail=None,
+      prompt_full=None, response_full=None
     - 4-tuple -> lm_calls_this_step=1
     - 6-tuple -> legacy: last element is raw per-token logprob list (optional save)
     - 7-tuple -> (..., action_logprobs, vc_detail dict from follow-up)
+    - 9-tuple -> (..., prompt_full, response_full) for step tracing / observability
     """
     raw_lp: list[dict[str, Any]] | None = None
     vc_detail: dict[str, Any] | None = None
+    prompt_full: str | None = None
+    response_full: str | None = None
     n = len(result)
+    if n >= 9:
+        p7, p8 = result[7], result[8]
+        prompt_full = p7 if isinstance(p7, str) else None
+        response_full = p8 if isinstance(p8, str) else None
     if n >= 7:
         raw_lp = result[5]  # type: ignore[assignment]
         vc_detail = result[6]  # type: ignore[assignment]
@@ -57,10 +71,30 @@ def _normalize_step_result(
         else:
             raw_lp = sixth  # type: ignore[assignment]
     if n >= 5:
-        return result[0], result[1], result[2], int(result[3]), int(result[4]), raw_lp, vc_detail
+        return (
+            result[0],
+            result[1],
+            result[2],
+            int(result[3]),
+            int(result[4]),
+            raw_lp,
+            vc_detail,
+            prompt_full,
+            response_full,
+        )
     if len(result) >= 4:
-        return result[0], result[1], result[2], int(result[3]), 1, raw_lp, vc_detail
-    return result[0], result[1], result[2], 0, 1, raw_lp, vc_detail
+        return (
+            result[0],
+            result[1],
+            result[2],
+            int(result[3]),
+            1,
+            raw_lp,
+            vc_detail,
+            prompt_full,
+            response_full,
+        )
+    return result[0], result[1], result[2], 0, 1, raw_lp, vc_detail, prompt_full, response_full
 
 
 def _copy_step_results(env: Any) -> list[dict[str, Any]] | None:
@@ -94,6 +128,11 @@ def run_episode(
     *,
     save_logprob_distributions: bool = False,
     save_vc_distributions: bool = False,
+    save_step_traces: bool = False,
+    episode_id: str | None = None,
+    trace_output_dir: str | Path | None = None,
+    trace_model_name: str | None = None,
+    trace_hook: Any | None = None,
 ) -> dict[str, Any]:
     """
     Run one episode: reset env, then loop observation -> step_fn -> env.step until done.
@@ -106,10 +145,17 @@ def run_episode(
         max_steps: Cap on steps per episode.
         on_step: Optional callback after each env step; dict keys include step_index,
             episode_steps, max_steps, env_done, compute_stage, lm_calls_this_step, total_lm_calls.
-        save_logprob_distributions: If True, ``step_fn`` should return 7-tuples with raw action
+        save_logprob_distributions: If True, ``step_fn`` should return 7- or 9-tuples with raw action
             logprob lists; result includes ``logprob_raw_per_step`` for sidecar export.
         save_vc_distributions: If True, include full VC follow-up records in ``vc_detail_per_step``
             (and sidecar JSON when the runner writes it).
+        save_step_traces: If True, append one JSON line per env step to
+            ``trace_{episode_id}.jsonl`` under ``trace_output_dir`` (full prompt/response).
+        episode_id: Used for trace filename when ``save_step_traces`` is True.
+        trace_output_dir: Directory for JSONL trace files.
+        trace_model_name: Optional model label for Langfuse metadata.
+        trace_hook: Optional observability hook (e.g. Langfuse) with ``episode_start`` /
+            ``log_action_generation`` / ``episode_end``.
 
     Returns:
         Dict with keys: steps, task_success, lm_calls, tokens, wall_clock_time,
@@ -132,55 +178,127 @@ def run_episode(
         def _stub_step(o: str, h: list[str], m: Any) -> tuple[str, dict | None, float | None, int, int]:
             return "go north", None, None, 0, 0
         step_fn = _stub_step
+
+    trace_path: Path | None = None
+    if save_step_traces:
+        if not episode_id:
+            warnings.warn("save_step_traces is True but episode_id is missing; step traces not written.")
+        elif not trace_output_dir:
+            warnings.warn("save_step_traces is True but trace_output_dir is missing; step traces not written.")
+        else:
+            trace_path = Path(trace_output_dir) / f"trace_{episode_id}.jsonl"
+            trace_path.parent.mkdir(parents=True, exist_ok=True)
+            trace_path.write_text("", encoding="utf-8")
+
+    ep_id_for_trace = episode_id or "ep_unknown"
+    if trace_hook is not None:
+        trace_hook.episode_start(
+            ep_id_for_trace,
+            metadata={
+                "compute_stage": compute_stage,
+                "model": trace_model_name or "",
+            },
+        )
+
     t_start = time.perf_counter()
-    while not getattr(env, "done", False) and steps < max_steps:
-        step_obs = obs
-        t0 = time.perf_counter()
-        raw = step_fn(step_obs, history, model)
-        step_wall_time_s = time.perf_counter() - t0
-        action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det = _normalize_step_result(raw)
-        tle_per_step.append(tle)
-        vc_per_step.append(vc)
-        if save_logprob_distributions:
-            logprob_raw_per_step.append(log_raw)
-        vc_detail_per_step.append(vc_det)
-        total_tokens_generated += tokens_used
-        total_lm_calls += lm_calls_this_step
-        row: dict[str, Any] = {
-            "step_index": steps,
-            "compute_stage": compute_stage,
-            "action": action,
-            "tokens_generated": int(tokens_used),
-            "lm_calls_this_step": int(lm_calls_this_step),
-            "step_wall_time_s": float(step_wall_time_s),
-            "tle": tle,
-            "vc": vc,
-            "correctness": None,
-            "observation_length_chars": len(step_obs or ""),
-        }
-        if vc_det:
-            row["vc_prompt"] = vc_det.get("vc_prompt")
-            row["vc_raw_text"] = vc_det.get("vc_raw_text")
-            row["vc_pattern_matched"] = vc_det.get("vc_pattern_matched")
-            row["vc_tokens_used"] = vc_det.get("vc_tokens_used")
-            if save_vc_distributions and vc_det.get("vc_logprobs") is not None:
-                row["vc_logprobs"] = vc_det.get("vc_logprobs")
-        steps_detail.append(row)
-        obs = env.step(action)
-        history.append(obs)
-        steps += 1
-        if on_step is not None:
-            on_step(
-                {
-                    "step_index": steps - 1,
-                    "episode_steps": steps,
-                    "max_steps": max_steps,
-                    "env_done": bool(getattr(env, "done", False)),
-                    "compute_stage": compute_stage,
-                    "lm_calls_this_step": int(lm_calls_this_step),
-                    "total_lm_calls": int(total_lm_calls),
-                }
+    try:
+        while not getattr(env, "done", False) and steps < max_steps:
+            step_obs = obs
+            history_snapshot = list(history)
+            t0 = time.perf_counter()
+            raw = step_fn(step_obs, history, model)
+            step_wall_time_s = time.perf_counter() - t0
+            action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full = (
+                _normalize_step_result(raw)
             )
+            tle_per_step.append(tle)
+            vc_per_step.append(vc)
+            if save_logprob_distributions:
+                logprob_raw_per_step.append(log_raw)
+            vc_detail_per_step.append(vc_det)
+            total_tokens_generated += tokens_used
+            total_lm_calls += lm_calls_this_step
+            row: dict[str, Any] = {
+                "step_index": steps,
+                "compute_stage": compute_stage,
+                "action": action,
+                "tokens_generated": int(tokens_used),
+                "lm_calls_this_step": int(lm_calls_this_step),
+                "step_wall_time_s": float(step_wall_time_s),
+                "tle": tle,
+                "vc": vc,
+                "correctness": None,
+                "observation_length_chars": len(step_obs or ""),
+            }
+            if vc_det:
+                row["vc_prompt"] = vc_det.get("vc_prompt")
+                row["vc_raw_text"] = vc_det.get("vc_raw_text")
+                row["vc_pattern_matched"] = vc_det.get("vc_pattern_matched")
+                row["vc_tokens_used"] = vc_det.get("vc_tokens_used")
+                if save_vc_distributions and vc_det.get("vc_logprobs") is not None:
+                    row["vc_logprobs"] = vc_det.get("vc_logprobs")
+            steps_detail.append(row)
+            obs = env.step(action)
+            correctness_after: str | None = None
+            sr = getattr(env, "step_results", None)
+            if isinstance(sr, list) and sr:
+                correctness_after = sr[-1].get("correctness")  # type: ignore[union-attr]
+            if trace_path is not None:
+                trace_rec: dict[str, Any] = {
+                    "step_index": steps,
+                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                    "compute_stage": compute_stage,
+                    "prompt_full": prompt_full or "",
+                    "response_full": response_full or "",
+                    "action_parsed": action,
+                    "observation_before": step_obs,
+                    "observation_after": obs,
+                    "history_snapshot": history_snapshot,
+                    "tle": tle,
+                    "vc": vc,
+                    "correctness": correctness_after,
+                    "step_wall_time_s": float(step_wall_time_s),
+                    "lm_calls": int(lm_calls_this_step),
+                    "tokens_generated": int(tokens_used),
+                }
+                if vc_det:
+                    trace_rec["vc_followup_prompt"] = vc_det.get("vc_prompt")
+                    trace_rec["vc_followup_response"] = vc_det.get("vc_raw_text")
+                write_step_trace_line(trace_path, trace_rec)
+            if trace_hook is not None:
+                lf_meta: dict[str, Any] = {
+                    "tle": tle,
+                    "vc": vc,
+                    "correctness": correctness_after,
+                    "tokens_generated": int(tokens_used),
+                    "lm_calls": int(lm_calls_this_step),
+                }
+                trace_hook.log_action_generation(
+                    step_index=steps,
+                    compute_stage=compute_stage,
+                    prompt=prompt_full or "",
+                    output=response_full or "",
+                    model_name=trace_model_name,
+                    metadata=lf_meta,
+                )
+            history.append(f"ACTION: {action}")
+            steps += 1
+            if on_step is not None:
+                on_step(
+                    {
+                        "step_index": steps - 1,
+                        "episode_steps": steps,
+                        "max_steps": max_steps,
+                        "env_done": bool(getattr(env, "done", False)),
+                        "compute_stage": compute_stage,
+                        "lm_calls_this_step": int(lm_calls_this_step),
+                        "total_lm_calls": int(total_lm_calls),
+                    }
+                )
+    finally:
+        if trace_hook is not None:
+            trace_hook.episode_end()
+
     wall_clock_time = time.perf_counter() - t_start
     if hasattr(env, "task_success"):
         task_success = bool(getattr(env, "task_success"))
@@ -241,6 +359,11 @@ def run_adaptive_episode(
     on_step: Callable[[dict[str, Any]], None] | None = None,
     save_logprob_distributions: bool = False,
     save_vc_distributions: bool = False,
+    save_step_traces: bool = False,
+    episode_id: str | None = None,
+    trace_output_dir: str | Path | None = None,
+    trace_model_name: str | None = None,
+    trace_hook: Any | None = None,
     vc_mode: str = "inline",
     prompt_prefix: str = "",
     action_max_tokens: int | None = None,
@@ -292,60 +415,132 @@ def run_adaptive_episode(
     steps_detail: list[dict[str, Any]] = []
     signal: dict[str, Any] | None = None
 
+    trace_path: Path | None = None
+    if save_step_traces:
+        if not episode_id:
+            warnings.warn("save_step_traces is True but episode_id is missing; step traces not written.")
+        elif not trace_output_dir:
+            warnings.warn("save_step_traces is True but trace_output_dir is missing; step traces not written.")
+        else:
+            trace_path = Path(trace_output_dir) / f"trace_{episode_id}.jsonl"
+            trace_path.parent.mkdir(parents=True, exist_ok=True)
+            trace_path.write_text("", encoding="utf-8")
+
+    ep_id_adapt = episode_id or "ep_unknown"
+    if trace_hook is not None:
+        trace_hook.episode_start(
+            ep_id_adapt,
+            metadata={
+                "strategy": strategy,
+                "model": trace_model_name or "",
+            },
+        )
+
     t_start = time.perf_counter()
-    while not getattr(env, "done", False) and steps < max_steps:
-        step_obs = obs
-        stage = alloc(signal, strategy, steps, rng)
-        stage_per_step.append(stage)
-        step_fn = resolve(stage)
-        t0 = time.perf_counter()
-        raw = step_fn(step_obs, history, model)
-        step_wall_time_s = time.perf_counter() - t0
-        action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det = _normalize_step_result(raw)
-        tle_per_step.append(tle)
-        vc_per_step.append(vc)
-        if save_logprob_distributions:
-            logprob_raw_per_step.append(log_raw)
-        vc_detail_per_step.append(vc_det)
-        total_tokens_generated += tokens_used
-        total_lm_calls += lm_calls_this_step
-        row_a: dict[str, Any] = {
-            "step_index": steps,
-            "compute_stage": stage,
-            "action": action,
-            "tokens_generated": int(tokens_used),
-            "lm_calls_this_step": int(lm_calls_this_step),
-            "step_wall_time_s": float(step_wall_time_s),
-            "tle": tle,
-            "vc": vc,
-            "correctness": None,
-            "observation_length_chars": len(step_obs or ""),
-        }
-        if vc_det:
-            row_a["vc_prompt"] = vc_det.get("vc_prompt")
-            row_a["vc_raw_text"] = vc_det.get("vc_raw_text")
-            row_a["vc_pattern_matched"] = vc_det.get("vc_pattern_matched")
-            row_a["vc_tokens_used"] = vc_det.get("vc_tokens_used")
-            if save_vc_distributions and vc_det.get("vc_logprobs") is not None:
-                row_a["vc_logprobs"] = vc_det.get("vc_logprobs")
-        steps_detail.append(row_a)
-        obs = env.step(action)
-        history.append(obs)
-        steps += 1
-        signal = _signal_for_next_step(tle, vc)
-        if on_step is not None:
-            on_step(
-                {
-                    "step_index": steps - 1,
-                    "episode_steps": steps,
-                    "max_steps": max_steps,
-                    "env_done": bool(getattr(env, "done", False)),
+    try:
+        while not getattr(env, "done", False) and steps < max_steps:
+            step_obs = obs
+            history_snapshot = list(history)
+            stage = alloc(signal, strategy, steps, rng)
+            stage_per_step.append(stage)
+            step_fn = resolve(stage)
+            t0 = time.perf_counter()
+            raw = step_fn(step_obs, history, model)
+            step_wall_time_s = time.perf_counter() - t0
+            action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full = (
+                _normalize_step_result(raw)
+            )
+            tle_per_step.append(tle)
+            vc_per_step.append(vc)
+            if save_logprob_distributions:
+                logprob_raw_per_step.append(log_raw)
+            vc_detail_per_step.append(vc_det)
+            total_tokens_generated += tokens_used
+            total_lm_calls += lm_calls_this_step
+            row_a: dict[str, Any] = {
+                "step_index": steps,
+                "compute_stage": stage,
+                "action": action,
+                "tokens_generated": int(tokens_used),
+                "lm_calls_this_step": int(lm_calls_this_step),
+                "step_wall_time_s": float(step_wall_time_s),
+                "tle": tle,
+                "vc": vc,
+                "correctness": None,
+                "observation_length_chars": len(step_obs or ""),
+            }
+            if vc_det:
+                row_a["vc_prompt"] = vc_det.get("vc_prompt")
+                row_a["vc_raw_text"] = vc_det.get("vc_raw_text")
+                row_a["vc_pattern_matched"] = vc_det.get("vc_pattern_matched")
+                row_a["vc_tokens_used"] = vc_det.get("vc_tokens_used")
+                if save_vc_distributions and vc_det.get("vc_logprobs") is not None:
+                    row_a["vc_logprobs"] = vc_det.get("vc_logprobs")
+            steps_detail.append(row_a)
+            obs = env.step(action)
+            correctness_ad: str | None = None
+            sr_a = getattr(env, "step_results", None)
+            if isinstance(sr_a, list) and sr_a:
+                correctness_ad = sr_a[-1].get("correctness")  # type: ignore[union-attr]
+            if trace_path is not None:
+                trace_rec_a: dict[str, Any] = {
+                    "step_index": steps,
+                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
                     "compute_stage": stage,
                     "strategy": strategy,
-                    "lm_calls_this_step": int(lm_calls_this_step),
-                    "total_lm_calls": int(total_lm_calls),
+                    "prompt_full": prompt_full or "",
+                    "response_full": response_full or "",
+                    "action_parsed": action,
+                    "observation_before": step_obs,
+                    "observation_after": obs,
+                    "history_snapshot": history_snapshot,
+                    "tle": tle,
+                    "vc": vc,
+                    "correctness": correctness_ad,
+                    "step_wall_time_s": float(step_wall_time_s),
+                    "lm_calls": int(lm_calls_this_step),
+                    "tokens_generated": int(tokens_used),
                 }
-            )
+                if vc_det:
+                    trace_rec_a["vc_followup_prompt"] = vc_det.get("vc_prompt")
+                    trace_rec_a["vc_followup_response"] = vc_det.get("vc_raw_text")
+                write_step_trace_line(trace_path, trace_rec_a)
+            if trace_hook is not None:
+                lf_meta_a: dict[str, Any] = {
+                    "tle": tle,
+                    "vc": vc,
+                    "correctness": correctness_ad,
+                    "strategy": strategy,
+                    "tokens_generated": int(tokens_used),
+                    "lm_calls": int(lm_calls_this_step),
+                }
+                trace_hook.log_action_generation(
+                    step_index=steps,
+                    compute_stage=stage,
+                    prompt=prompt_full or "",
+                    output=response_full or "",
+                    model_name=trace_model_name,
+                    metadata=lf_meta_a,
+                )
+            history.append(f"ACTION: {action}")
+            steps += 1
+            signal = _signal_for_next_step(tle, vc)
+            if on_step is not None:
+                on_step(
+                    {
+                        "step_index": steps - 1,
+                        "episode_steps": steps,
+                        "max_steps": max_steps,
+                        "env_done": bool(getattr(env, "done", False)),
+                        "compute_stage": stage,
+                        "strategy": strategy,
+                        "lm_calls_this_step": int(lm_calls_this_step),
+                        "total_lm_calls": int(total_lm_calls),
+                    }
+                )
+    finally:
+        if trace_hook is not None:
+            trace_hook.episode_end()
 
     wall_clock_time = time.perf_counter() - t_start
     if hasattr(env, "task_success"):

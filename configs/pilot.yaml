@@ -36,6 +36,13 @@ logging:
   save_vc_distributions: true
   vc_export_format: json
   vc_subdir: vc   # sidecar folder for VC follow-up distributions (parallel to logprob_subdir)
+  # Per-episode JSONL: full prompt + model response per env step (trace_{episode_id}.jsonl)
+  save_step_traces: true
+
+# Optional Langfuse cloud tracing (install: pip install ".[tracing]"). Use env keys, not committed YAML.
+tracing:
+  langfuse_enabled: true
+  # langfuse_host: "https://cloud.langfuse.com"   # EU: https://eu.cloud.langfuse.com
 
 # Domain prompting / action-generation settings (environment-specific; not signal extraction).
 domain_prompts:

@@ -43,6 +43,10 @@ logging:
   save_vc_distributions: false
   vc_export_format: json   # json | csv | both — VC follow-up sidecars (*_vc.json)
   vc_subdir: vc
+  save_step_traces: false   # true for debugging: trace_{episode_id}.jsonl in checkpoint dir
+
+tracing:
+  langfuse_enabled: true
 
 # Domain prompting / action-generation settings (environment-specific; not signal extraction).
 domain_prompts:

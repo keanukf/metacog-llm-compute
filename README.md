@@ -119,6 +119,8 @@ Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; def
 
 **Token-level entropy (TLE) with LM Studio:** The usual OpenAI-compat endpoints (`/v1/completions`, `/v1/chat/completions`) do not return logprobs in LM Studio. For `logprobs=True`, the code uses **`POST /v1/responses`** (LM Studio **0.4.x+**) with `include: ["message.output_text.logprobs"]` and `top_logprobs` (see `inference.lmstudio_top_logprobs` in config, default 5). TLE is Shannon entropy over the **renormalized top-k** distribution per token (approximation vs full vocabulary). vLLM/HF still use top-1 logprobs and the legacy binary-entropy path.
 
+**Step-level observability:** With `logging.save_step_traces: true` (default in `configs/pilot.yaml`), each episode writes `trace_{episode_id}.jsonl` next to the episode JSON: one line per env step with full prompt, full raw model output, observations, and `history_snapshot` (including prior `ACTION: ...` lines so the model cannot “forget” what it did). For Langfuse cloud traces, install `pip install ".[tracing]"`, set `tracing.langfuse_enabled: true`, and export `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (optional `LANGFUSE_HOST` for EU). Phase 1/2 runners pass the same options when enabled in YAML.
+
 - **Test 1:** Real prompts → measured tokens/s, latency, VRAM (CUDA only).
 - **Tests 2–3:** With a real model, TLE and VC are evaluated on **real generations**; in mock mode they use synthetic/static checks.
 - **Test 4:** TextWorld e2e episodes (stub env unless a real game file is wired in).

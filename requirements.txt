@@ -1,7 +1,7 @@
 # Core (blueprint: vLLM, TextWorld, analysis)
 vllm>=0.18.0
 # Qwen3.5+ checkpoints use model_type qwen3_5 (needs transformers >= 5.2)
-transformers>=5.2.0
+transformers>=4.56.0,<5
 openai>=1.0.0
 accelerate
 textworld
@@ -9,7 +9,11 @@ numpy
 pandas
 scipy
 pyyaml
+python-dotenv>=1.0.0
 
 # Dev / tests
 pytest>=7.0.0
 pytest-cov>=4.0.0
+
+# Optional: Langfuse observability (or: pip install ".[tracing]" from pyproject)
+langfuse>=2.0
