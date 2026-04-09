@@ -37,14 +37,31 @@ logging:
   vc_export_format: json
   vc_subdir: vc   # sidecar folder for VC follow-up distributions (parallel to logprob_subdir)
 
+# Domain prompting / action-generation settings (environment-specific; not signal extraction).
+domain_prompts:
+  textworld:
+    prefix: >
+      You are playing a parser-based text adventure (interactive fiction). Base each reply on the
+      latest game text shown below. Output exactly one imperative command on a single line—typical
+      forms include movement (go north), looking (look), and object use (take knife, open door).
+      Do not add narration, quotes around the command, role-play, multiple commands, or reasoning.
+      If the text includes a line starting with "Valid commands this turn:", choose one of those
+      commands when possible.
+    action_max_tokens: 32
+    action_stop: ["\n"]
+  tower_of_hanoi:
+    prefix: >
+      You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty
+      peg or on a larger-numbered disk. Each turn you must choose exactly one move from the line
+      starting with "Valid moves:" in the task text—do not output any other peg pair. Respond with
+      ONLY your move as X->Y using peg letters A, B, or C (e.g. A->C). Do not use disk numbers. Do
+      not explain your reasoning.
+    action_max_tokens: 32
+
 vc:
   mode: followup
   followup_max_tokens: 4
   followup_temperature: 0.0
-  prompt_prefix: {}
-  action_max_tokens: {}
-  tower_of_hanoi_default_action_max_tokens: 32
-  textworld_default_action_max_tokens: 32
 
 paths:
   pilot_benchmark: "data/results/pilot_benchmark.json"

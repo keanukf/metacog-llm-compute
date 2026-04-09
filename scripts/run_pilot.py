@@ -28,7 +28,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.utils.logging_utils import write_logprob_distribution_artifacts, write_vc_distribution_artifacts
-from src.utils.vc_config import vc_step_fn_kwargs
+from src.utils.step_config import resolve_step_fn_kwargs
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
 from src.utils.run_progress import format_run_elapsed, log, log_step_line
 
@@ -633,7 +633,7 @@ def run_test5_tower_of_hanoi(
             "C0",
             save_logprob_distributions=save_lp,
             save_vc_distributions=save_vc,
-            **vc_step_fn_kwargs(config, "tower_of_hanoi"),
+            **resolve_step_fn_kwargs(config, "tower_of_hanoi"),
         )
         log(f"Test 5: ToH episode {i + 1}/{num_episodes} — running (max {max_steps} steps)...")
         result = run_episode(
@@ -744,7 +744,7 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     stage,
                     save_logprob_distributions=save_lp,
                     save_vc_distributions=save_vc,
-                    **vc_step_fn_kwargs(config, "textworld"),
+                    **resolve_step_fn_kwargs(config, "textworld"),
                 )
                 log(f"Test 4: episode start {ep_id} (stage={stage})")
                 result = run_episode(
