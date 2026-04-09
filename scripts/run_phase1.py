@@ -192,7 +192,7 @@ def main() -> None:
         write_run_metadata,
         write_vc_distribution_artifacts,
     )
-    from src.utils.vc_config import vc_step_fn_kwargs
+    from src.utils.step_config import resolve_step_fn_kwargs
     from src.utils.run_output_layout import write_short_run_info
     from src.utils.run_progress import format_run_elapsed, log, log_episode_line, log_step_line, print_batch_progress
 
@@ -268,7 +268,7 @@ def main() -> None:
                             stage,
                             save_logprob_distributions=save_logprob_distributions,
                             save_vc_distributions=save_vc_distributions,
-                            **vc_step_fn_kwargs(config, domain),
+                            **resolve_step_fn_kwargs(config, domain),
                         )
                         on_step = None
                         if args.verbose_steps:
