@@ -7,8 +7,8 @@ from typing import Any
 
 from src.signals import token_entropy, verbalized_confidence
 
-# (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None)
-StepReturn = tuple[str, dict[str, float] | None, float | None, int, int, Any, Any]
+# (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None, prompt_full, response_full)
+StepReturn = tuple[str, dict[str, float] | None, float | None, int, int, Any, Any, str, str]
 
 
 def _build_prompt(observation: str, history: list[str], prompt_prefix: str) -> str:
@@ -144,7 +144,7 @@ def _c0_step_core(
     lm_calls += extra_calls
 
     lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
-    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail)
+    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, prompt, text)
 
 
 def _c1_step_core(
@@ -257,7 +257,12 @@ def _c2_step_core(
     total_tokens += extra_tok
     lm_calls = int(n_samples) + extra_calls
     lp_saved = win_logprobs if save_action_logprobs else None
-    return (winner, tle, vc, total_tokens, lm_calls, lp_saved, vc_detail)
+    sample_blocks = [
+        f"=== sample {i + 1}/{n_samples} (first_line={first!r}) ===\n{raw_text}"
+        for i, (first, raw_text, _lp) in enumerate(samples)
+    ]
+    response_full = "\n\n".join(sample_blocks)
+    return (winner, tle, vc, total_tokens, lm_calls, lp_saved, vc_detail, prompt, response_full)
 
 
 def c0_step(
@@ -333,8 +338,9 @@ def get_step_fn(
     """
     Return the step function for stage 'C0', 'C1', or 'C2'.
 
-    Returns a 7-tuple:
-    (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None).
+    Returns a 9-tuple:
+    (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None,
+     prompt_full, response_full).
 
     ``save_logprob_distributions``: persist raw per-token rows for the *action* completion.
 

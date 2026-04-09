@@ -62,6 +62,18 @@ def log_episode(
     return path
 
 
+def write_step_trace_line(trace_path: str | Path, record: dict[str, Any]) -> None:
+    """
+    Append one JSON object as a line to a per-episode trace file (JSONL).
+
+    Used for full prompt/response observability alongside compact episode JSON.
+    """
+    p = Path(trace_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 class EpisodeLogger:
     """Logger that writes one JSON file per episode to a results directory."""
 

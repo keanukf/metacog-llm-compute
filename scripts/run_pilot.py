@@ -27,6 +27,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.utils.dotenv_loader import load_dotenv_if_present
+
+_DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
+
 from src.utils.logging_utils import write_logprob_distribution_artifacts, write_vc_distribution_artifacts
 from src.utils.step_config import resolve_step_fn_kwargs
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
@@ -49,6 +53,16 @@ def _vc_export_settings(config: dict) -> tuple[bool, str, str]:
         str(lg.get("vc_export_format", "json")).lower(),
         str(lg.get("vc_subdir", "vc")),
     )
+
+
+def _step_trace_settings(config: dict) -> tuple[bool, Any]:
+    """(save_step_traces, trace_hook_or_none). Hook is None unless tracing.langfuse_enabled."""
+    lg = config.get("logging") or {}
+    save = bool(lg.get("save_step_traces", False))
+    from src.utils.tracing import optional_trace_hook_from_config
+
+    hook = optional_trace_hook_from_config(config, dotenv_info=_DOTENV_INFO)
+    return save, hook
 
 
 def _maybe_write_logprob_artifacts(
@@ -620,6 +634,8 @@ def run_test5_tower_of_hanoi(
     parseable_steps = 0
     total_steps = 0
     episodes_data: list[dict[str, Any]] = []
+    save_tr, trace_hk = _step_trace_settings(config)
+    model_nm = str(config.get("model", {}).get("name", ""))
     for i, task in enumerate(tasks):
 
         def _make_toh_on_step(ep_i: int, ep_total: int):
@@ -636,6 +652,7 @@ def run_test5_tower_of_hanoi(
             **resolve_step_fn_kwargs(config, "tower_of_hanoi"),
         )
         log(f"Test 5: ToH episode {i + 1}/{num_episodes} — running (max {max_steps} steps)...")
+        ep_toh = f"ep_tower_of_hanoi_{i}_C0_0"
         result = run_episode(
             env,
             model,
@@ -645,15 +662,19 @@ def run_test5_tower_of_hanoi(
             on_step=_make_toh_on_step(i, num_episodes),
             save_logprob_distributions=save_lp,
             save_vc_distributions=save_vc,
+            save_step_traces=save_tr,
+            episode_id=ep_toh,
+            trace_output_dir=str(output_dir),
+            trace_model_name=model_nm or None,
+            trace_hook=trace_hk,
         )
         log(
             f"Test 5: ToH episode done {i + 1}/{num_episodes} — steps={result['steps']} "
             f"lm_calls={result.get('total_lm_calls', 0)} wall={result.get('wall_clock_time', 0):.2f}s "
             f"success={result.get('task_success')}"
         )
-        ep_id = f"ep_tower_of_hanoi_{i}_C0_0"
         data = {
-            "episode_id": ep_id,
+            "episode_id": ep_toh,
             "domain": "tower_of_hanoi",
             "instance": i,
             "compute_stage": "C0",
@@ -670,9 +691,9 @@ def run_test5_tower_of_hanoi(
         }
         if result.get("vc_detail_per_step") is not None:
             data["vc_detail_per_step"] = result["vc_detail_per_step"]
-        log_episode(ep_id, data, output_dir)
-        _maybe_write_logprob_artifacts(config, ep_id, result, output_dir)
-        _maybe_write_vc_artifacts(config, ep_id, result, output_dir)
+        log_episode(ep_toh, data, output_dir)
+        _maybe_write_logprob_artifacts(config, ep_toh, result, output_dir)
+        _maybe_write_vc_artifacts(config, ep_toh, result, output_dir)
         episodes_data.append(data)
         step_corr = result.get("step_correctness") or []
         for d in step_corr:
@@ -727,6 +748,8 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
         f"Test 4: plan {instances} instances × {len(stages)} stages × {runs} runs = "
         f"{total_episodes} episodes (max 10 steps each)"
     )
+    save_tr, trace_hk = _step_trace_settings(config)
+    model_nm = str(config.get("model", {}).get("name", ""))
     episodes_data = []
     for inst in range(instances):
         for stage in stages:
@@ -756,6 +779,11 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     on_step=_make_test5_on_step(ep_id),
                     save_logprob_distributions=save_lp,
                     save_vc_distributions=save_vc,
+                    save_step_traces=save_tr,
+                    episode_id=ep_id,
+                    trace_output_dir=str(output_dir),
+                    trace_model_name=model_nm or None,
+                    trace_hook=trace_hk,
                 )
                 log(
                     f"Test 4: episode done {ep_id} — steps={result['steps']} "

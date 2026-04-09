@@ -22,6 +22,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.utils.dotenv_loader import load_dotenv_if_present
+
+_DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
+
 
 def load_config(config_path: str | Path) -> dict:
     import yaml
@@ -192,6 +196,7 @@ def main() -> None:
     vc_export_format = str(lg.get("vc_export_format", "json")).lower()
     logprob_subdir = str(lg.get("logprob_subdir", "logprobs"))
     vc_subdir = str(lg.get("vc_subdir", "vc"))
+    save_step_traces = bool(lg.get("save_step_traces", False))
 
     from src.utils.checkpointing import list_completed_episodes, save_episode_checkpoint
     from src.agent.base_agent import run_adaptive_episode
@@ -202,9 +207,11 @@ def main() -> None:
         write_vc_distribution_artifacts,
     )
     from src.utils.step_config import resolve_step_fn_kwargs
+    from src.utils.tracing import optional_trace_hook_from_config
     from src.utils.run_output_layout import write_short_run_info
     from src.utils.run_progress import format_run_elapsed, log, log_episode_line, log_step_line, print_batch_progress
 
+    trace_hook = optional_trace_hook_from_config(config, dotenv_info=_DOTENV_INFO)
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
     log(f"Checkpoint directory: {checkpoint_dir.resolve()}")
     phase2 = config.get("phase2", {})
@@ -293,6 +300,11 @@ def main() -> None:
                             on_step=on_step,
                             save_logprob_distributions=save_logprob_distributions,
                             save_vc_distributions=save_vc_distributions,
+                            save_step_traces=save_step_traces,
+                            episode_id=ep_id,
+                            trace_output_dir=str(checkpoint_dir),
+                            trace_model_name=str(model_cfg.get("name", "")) or None,
+                            trace_hook=trace_hook,
                             **resolve_step_fn_kwargs(config, domain),
                         )
                         data = {
