@@ -281,7 +281,10 @@ def run_episode(
                     model_name=trace_model_name,
                     metadata=lf_meta,
                 )
+            # Maintain growing context as ACTION/OBSERVATION pairs.
+            # This allows later prompts/traces to reconstruct the full interaction history.
             history.append(f"ACTION: {action}")
+            history.append(f"OBSERVATION: {obs}")
             steps += 1
             if on_step is not None:
                 on_step(
@@ -522,7 +525,9 @@ def run_adaptive_episode(
                     model_name=trace_model_name,
                     metadata=lf_meta_a,
                 )
+            # Maintain growing context as ACTION/OBSERVATION pairs.
             history.append(f"ACTION: {action}")
+            history.append(f"OBSERVATION: {obs}")
             steps += 1
             signal = _signal_for_next_step(tle, vc)
             if on_step is not None:
