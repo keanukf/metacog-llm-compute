@@ -12,7 +12,17 @@ StepReturn = tuple[str, dict[str, float] | None, float | None, int, int, Any, An
 
 
 def _build_prompt(observation: str, history: list[str], prompt_prefix: str) -> str:
-    body = "\n".join(history + [observation]) if history else observation
+    obs = (observation or "").strip()
+    if history:
+        last = (history[-1] or "").strip()
+        # If the caller already stored the current observation in history (common when history
+        # stores ACTION/OBSERVATION pairs), avoid duplicating it.
+        if last == obs or last == f"OBSERVATION: {obs}":
+            body = "\n".join(history)
+        else:
+            body = "\n".join(history + [observation])
+    else:
+        body = observation
     pfx = (prompt_prefix or "").strip()
     if pfx:
         return f"{pfx}\n\n{body}"

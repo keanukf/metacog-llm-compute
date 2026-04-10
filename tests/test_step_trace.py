@@ -91,6 +91,7 @@ def test_run_episode_writes_step_trace_jsonl(tmp_path: Path) -> None:
     row1 = json.loads(lines[1])
     assert row1["step_index"] == 1
     assert any(isinstance(x, str) and x.startswith("ACTION:") for x in row1["history_snapshot"])
+    assert any(isinstance(x, str) and x.startswith("OBSERVATION:") for x in row1["history_snapshot"])
 
 
 def test_run_episode_history_includes_prior_action(tmp_path: Path) -> None:
@@ -112,3 +113,4 @@ def test_run_episode_history_includes_prior_action(tmp_path: Path) -> None:
     row1 = json.loads(lines[1])
     joined = "\n".join(row1["history_snapshot"])
     assert "ACTION: act_one_line" in joined
+    assert "OBSERVATION: after act_one_line" in joined
