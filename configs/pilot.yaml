@@ -71,6 +71,9 @@ vc:
   followup_temperature: 0.0
 
 paths:
+  # TextWorld pilot episodes load ``textworld_{instance}.z8`` (or ``.ulx``) from here or
+  # ``<tasks_dir>/textworld/`` — same layout as Phase 1/2 (see ``src/utils/experiment_env.py``).
+  tasks_dir: "data/tasks"
   pilot_benchmark: "data/results/pilot_benchmark.json"
   pilot_calibration: "data/results/pilot_calibration.json"
   pilot_cost_validation: "data/results/pilot_cost_validation.md"
@@ -88,6 +91,8 @@ test3_verbalized_confidence:
 test4_textworld:
   num_mini_envs: 3
   max_rooms: 5
+  # Max environment steps per TextWorld episode (gym max_episode_steps matches this).
+  max_env_steps: 10
 
 tower_of_hanoi:
   # Pilot add-on: parseability validation on 3-disk problems at C0

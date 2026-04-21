@@ -87,7 +87,8 @@ def test_run_episode_writes_step_trace_jsonl(tmp_path: Path) -> None:
     assert row0["response_full"] == "act_one_line\nextra"
     assert row0["action_parsed"] == "act_one_line"
     assert row0["observation_before"] == "room A"
-    assert "ACTION:" not in row0["history_snapshot"]  # first step: no prior actions
+    assert "ACTION:" not in row0["history_snapshot"]  # no prior actions yet
+    assert "OBSERVATION: room A" in "\n".join(row0["history_snapshot"])  # reset() seeded into history
     row1 = json.loads(lines[1])
     assert row1["step_index"] == 1
     assert any(isinstance(x, str) and x.startswith("ACTION:") for x in row1["history_snapshot"])
@@ -112,5 +113,6 @@ def test_run_episode_history_includes_prior_action(tmp_path: Path) -> None:
     lines = (tmp_path / "trace_ep_hist.jsonl").read_text(encoding="utf-8").strip().splitlines()
     row1 = json.loads(lines[1])
     joined = "\n".join(row1["history_snapshot"])
+    assert "OBSERVATION: room A" in joined
     assert "ACTION: act_one_line" in joined
     assert "OBSERVATION: after act_one_line" in joined

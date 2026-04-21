@@ -31,6 +31,7 @@ from src.utils.dotenv_loader import load_dotenv_if_present
 
 _DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 
+from src.utils.experiment_env import make_experiment_env, resolve_textworld_game_path
 from src.utils.logging_utils import write_logprob_distribution_artifacts, write_vc_distribution_artifacts
 from src.utils.step_config import resolve_step_fn_kwargs
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
@@ -712,12 +713,16 @@ def run_test5_tower_of_hanoi(
 
 def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]:
     """Test 4: instances x 3 stages x runs = episodes; structured JSON per episode.
-    If real_model is provided, use it; otherwise use MockModel (stub env always).
+
+    Uses a real TextWorld gym env when ``resolve_textworld_game_path`` finds a story file for
+    that instance under ``paths.tasks_dir`` (same layout as Phase 1/2). If no file exists or
+    TextWorld is not installed, ``TextWorldEnv`` falls back to its stub.
+
+    If real_model is provided, use it; otherwise use MockModel.
     """
     log("Test 4: end-to-end TextWorld episodes — start")
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
-    from src.environments.textworld_env import TextWorldEnv
     from src.utils.logging_utils import log_episode
 
     class MockModel:
@@ -738,20 +743,32 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
     runs = config.get("pilot", {}).get("runs_per_instance", 1)
     total_episodes = instances * len(stages) * runs
     episode_idx = [0]
+    tw_pilot = config.get("test4_textworld") or {}
+    max_env_steps = int(tw_pilot.get("max_env_steps", 10))
+    tasks_dir_cfg = (config.get("paths") or {}).get("tasks_dir", "data/tasks")
 
     def _log_progress():
         episode_idx[0] += 1
         if episode_idx[0] % 5 == 0 or episode_idx[0] == total_episodes:
-            log(f"Test 5: batch progress {episode_idx[0]}/{total_episodes} episodes")
+            log(f"Test 4: batch progress {episode_idx[0]}/{total_episodes} episodes")
 
     log(
         f"Test 4: plan {instances} instances × {len(stages)} stages × {runs} runs = "
-        f"{total_episodes} episodes (max 10 steps each)"
+        f"{total_episodes} episodes (max {max_env_steps} env steps each); "
+        f"tasks_dir={tasks_dir_cfg}"
     )
     save_tr, trace_hk = _step_trace_settings(config)
     model_nm = str(config.get("model", {}).get("name", ""))
     episodes_data = []
     for inst in range(instances):
+        game_path = resolve_textworld_game_path(inst, config, REPO_ROOT)
+        if game_path is not None:
+            log(f"Test 4: instance {inst} game file: {game_path}")
+        else:
+            log(
+                f"Test 4: instance {inst}: no textworld_{inst}.z8/.ulx under "
+                f"{tasks_dir_cfg} (or textworld/ subdir) — using stub env"
+            )
         for stage in stages:
             for run in range(runs):
                 ep_id = f"ep_textworld_{inst}_{stage}_{run}"
@@ -762,7 +779,13 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
 
                     return _inner
 
-                env = TextWorldEnv(max_steps=10)
+                env = make_experiment_env(
+                    "textworld",
+                    inst,
+                    config,
+                    max_env_steps,
+                    REPO_ROOT,
+                )
                 step_fn = get_step_fn(
                     stage,
                     save_logprob_distributions=save_lp,
@@ -775,7 +798,7 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     model,
                     stage,
                     step_fn=step_fn,
-                    max_steps=10,
+                    max_steps=max_env_steps,
                     on_step=_make_test5_on_step(ep_id),
                     save_logprob_distributions=save_lp,
                     save_vc_distributions=save_vc,

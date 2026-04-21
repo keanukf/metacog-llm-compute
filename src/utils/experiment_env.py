@@ -7,6 +7,28 @@ from pathlib import Path
 from typing import Any
 
 
+def resolve_textworld_game_path(instance: int, config: dict, repo_root: Path) -> Path | None:
+    """
+    Locate a compiled TextWorld story for ``instance`` (0-based index).
+
+    Searches ``paths.tasks_dir`` (default ``data/tasks``) for, in order:
+    ``textworld_{instance}.z8``, ``textworld/textworld_{instance}.z8``, same for ``.ulx``.
+    Paths are resolved relative to ``repo_root`` when not absolute.
+    """
+    tasks_dir = Path(config.get("paths", {}).get("tasks_dir", "data/tasks"))
+    candidate_paths = [
+        tasks_dir / f"textworld_{instance}.z8",
+        tasks_dir / "textworld" / f"textworld_{instance}.z8",
+        tasks_dir / f"textworld_{instance}.ulx",
+        tasks_dir / "textworld" / f"textworld_{instance}.ulx",
+    ]
+    for cand in candidate_paths:
+        cand_abs = cand if cand.is_absolute() else repo_root / cand
+        if cand_abs.is_file():
+            return cand_abs
+    return None
+
+
 class MockExperimentModel:
     """Lightweight stand-in when ``--real`` is off or model creation fails."""
 
@@ -54,19 +76,7 @@ def make_experiment_env(
     from src.environments.textworld_env import TextWorldEnv
 
     if domain == "textworld":
-        tasks_dir = Path(config.get("paths", {}).get("tasks_dir", "data/tasks"))
-        candidate_paths = [
-            tasks_dir / f"textworld_{instance}.z8",
-            tasks_dir / "textworld" / f"textworld_{instance}.z8",
-            tasks_dir / f"textworld_{instance}.ulx",
-            tasks_dir / "textworld" / f"textworld_{instance}.ulx",
-        ]
-        game_file = None
-        for cand in candidate_paths:
-            cand_abs = cand if cand.is_absolute() else repo_root / cand
-            if cand_abs.exists():
-                game_file = cand_abs
-                break
+        game_file = resolve_textworld_game_path(instance, config, repo_root)
         return TextWorldEnv(game_file=str(game_file) if game_file else None, max_steps=max_steps)
     if domain == "tower_of_hanoi":
         from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
