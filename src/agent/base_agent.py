@@ -165,7 +165,10 @@ def run_episode(
         vc_detail_per_step (optional): rich VC metadata per step when follow-up VC is used.
     """
     obs = env.reset()
-    history: list[str] = []
+    # Keep reset() output in history: many envs (e.g. TextWorld) do not repeat the full scene
+    # on every step, only the latest feedback + state. Without this, step ≥1 prompts lose the
+    # opening game text.
+    history: list[str] = [f"OBSERVATION: {obs}"]
     steps = 0
     total_lm_calls = 0
     total_tokens_generated = 0
@@ -406,7 +409,8 @@ def run_adaptive_episode(
             )
 
     obs = env.reset()
-    history: list[str] = []
+    # Same as run_episode: retain full opening observation for growing prompts.
+    history: list[str] = [f"OBSERVATION: {obs}"]
     steps = 0
     total_lm_calls = 0
     total_tokens_generated = 0
