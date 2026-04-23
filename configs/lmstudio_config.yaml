@@ -36,4 +36,7 @@ tower_of_hanoi:
   pilot_episodes: 10
   pilot_num_disks: 3
   pilot_max_steps: 20
+  # Conservative local diversification to avoid 10× identical starts.
+  num_disks_range: [3, 3]
+  partial_start_range: [0, 1]
   task_generation_seed: 42
