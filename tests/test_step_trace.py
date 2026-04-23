@@ -229,3 +229,40 @@ def test_null_trace_hook_accepts_new_kwargs() -> None:
         vc_output="vo",
     )
     h.episode_end(output={"ok": True}, final_tags=["done"])
+
+
+def test_langfuse_trace_hook_prefers_update_trace_when_available() -> None:
+    """If the SDK exposes update_trace(trace_id=...), we should use it for trace-level tags."""
+    from src.utils.tracing import LangfuseTraceHook
+
+    class _FakeSpan:
+        def __init__(self) -> None:
+            self.id = "span_1"
+
+        def end(self) -> None:
+            return None
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict]] = []
+
+        def create_trace_id(self) -> str:
+            return "trace_1"
+
+        def start_observation(self, **kwargs):
+            # We only need a span-like object that supports id/end.
+            return _FakeSpan()
+
+        def update_trace(self, trace_id: str, **payload) -> None:
+            self.calls.append(("update_trace", {"trace_id": trace_id, **payload}))
+
+        def flush(self) -> None:
+            return None
+
+    c = _FakeClient()
+    h = LangfuseTraceHook(c)
+    h.episode_start("epX", session_id="sess", tags=["pilot", "textworld"], trace_name="epX")
+    assert any(
+        name == "update_trace" and call.get("trace_id") == "trace_1" and call.get("tags") == ["pilot", "textworld"]
+        for name, call in c.calls
+    )

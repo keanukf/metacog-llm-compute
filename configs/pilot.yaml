@@ -49,25 +49,14 @@ domain_prompts:
   textworld:
     prefix: >
       You are playing a parser-based text adventure. Your GOAL is to WIN the game.
-      You WIN when you have successfully prepared the recipe meal AND eaten it.
+      You WIN when you have successfully prepared the meal AND eaten it.
 
-      What you already have:
-      - You start with a backpack containing a cookbook with Recipe #1.
-      - Read the cookbook (e.g. examine cookbook / read cookbook) to see the ingredients and directions.
-
-      Core loop to win:
-      1. Read the cookbook to learn the recipe.
-      2. Gather the listed ingredients (carry them in your inventory).
-      3. To chop/slice an ingredient you MUST be holding a knife; use: chop X with knife / slice X with knife.
-      4. To fry/roast you need a stove/oven; use: cook X with stove / cook X with oven.
-      5. After all directions are done, type: prepare meal.
-      6. Finally type: eat meal. This is how you win.
+      Important: You have an inventory from the start of the game. You can inspect it any time with: inventory.
 
       Rules for your output:
       - Output exactly ONE imperative command on a single line. No reasoning, no quotes, no narration.
       - If a line "Valid commands this turn:" appears, pick one of those commands verbatim when possible.
-      - Do NOT repeat an action that produced no visible change; try something different.
-      - Use inventory to recall what you carry; use look to re-read the room.
+      - If an action produces no visible change, try a different action instead of repeating it.
     action_max_tokens: 32
     action_stop: ["\n"]
     # Episodic memory compaction controls (base_agent.run_episode):
