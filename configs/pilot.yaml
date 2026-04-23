@@ -114,4 +114,8 @@ tower_of_hanoi:
   pilot_episodes: 20
   pilot_num_disks: 3
   pilot_max_steps: 20
+  # New (preferred): diversify tasks across disk counts and partial starts.
+  # If omitted, Test 5 falls back to pilot_num_disks and a full-start state (partial_start_range=[0,0]).
+  num_disks_range: [3, 4]
+  partial_start_range: [0, 2]
   task_generation_seed: 42

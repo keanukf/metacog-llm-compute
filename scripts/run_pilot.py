@@ -621,16 +621,35 @@ def run_test5_tower_of_hanoi(
     num_episodes = int(toh_cfg.get("pilot_episodes", 20))
     num_disks = int(toh_cfg.get("pilot_num_disks", 3))
     seed = int(toh_cfg.get("task_generation_seed", 42))
-    max_steps = int(toh_cfg.get("pilot_max_steps", 20))
+    max_steps_default = int(toh_cfg.get("pilot_max_steps", 20))
+    num_disks_range_raw = toh_cfg.get("num_disks_range", [num_disks, num_disks])
+    partial_start_range_raw = toh_cfg.get("partial_start_range", [0, 0])
+    try:
+        num_disks_range = (int(num_disks_range_raw[0]), int(num_disks_range_raw[1]))
+    except Exception:
+        num_disks_range = (num_disks, num_disks)
+    try:
+        partial_start_range = (int(partial_start_range_raw[0]), int(partial_start_range_raw[1]))
+    except Exception:
+        partial_start_range = (0, 0)
     tasks = generate_instances(
         num_episodes,
         seed=seed,
-        num_disks_range=(num_disks, num_disks),
-        partial_start_range=(0, 0),
+        num_disks_range=num_disks_range,
+        partial_start_range=partial_start_range,
     )
-    worst_lm = num_episodes * max_steps
+    # Respect each task's intrinsic max_steps (derived from its optimal solution length),
+    # while still honoring the configured default cap as a floor.
+    worst_lm = 0
+    for t in tasks:
+        tms = int(t.get("max_steps") or 0)
+        cap = int(max_steps_default if max_steps_default > 0 else 1)
+        worst_lm += max(cap, tms) if tms > 0 else cap
     log(
-        f"Test 5: ToH plan {num_episodes} episodes × up to {max_steps} steps → ≤{worst_lm} LM calls (C0)"
+        "Test 5: ToH plan "
+        f"{num_episodes} episodes; num_disks_range={list(num_disks_range)} "
+        f"partial_start_range={list(partial_start_range)} "
+        f"default_max_steps={max_steps_default} → ≤{worst_lm} steps (C0)"
     )
     parseable_steps = 0
     total_steps = 0
@@ -647,6 +666,10 @@ def run_test5_tower_of_hanoi(
 
             return _inner
 
+        task_max_steps = int(task.get("max_steps") or 0)
+        max_steps = max_steps_default
+        if task_max_steps > 0:
+            max_steps = max(max_steps_default, task_max_steps)
         env = TowerOfHanoiEnv(task=task, max_steps=max_steps)
         step_cfg = resolve_step_fn_kwargs(config, "tower_of_hanoi")
         hist_keys = {
@@ -663,7 +686,11 @@ def run_test5_tower_of_hanoi(
             save_vc_distributions=save_vc,
             **step_cfg,
         )
-        log(f"Test 5: ToH episode {i + 1}/{num_episodes} — running (max {max_steps} steps)...")
+        log(
+            f"Test 5: ToH episode {i + 1}/{num_episodes} — running "
+            f"(num_disks={task.get('num_disks')}, partial_start_moves={task.get('partial_start_moves')}, "
+            f"max_steps={max_steps})..."
+        )
         ep_toh = f"ep_tower_of_hanoi_{i}_C0_0"
         result = run_episode(
             env,
@@ -720,7 +747,9 @@ def run_test5_tower_of_hanoi(
     return {
         "num_episodes": num_episodes,
         "num_disks": num_disks,
-        "max_steps": max_steps,
+        "num_disks_range": list(num_disks_range),
+        "partial_start_range": list(partial_start_range),
+        "default_max_steps": max_steps_default,
         "total_steps": total_steps,
         "parseable_steps": parseable_steps,
         "parse_rate": parse_rate,
