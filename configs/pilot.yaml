@@ -48,16 +48,40 @@ tracing:
 domain_prompts:
   textworld:
     prefix: >
-      You are playing a parser-based text adventure (interactive fiction). Your overall task is to
-      check the cookbook in the kitchen for the recipe, gather the required ingredients, prepare the
-      meal, and then enjoy (eat) it. Base each reply on the latest game text shown below. Output
-      exactly one imperative command on a single line—typical forms include movement (go north),
-      looking (look), and object use (take knife, open door).
-      Do not add narration, quotes around the command, role-play, multiple commands, or reasoning.
-      If the text includes a line starting with "Valid commands this turn:", choose one of those
-      commands when possible. Avoid repeating an action that produced no visible change.
+      You are playing a parser-based text adventure. Your GOAL is to WIN the game.
+      You WIN when you have successfully prepared the recipe meal AND eaten it.
+
+      What you already have:
+      - You start with a backpack containing a cookbook with Recipe #1.
+      - Read the cookbook (e.g. examine cookbook / read cookbook) to see the ingredients and directions.
+
+      Core loop to win:
+      1. Read the cookbook to learn the recipe.
+      2. Gather the listed ingredients (carry them in your inventory).
+      3. To chop/slice an ingredient you MUST be holding a knife; use: chop X with knife / slice X with knife.
+      4. To fry/roast you need a stove/oven; use: cook X with stove / cook X with oven.
+      5. After all directions are done, type: prepare meal.
+      6. Finally type: eat meal. This is how you win.
+
+      Rules for your output:
+      - Output exactly ONE imperative command on a single line. No reasoning, no quotes, no narration.
+      - If a line "Valid commands this turn:" appears, pick one of those commands verbatim when possible.
+      - Do NOT repeat an action that produced no visible change; try something different.
+      - Use inventory to recall what you carry; use look to re-read the room.
     action_max_tokens: 32
     action_stop: ["\n"]
+    # Episodic memory compaction controls (base_agent.run_episode):
+    # Keep the first reset observation plus the last N ACTION/OBSERVATION pairs.
+    # Very liberal for local runs: keep effectively the whole episode in-context.
+    history_keep_last_pairs: 1000000
+    # Disable truncation entirely (0 => no truncation in base_agent._truncate_for_history).
+    history_max_obs_chars: 0
+    # Disable truncation for the current observation as well.
+    history_current_obs_max_chars: 0
+    # Share of chars kept from the start of an observation (rest comes from the end).
+    history_obs_head_ratio: 0.15
+    # Once a recipe is discovered, keep it pinned in context for the remainder of the episode.
+    pin_recipe: true
   tower_of_hanoi:
     prefix: >
       You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty

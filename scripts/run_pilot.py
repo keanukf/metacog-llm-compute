@@ -637,6 +637,8 @@ def run_test5_tower_of_hanoi(
     episodes_data: list[dict[str, Any]] = []
     save_tr, trace_hk = _step_trace_settings(config)
     model_nm = str(config.get("model", {}).get("name", ""))
+    session_id = str(output_dir.name)
+    base_tags = ["pilot", "tower_of_hanoi", str(config.get("pilot_mode", "unknown")), session_id]
     for i, task in enumerate(tasks):
 
         def _make_toh_on_step(ep_i: int, ep_total: int):
@@ -646,11 +648,20 @@ def run_test5_tower_of_hanoi(
             return _inner
 
         env = TowerOfHanoiEnv(task=task, max_steps=max_steps)
+        step_cfg = resolve_step_fn_kwargs(config, "tower_of_hanoi")
+        hist_keys = {
+            "history_keep_last_pairs",
+            "history_max_obs_chars",
+            "history_current_obs_max_chars",
+            "history_obs_head_ratio",
+            "pin_recipe",
+        }
+        history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in hist_keys}
         step_fn = get_step_fn(
             "C0",
             save_logprob_distributions=save_lp,
             save_vc_distributions=save_vc,
-            **resolve_step_fn_kwargs(config, "tower_of_hanoi"),
+            **step_cfg,
         )
         log(f"Test 5: ToH episode {i + 1}/{num_episodes} — running (max {max_steps} steps)...")
         ep_toh = f"ep_tower_of_hanoi_{i}_C0_0"
@@ -668,6 +679,10 @@ def run_test5_tower_of_hanoi(
             trace_output_dir=str(output_dir),
             trace_model_name=model_nm or None,
             trace_hook=trace_hk,
+            trace_session_id=session_id,
+            trace_tags=[t for t in ([*base_tags, "C0", model_nm] if model_nm else [*base_tags, "C0"]) if t],
+            trace_name=ep_toh,
+            **history_cfg,
         )
         log(
             f"Test 5: ToH episode done {i + 1}/{num_episodes} — steps={result['steps']} "
@@ -759,6 +774,8 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
     )
     save_tr, trace_hk = _step_trace_settings(config)
     model_nm = str(config.get("model", {}).get("name", ""))
+    session_id = str(output_dir.name)
+    base_tags = ["pilot", "textworld", str(config.get("pilot_mode", "unknown")), session_id]
     episodes_data = []
     for inst in range(instances):
         game_path = resolve_textworld_game_path(inst, config, REPO_ROOT)
@@ -786,11 +803,20 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     max_env_steps,
                     REPO_ROOT,
                 )
+                step_cfg = resolve_step_fn_kwargs(config, "textworld")
+                hist_keys = {
+                    "history_keep_last_pairs",
+                    "history_max_obs_chars",
+                    "history_current_obs_max_chars",
+                    "history_obs_head_ratio",
+                    "pin_recipe",
+                }
+                history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in hist_keys}
                 step_fn = get_step_fn(
                     stage,
                     save_logprob_distributions=save_lp,
                     save_vc_distributions=save_vc,
-                    **resolve_step_fn_kwargs(config, "textworld"),
+                    **step_cfg,
                 )
                 log(f"Test 4: episode start {ep_id} (stage={stage})")
                 result = run_episode(
@@ -807,6 +833,10 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     trace_output_dir=str(output_dir),
                     trace_model_name=model_nm or None,
                     trace_hook=trace_hk,
+                    trace_session_id=session_id,
+                    trace_tags=[t for t in ([*base_tags, stage, model_nm] if model_nm else [*base_tags, stage]) if t],
+                    trace_name=ep_id,
+                    **history_cfg,
                 )
                 log(
                     f"Test 4: episode done {ep_id} — steps={result['steps']} "
