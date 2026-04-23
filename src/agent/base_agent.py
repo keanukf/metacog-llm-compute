@@ -25,6 +25,31 @@ StepFn = Callable[
 ]
 
 
+def _truncate_for_history(text: str, *, max_chars: int = 1000) -> str:
+    """
+    Keep history compact to avoid blowing the model context window.
+
+    We preserve both the start (task framing) and the end (often contains valid commands / latest state).
+    """
+    t = text or ""
+    if max_chars <= 0 or len(t) <= max_chars:
+        return t
+    head = max_chars // 2
+    tail = max_chars - head
+    return f"{t[:head]}\n…[snip]…\n{t[-tail:]}"
+
+
+def _compact_history_for_prompt(history: list[str], *, keep_last_lines: int = 8) -> list[str]:
+    """Return a compact history view for prompting (keeps first + last N lines)."""
+    if not history:
+        return []
+    if keep_last_lines <= 0:
+        return history[:1]
+    if len(history) <= 1 + keep_last_lines:
+        return list(history)
+    return [history[0], *history[-keep_last_lines:]]
+
+
 def _normalize_step_result(
     result: tuple,
 ) -> tuple[
@@ -168,7 +193,7 @@ def run_episode(
     # Keep reset() output in history: many envs (e.g. TextWorld) do not repeat the full scene
     # on every step, only the latest feedback + state. Without this, step ≥1 prompts lose the
     # opening game text.
-    history: list[str] = [f"OBSERVATION: {obs}"]
+    history: list[str] = [f"OBSERVATION: {_truncate_for_history(obs)}"]
     steps = 0
     total_lm_calls = 0
     total_tokens_generated = 0
@@ -207,9 +232,11 @@ def run_episode(
     try:
         while not getattr(env, "done", False) and steps < max_steps:
             step_obs = obs
+            step_obs_for_prompt = _truncate_for_history(step_obs)
             history_snapshot = list(history)
             t0 = time.perf_counter()
-            raw = step_fn(step_obs, history, model)
+            history_for_prompt = _compact_history_for_prompt(history)
+            raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
             step_wall_time_s = time.perf_counter() - t0
             action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full = (
                 _normalize_step_result(raw)
@@ -287,7 +314,7 @@ def run_episode(
             # Maintain growing context as ACTION/OBSERVATION pairs.
             # This allows later prompts/traces to reconstruct the full interaction history.
             history.append(f"ACTION: {action}")
-            history.append(f"OBSERVATION: {obs}")
+            history.append(f"OBSERVATION: {_truncate_for_history(obs)}")
             steps += 1
             if on_step is not None:
                 on_step(
@@ -410,7 +437,7 @@ def run_adaptive_episode(
 
     obs = env.reset()
     # Same as run_episode: retain full opening observation for growing prompts.
-    history: list[str] = [f"OBSERVATION: {obs}"]
+    history: list[str] = [f"OBSERVATION: {_truncate_for_history(obs)}"]
     steps = 0
     total_lm_calls = 0
     total_tokens_generated = 0
@@ -447,12 +474,14 @@ def run_adaptive_episode(
     try:
         while not getattr(env, "done", False) and steps < max_steps:
             step_obs = obs
+            step_obs_for_prompt = _truncate_for_history(step_obs)
             history_snapshot = list(history)
             stage = alloc(signal, strategy, steps, rng)
             stage_per_step.append(stage)
             step_fn = resolve(stage)
             t0 = time.perf_counter()
-            raw = step_fn(step_obs, history, model)
+            history_for_prompt = _compact_history_for_prompt(history)
+            raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
             step_wall_time_s = time.perf_counter() - t0
             action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full = (
                 _normalize_step_result(raw)
@@ -531,7 +560,7 @@ def run_adaptive_episode(
                 )
             # Maintain growing context as ACTION/OBSERVATION pairs.
             history.append(f"ACTION: {action}")
-            history.append(f"OBSERVATION: {obs}")
+            history.append(f"OBSERVATION: {_truncate_for_history(obs)}")
             steps += 1
             signal = _signal_for_next_step(tle, vc)
             if on_step is not None:

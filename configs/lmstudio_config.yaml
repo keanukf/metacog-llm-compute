@@ -7,7 +7,7 @@
 enabled: true
 
 model:
-  name: "mlx-community/Llama-3.2-3B-Instruct-4bit"
+  name: "lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit"
   dtype: int4
 
 inference:
@@ -16,9 +16,9 @@ inference:
   lmstudio_top_logprobs: 5
 
 pilot:
-  instances: 1 # 5 is default, 2 is for the pilot
+  instances: 5 # 5 is default, 2 is for the pilot
   compute_stages: 3   # C0, C1, C2
-  runs_per_instance: 1
+  runs_per_instance: 2
 
 test1_inference:
   num_prompts: 10
@@ -33,7 +33,7 @@ test4_textworld:
   max_rooms: 5
 
 tower_of_hanoi:
-  pilot_episodes: 1
+  pilot_episodes: 10
   pilot_num_disks: 3
   pilot_max_steps: 20
   task_generation_seed: 42
