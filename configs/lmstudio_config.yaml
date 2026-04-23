@@ -16,9 +16,9 @@ inference:
   lmstudio_top_logprobs: 5
 
 pilot:
-  instances: 5 # 5 is default, 2 is for the pilot
+  instances: 1 # 5 is default, 2 is for the pilot
   compute_stages: 3   # C0, C1, C2
-  runs_per_instance: 2
+  runs_per_instance: 1
 
 test1_inference:
   num_prompts: 10

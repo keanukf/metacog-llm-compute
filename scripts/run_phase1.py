@@ -271,11 +271,20 @@ def main() -> None:
                     t_ep0 = time.perf_counter()
                     try:
                         env = make_experiment_env(domain, inst, config, max_steps, REPO_ROOT)
+                        step_cfg = resolve_step_fn_kwargs(config, domain)
+                        hist_keys = {
+                            "history_keep_last_pairs",
+                            "history_max_obs_chars",
+                            "history_current_obs_max_chars",
+                            "history_obs_head_ratio",
+                            "pin_recipe",
+                        }
+                        history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in hist_keys}
                         step_fn = get_step_fn(
                             stage,
                             save_logprob_distributions=save_logprob_distributions,
                             save_vc_distributions=save_vc_distributions,
-                            **resolve_step_fn_kwargs(config, domain),
+                            **step_cfg,
                         )
                         on_step = None
                         if args.verbose_steps:
@@ -301,6 +310,15 @@ def main() -> None:
                             trace_output_dir=str(checkpoint_dir),
                             trace_model_name=str(model_cfg.get("name", "")) or None,
                             trace_hook=trace_hook,
+                            trace_session_id=str(checkpoint_dir.name),
+                            trace_tags=[
+                                "phase1",
+                                str(domain),
+                                str(stage),
+                                str(model_cfg.get("name", "")) if str(model_cfg.get("name", "")) else "",
+                            ],
+                            trace_name=ep_id,
+                            **history_cfg,
                         )
                         data = {
                             "episode_id": ep_id,

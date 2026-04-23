@@ -11,12 +11,21 @@ from __future__ import annotations
 import os
 import warnings
 from typing import Any, Protocol
+import inspect
 
 
 class TraceHook(Protocol):
     """Per-episode tracing (file logging is handled separately in base_agent)."""
 
-    def episode_start(self, episode_id: str, metadata: dict[str, Any] | None = None) -> None: ...
+    def episode_start(
+        self,
+        episode_id: str,
+        metadata: dict[str, Any] | None = None,
+        *,
+        session_id: str | None = None,
+        tags: list[str] | None = None,
+        trace_name: str | None = None,
+    ) -> None: ...
 
     def log_action_generation(
         self,
@@ -29,13 +38,43 @@ class TraceHook(Protocol):
         metadata: dict[str, Any] | None,
     ) -> None: ...
 
-    def episode_end(self) -> None: ...
+    def episode_end(
+        self,
+        *,
+        output: dict[str, Any] | None = None,
+        final_tags: list[str] | None = None,
+    ) -> None: ...
+
+    # Optional richer API (used when implemented):
+    def log_step(  # pragma: no cover - protocol only
+        self,
+        *,
+        step_index: int,
+        stage: str,
+        observation: str,
+        action: str,
+        prompt: str,
+        action_output: str,
+        model_name: str | None,
+        metadata: dict[str, Any] | None,
+        strategy: str | None = None,
+        vc_prompt: str | None = None,
+        vc_output: str | None = None,
+    ) -> None: ...
 
 
 class NullTraceHook:
     """No-op tracer when Langfuse is off or unavailable."""
 
-    def episode_start(self, episode_id: str, metadata: dict[str, Any] | None = None) -> None:
+    def episode_start(
+        self,
+        episode_id: str,
+        metadata: dict[str, Any] | None = None,
+        *,
+        session_id: str | None = None,
+        tags: list[str] | None = None,
+        trace_name: str | None = None,
+    ) -> None:
         return None
 
     def log_action_generation(
@@ -50,7 +89,29 @@ class NullTraceHook:
     ) -> None:
         return None
 
-    def episode_end(self) -> None:
+    def episode_end(
+        self,
+        *,
+        output: dict[str, Any] | None = None,
+        final_tags: list[str] | None = None,
+    ) -> None:
+        return None
+
+    def log_step(
+        self,
+        *,
+        step_index: int,
+        stage: str,
+        observation: str,
+        action: str,
+        prompt: str,
+        action_output: str,
+        model_name: str | None,
+        metadata: dict[str, Any] | None,
+        strategy: str | None = None,
+        vc_prompt: str | None = None,
+        vc_output: str | None = None,
+    ) -> None:
         return None
 
 
@@ -64,10 +125,30 @@ class LangfuseTraceHook:
         self._client = client
         self._trace_id: str | None = None
         self._root_span: Any = None
+        self._episode_tags: list[str] = []
+        self._session_id: str | None = None
+        self._trace_name: str | None = None
+        self._supports_parent_observation_id = False
+        try:
+            sig = inspect.signature(getattr(self._client, "start_observation"))
+            self._supports_parent_observation_id = "parent_observation_id" in sig.parameters
+        except Exception:
+            self._supports_parent_observation_id = False
 
-    def episode_start(self, episode_id: str, metadata: dict[str, Any] | None = None) -> None:
+    def episode_start(
+        self,
+        episode_id: str,
+        metadata: dict[str, Any] | None = None,
+        *,
+        session_id: str | None = None,
+        tags: list[str] | None = None,
+        trace_name: str | None = None,
+    ) -> None:
         self._trace_id = None
         self._root_span = None
+        self._episode_tags = list(tags or [])
+        self._session_id = session_id
+        self._trace_name = trace_name
         meta = dict(metadata or {})
         meta["episode_id"] = episode_id
         try:
@@ -75,12 +156,34 @@ class LangfuseTraceHook:
 
             self._trace_id = self._client.create_trace_id()
             ctx = TraceContext(trace_id=self._trace_id)
+            meta["session_id"] = session_id
+            meta["tags"] = list(self._episode_tags)
+            if trace_name:
+                meta["trace_name"] = trace_name
             self._root_span = self._client.start_observation(
                 name="metacog_episode",
                 as_type="span",
                 trace_context=ctx,
                 metadata=meta,
             )
+            upd = getattr(self._client, "update_current_trace", None)
+            if callable(upd):
+                payload: dict[str, Any] = {}
+                if trace_name:
+                    payload["name"] = str(trace_name)
+                if session_id:
+                    payload["session_id"] = str(session_id)
+                if self._episode_tags:
+                    payload["tags"] = list(self._episode_tags)
+                if payload:
+                    try:
+                        upd(**payload)
+                    except Exception as e:
+                        # Some SDK versions use positional dict payload instead of kwargs.
+                        try:
+                            upd(payload)
+                        except Exception:
+                            warnings.warn(f"Langfuse update_current_trace failed: {e!s}")
         except Exception as e:
             warnings.warn(f"Langfuse episode_start failed: {e!s}")
             self._trace_id = None
@@ -117,14 +220,129 @@ class LangfuseTraceHook:
                 f"Langfuse log_action_generation failed (step_{step_index}_{compute_stage}): {e!s}"
             )
 
-    def episode_end(self) -> None:
+    def log_step(
+        self,
+        *,
+        step_index: int,
+        stage: str,
+        observation: str,
+        action: str,
+        prompt: str,
+        action_output: str,
+        model_name: str | None,
+        metadata: dict[str, Any] | None,
+        strategy: str | None = None,
+        vc_prompt: str | None = None,
+        vc_output: str | None = None,
+    ) -> None:
+        if self._trace_id is None:
+            return
+        try:
+            from langfuse.types import TraceContext
+
+            ctx = TraceContext(trace_id=self._trace_id)
+            step_meta = dict(metadata or {})
+            step_meta["action"] = action
+            if strategy:
+                step_meta["strategy"] = strategy
+            if self._session_id:
+                step_meta["session_id"] = self._session_id
+            if self._episode_tags:
+                step_meta["trace_tags"] = list(self._episode_tags)
+            step_span = self._client.start_observation(
+                name=f"step_{step_index}",
+                as_type="span",
+                trace_context=ctx,
+                input=observation,
+                metadata=step_meta,
+            )
+            gen_kw: dict[str, Any] = {}
+            if self._supports_parent_observation_id:
+                parent_id = getattr(step_span, "id", None)
+                if parent_id:
+                    gen_kw["parent_observation_id"] = parent_id
+            action_gen = self._client.start_observation(
+                name=f"action_{step_index}_{stage}",
+                as_type="generation",
+                trace_context=ctx,
+                model=model_name or "unknown",
+                input=prompt,
+                output=action_output,
+                metadata={
+                    "stage": stage,
+                    "session_id": self._session_id,
+                    "trace_tags": list(self._episode_tags),
+                },
+                **gen_kw,
+            )
+            action_gen.end()
+            if vc_prompt and vc_output:
+                vc_gen = self._client.start_observation(
+                    name=f"vc_followup_{step_index}",
+                    as_type="generation",
+                    trace_context=ctx,
+                    model=model_name or "unknown",
+                    input=vc_prompt,
+                    output=vc_output,
+                    metadata={
+                        "stage": stage,
+                        "kind": "vc_followup",
+                        "session_id": self._session_id,
+                        "trace_tags": list(self._episode_tags),
+                    },
+                    **gen_kw,
+                )
+                vc_gen.end()
+            step_span.end()
+        except Exception as e:
+            warnings.warn(f"Langfuse log_step failed (step_{step_index}): {e!s}")
+            # Fallback to the flat action-generation log
+            try:
+                self.log_action_generation(
+                    step_index=step_index,
+                    compute_stage=stage,
+                    prompt=prompt,
+                    output=action_output,
+                    model_name=model_name,
+                    metadata=metadata,
+                )
+            except Exception:
+                return
+
+    def episode_end(
+        self,
+        *,
+        output: dict[str, Any] | None = None,
+        final_tags: list[str] | None = None,
+    ) -> None:
         if self._root_span is not None:
             try:
                 self._root_span.end()
             except Exception as e:
                 warnings.warn(f"Langfuse root span end failed: {e!s}")
             self._root_span = None
+        upd = getattr(self._client, "update_current_trace", None)
+        if callable(upd):
+            payload: dict[str, Any] = {}
+            if output:
+                payload["output"] = dict(output)
+            tags = list(self._episode_tags)
+            if final_tags:
+                tags.extend([t for t in final_tags if t])
+            if tags:
+                payload["tags"] = tags
+            if payload:
+                try:
+                    upd(**payload)
+                except Exception:
+                    try:
+                        upd(payload)
+                    except Exception:
+                        pass
         self._trace_id = None
+        self._episode_tags = []
+        self._session_id = None
+        self._trace_name = None
         flush = getattr(self._client, "flush", None)
         if callable(flush):
             try:

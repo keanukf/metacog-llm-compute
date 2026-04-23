@@ -199,6 +199,13 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         "action_stop": action_stop,
         "followup_max_tokens": int(vc.get("followup_max_tokens", 4)),
         "followup_temperature": float(vc.get("followup_temperature", 0.0)),
+        # History / memory controls (consumed by base_agent.run_episode / run_adaptive_episode).
+        # These live under domain_prompts.<domain> so they're experiment-controlled and visible in YAML.
+        "history_keep_last_pairs": int(dom_cfg.get("history_keep_last_pairs", 4)) if isinstance(dom_cfg, dict) else 4,
+        "history_max_obs_chars": int(dom_cfg.get("history_max_obs_chars", 1000)) if isinstance(dom_cfg, dict) else 1000,
+        "history_current_obs_max_chars": int(dom_cfg.get("history_current_obs_max_chars", 1000)) if isinstance(dom_cfg, dict) else 1000,
+        "history_obs_head_ratio": float(dom_cfg.get("history_obs_head_ratio", 0.15)) if isinstance(dom_cfg, dict) else 0.15,
+        "pin_recipe": bool(dom_cfg.get("pin_recipe", False)) if isinstance(dom_cfg, dict) else False,
     }
 
 

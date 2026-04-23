@@ -116,3 +116,116 @@ def test_run_episode_history_includes_prior_action(tmp_path: Path) -> None:
     assert "OBSERVATION: room A" in joined
     assert "ACTION: act_one_line" in joined
     assert "OBSERVATION: after act_one_line" in joined
+
+
+class _NEnv:
+    """Deterministic env with programmable observations; terminates after len(obs_seq)-1 steps."""
+
+    def __init__(self, obs_seq: list[str]) -> None:
+        self._obs_seq = list(obs_seq)
+        self._i = 0
+        self.done = False
+        self.task_success = False
+        self.step_results: list[dict] = []
+
+    def reset(self) -> str:
+        self._i = 0
+        self.done = False
+        return self._obs_seq[0]
+
+    def step(self, action: str) -> str:
+        self.step_results.append({"step_index": self._i, "correctness": "legal", "action_parsed": action})
+        self._i += 1
+        if self._i >= len(self._obs_seq) - 1:
+            self.done = True
+        return self._obs_seq[self._i]
+
+
+def test_history_compaction_keeps_whole_pairs() -> None:
+    env = _NEnv(["reset", "o1", "o2", "o3", "o4", "o5", "o6"])
+
+    class _Model:
+        def generate(self, prompt, logprobs=False, **kwargs):
+            return "noop", ([{"logprob": -0.1}] if logprobs else None)
+
+    seen_histories: list[list[str]] = []
+
+    def step_fn(obs: str, history: list[str], model) -> tuple[str, None, None, int, int]:
+        seen_histories.append(list(history))
+        return "noop", None, None, 0, 1
+
+    from src.agent.base_agent import run_episode
+
+    run_episode(
+        env,
+        _Model(),
+        "C0",
+        step_fn=step_fn,
+        max_steps=20,
+        history_keep_last_pairs=2,
+    )
+    # By step 3+, compaction must apply: 1 reset + last 2 pairs => 1 + 4 lines = 5.
+    assert len(seen_histories) >= 4
+    h = seen_histories[-1]
+    assert len(h) == 5
+    assert h[0].startswith("OBSERVATION:")
+    assert h[1].startswith("ACTION:")
+    assert h[2].startswith("OBSERVATION:")
+    assert h[3].startswith("ACTION:")
+    assert h[4].startswith("OBSERVATION:")
+
+
+def test_pinned_recipe_is_injected_after_discovery() -> None:
+    recipe_obs = (
+        "You open the cookbook.\n\n"
+        "Recipe #1\n"
+        "---------\n"
+        "Ingredients:\nlettuce\nred apple\n\nDirections:\nchop the lettuce\n"
+        "\n\n> Kitchen"
+    )
+    env = _NEnv(["reset", recipe_obs, "after", "after2", "after3"])
+
+    class _Model:
+        def generate(self, prompt, logprobs=False, **kwargs):
+            return "noop", ([{"logprob": -0.1}] if logprobs else None)
+
+    pinned_seen: list[bool] = []
+
+    def step_fn(obs: str, history: list[str], model) -> tuple[str, None, None, int, int]:
+        pinned_seen.append(any(isinstance(x, str) and x.startswith("PINNED RECIPE:") for x in history))
+        return "noop", None, None, 0, 1
+
+    from src.agent.base_agent import run_episode
+
+    run_episode(
+        env,
+        _Model(),
+        "C0",
+        step_fn=step_fn,
+        max_steps=10,
+        history_keep_last_pairs=2,
+        pin_recipe=True,
+    )
+    # First step (before recipe discovered) no pin; subsequent steps should have it.
+    assert pinned_seen[0] is False
+    assert any(pinned_seen[1:])
+
+
+def test_null_trace_hook_accepts_new_kwargs() -> None:
+    from src.utils.tracing import NullTraceHook
+
+    h = NullTraceHook()
+    h.episode_start("ep1", metadata={"a": 1}, session_id="s", tags=["t"], trace_name="n")
+    h.log_step(
+        step_index=0,
+        stage="C0",
+        observation="o",
+        action="a",
+        prompt="p",
+        action_output="out",
+        model_name="m",
+        metadata={"x": 1},
+        vc_prompt="vp",
+        vc_output="vo",
+    )
+    h.episode_end(output={"ok": True}, final_tags=["done"])

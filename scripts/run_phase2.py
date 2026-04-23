@@ -305,6 +305,14 @@ def main() -> None:
                             trace_output_dir=str(checkpoint_dir),
                             trace_model_name=str(model_cfg.get("name", "")) or None,
                             trace_hook=trace_hook,
+                            trace_session_id=str(checkpoint_dir.name),
+                            trace_tags=[
+                                "phase2",
+                                str(domain),
+                                str(strategy),
+                                str(model_cfg.get("name", "")) if str(model_cfg.get("name", "")) else "",
+                            ],
+                            trace_name=ep_id,
                             **resolve_step_fn_kwargs(config, domain),
                         )
                         data = {
