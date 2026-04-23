@@ -129,11 +129,15 @@ class LangfuseTraceHook:
         self._session_id: str | None = None
         self._trace_name: str | None = None
         self._supports_parent_observation_id = False
+        self._supports_observation_tags = False
         try:
             sig = inspect.signature(getattr(self._client, "start_observation"))
             self._supports_parent_observation_id = "parent_observation_id" in sig.parameters
+            # Langfuse SDKs differ: some accept tags directly on observations, others don't.
+            self._supports_observation_tags = "tags" in sig.parameters
         except Exception:
             self._supports_parent_observation_id = False
+            self._supports_observation_tags = False
 
     def episode_start(
         self,
@@ -166,24 +170,41 @@ class LangfuseTraceHook:
                 trace_context=ctx,
                 metadata=meta,
             )
-            upd = getattr(self._client, "update_current_trace", None)
-            if callable(upd):
-                payload: dict[str, Any] = {}
-                if trace_name:
-                    payload["name"] = str(trace_name)
-                if session_id:
-                    payload["session_id"] = str(session_id)
-                if self._episode_tags:
-                    payload["tags"] = list(self._episode_tags)
-                if payload:
+            # Best-effort: set trace-level fields (name/session_id/tags) in a way that
+            # survives SDK differences (some rely on "current trace" context; others allow
+            # explicit trace-id updates).
+            payload: dict[str, Any] = {}
+            if trace_name:
+                payload["name"] = str(trace_name)
+            if session_id:
+                payload["session_id"] = str(session_id)
+            if self._episode_tags:
+                payload["tags"] = list(self._episode_tags)
+            if payload:
+                # Prefer an explicit trace-id update when available.
+                upd_trace = getattr(self._client, "update_trace", None)
+                if callable(upd_trace):
                     try:
-                        upd(**payload)
-                    except Exception as e:
-                        # Some SDK versions use positional dict payload instead of kwargs.
+                        upd_trace(trace_id=self._trace_id, **payload)
+                    except TypeError:
+                        # Some SDK versions use "id" instead of "trace_id".
                         try:
-                            upd(payload)
-                        except Exception:
-                            warnings.warn(f"Langfuse update_current_trace failed: {e!s}")
+                            upd_trace(id=self._trace_id, **payload)
+                        except Exception as e:
+                            warnings.warn(f"Langfuse update_trace failed: {e!s}")
+                    except Exception as e:
+                        warnings.warn(f"Langfuse update_trace failed: {e!s}")
+                else:
+                    upd = getattr(self._client, "update_current_trace", None)
+                    if callable(upd):
+                        try:
+                            upd(**payload)
+                        except Exception as e:
+                            # Some SDK versions use positional dict payload instead of kwargs.
+                            try:
+                                upd(payload)
+                            except Exception:
+                                warnings.warn(f"Langfuse update_current_trace failed: {e!s}")
         except Exception as e:
             warnings.warn(f"Langfuse episode_start failed: {e!s}")
             self._trace_id = None
@@ -205,6 +226,9 @@ class LangfuseTraceHook:
             from langfuse.types import TraceContext
 
             ctx = TraceContext(trace_id=self._trace_id)
+            gen_kw: dict[str, Any] = {}
+            if self._supports_observation_tags and self._episode_tags:
+                gen_kw["tags"] = list(self._episode_tags)
             gen = self._client.start_observation(
                 name=f"step_{step_index}_{compute_stage}",
                 as_type="generation",
@@ -213,6 +237,7 @@ class LangfuseTraceHook:
                 input=prompt,
                 output=output,
                 metadata=metadata or {},
+                **gen_kw,
             )
             gen.end()
         except Exception as e:
@@ -247,7 +272,11 @@ class LangfuseTraceHook:
                 step_meta["strategy"] = strategy
             if self._session_id:
                 step_meta["session_id"] = self._session_id
-            if self._episode_tags:
+            step_kw: dict[str, Any] = {}
+            if self._supports_observation_tags and self._episode_tags:
+                step_kw["tags"] = list(self._episode_tags)
+            elif self._episode_tags:
+                # Back-compat: keep tags visible somewhere even when SDK doesn't support observation tags.
                 step_meta["trace_tags"] = list(self._episode_tags)
             step_span = self._client.start_observation(
                 name=f"step_{step_index}",
@@ -255,12 +284,23 @@ class LangfuseTraceHook:
                 trace_context=ctx,
                 input=observation,
                 metadata=step_meta,
+                **step_kw,
             )
             gen_kw: dict[str, Any] = {}
             if self._supports_parent_observation_id:
                 parent_id = getattr(step_span, "id", None)
                 if parent_id:
                     gen_kw["parent_observation_id"] = parent_id
+            if self._supports_observation_tags and self._episode_tags:
+                gen_kw["tags"] = list(self._episode_tags)
+            # Propagate caller metadata (e.g. TLE/VC/correctness) to the action generation
+            # so it is visible where people typically inspect model outputs in Langfuse.
+            action_meta = dict(metadata or {})
+            action_meta["stage"] = stage
+            if self._session_id:
+                action_meta["session_id"] = self._session_id
+            if (not self._supports_observation_tags) and self._episode_tags:
+                action_meta["trace_tags"] = list(self._episode_tags)
             action_gen = self._client.start_observation(
                 name=f"action_{step_index}_{stage}",
                 as_type="generation",
@@ -268,15 +308,18 @@ class LangfuseTraceHook:
                 model=model_name or "unknown",
                 input=prompt,
                 output=action_output,
-                metadata={
-                    "stage": stage,
-                    "session_id": self._session_id,
-                    "trace_tags": list(self._episode_tags),
-                },
+                metadata=action_meta,
                 **gen_kw,
             )
             action_gen.end()
             if vc_prompt and vc_output:
+                vc_meta = dict(metadata or {})
+                vc_meta["stage"] = stage
+                vc_meta["kind"] = "vc_followup"
+                if self._session_id:
+                    vc_meta["session_id"] = self._session_id
+                if (not self._supports_observation_tags) and self._episode_tags:
+                    vc_meta["trace_tags"] = list(self._episode_tags)
                 vc_gen = self._client.start_observation(
                     name=f"vc_followup_{step_index}",
                     as_type="generation",
@@ -284,12 +327,7 @@ class LangfuseTraceHook:
                     model=model_name or "unknown",
                     input=vc_prompt,
                     output=vc_output,
-                    metadata={
-                        "stage": stage,
-                        "kind": "vc_followup",
-                        "session_id": self._session_id,
-                        "trace_tags": list(self._episode_tags),
-                    },
+                    metadata=vc_meta,
                     **gen_kw,
                 )
                 vc_gen.end()
@@ -321,24 +359,37 @@ class LangfuseTraceHook:
             except Exception as e:
                 warnings.warn(f"Langfuse root span end failed: {e!s}")
             self._root_span = None
-        upd = getattr(self._client, "update_current_trace", None)
-        if callable(upd):
-            payload: dict[str, Any] = {}
-            if output:
-                payload["output"] = dict(output)
-            tags = list(self._episode_tags)
-            if final_tags:
-                tags.extend([t for t in final_tags if t])
-            if tags:
-                payload["tags"] = tags
-            if payload:
+        payload: dict[str, Any] = {}
+        if output:
+            payload["output"] = dict(output)
+        tags = list(self._episode_tags)
+        if final_tags:
+            tags.extend([t for t in final_tags if t])
+        if tags:
+            payload["tags"] = tags
+        if payload:
+            # Prefer explicit trace-id update when available.
+            upd_trace = getattr(self._client, "update_trace", None)
+            if callable(upd_trace) and self._trace_id:
                 try:
-                    upd(**payload)
-                except Exception:
+                    upd_trace(trace_id=self._trace_id, **payload)
+                except TypeError:
                     try:
-                        upd(payload)
+                        upd_trace(id=self._trace_id, **payload)
                     except Exception:
                         pass
+                except Exception:
+                    pass
+            else:
+                upd = getattr(self._client, "update_current_trace", None)
+                if callable(upd):
+                    try:
+                        upd(**payload)
+                    except Exception:
+                        try:
+                            upd(payload)
+                        except Exception:
+                            pass
         self._trace_id = None
         self._episode_tags = []
         self._session_id = None
