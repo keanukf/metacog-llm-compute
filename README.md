@@ -137,7 +137,7 @@ After a non-mock pilot, `pilot_test1_inference.json` includes realistic `tokens_
 
 ### Multi-model batch (`run_pilot_models.py`)
 
-Run the full pilot once per model id with one command. Each run writes under `data/results/pilot_batch_<UTC>/pilot_<UTC>_<slug>/` and optional `pilot_batch_manifest.json` lists `model_id`, output path, exit code, and wall time. For **L0.3** (local LM Studio spot-checks of several GGUF/MLX candidates), use `--pilot-mode lmstudio --real` and load each model in LM Studio (or point `LM_STUDIO_BASE_URL` at the right server) before the corresponding subprocess. For **L0.4** (RunPod vLLM model-selection benchmark), use `--pilot-mode cuda --real` and swap the served model on the Pod between runs. Example:
+Run the full pilot once per model id with one command. Each run writes under `data/results/pilot_batch_<UTC>/pilot_<UTC>_<slug>/` and optional `pilot_batch_manifest.json` lists `model_id`, output path, exit code, and wall time. For **L0.3** (local LM Studio spot-checks of several GGUF/MLX candidates), use `--pilot-mode lmstudio --real` and load each model in LM Studio (or point `LM_STUDIO_BASE_URL` at the right server) before the corresponding subprocess. For **L0.4** (RunPod vLLM model-selection benchmark), use `--pilot-mode cuda --real` — this repo loads **one HF repo id per subprocess** (no separate vLLM server swap required). Example:
 
 ```bash
 python scripts/run_pilot_models.py --config configs/pilot.yaml --pilot-mode lmstudio --real \
@@ -154,12 +154,22 @@ The pilot with `--real` is designed for **~2 GPU-hours** on an **RTX 3090** (24 
 
 ### 1. Create and start a RunPod pod
 
-- **GPU:** RTX 3090 (24 GB VRAM)
+- **GPU:** RTX 3090/4090-class (24 GB VRAM is the common baseline; larger VRAM helps for 8–9B FP16 pilots)
 - **Template:** RunPod PyTorch 2.x
 - **Volume:** 30 GB Network Volume (persistent for model and results)
 - **Pricing:** Spot (~$0.22/hr) is sufficient; use On-Demand if you need no preemption.
 
 Connect via SSH using the credentials shown in the RunPod dashboard.
+
+### 1b. Hugging Face token (recommended)
+
+Some checkpoints are **gated** on the Hub. On the pod:
+
+```bash
+export HF_TOKEN="..."   # read-only token is enough for downloads
+```
+
+This also improves rate limits for metadata scripts like `scripts/hf_model_card_gate.py`.
 
 ### 2. Clone or upload the repo on the pod
 
@@ -191,17 +201,26 @@ cd /workspace/metacog-llm-compute
 bash scripts/setup_cloud.sh
 ```
 
-This installs: `vllm`, `transformers`, `textworld`, `numpy`, `pandas`, `scipy`, `pyyaml`.
+This installs the **pinned** dependency set from `requirements.txt` (includes `vllm`, `transformers`, `textworld`, `numpy`, `pandas`, `scipy`, `pyyaml`, test deps, etc.).
 
-**Optional — pre-download the model** (saves time during the pilot; `scripts/setup_cloud.sh` already does this using `MODEL_NAME`, default `Qwen/Qwen3.5-4B` to match `configs/pilot.yaml`; override if your pilot uses another id):
+**Optional — pre-download the model** (saves time during the pilot; `scripts/setup_cloud.sh` already does this using `MODEL_NAME`, default `Qwen/Qwen3-8B`; override if your pilot uses another id):
 
 ```bash
-export MODEL_NAME="Qwen/Qwen3.5-4B"
-python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('$MODEL_NAME')"
-python -c "from transformers import AutoModelForCausalLM; AutoModelForCausalLM.from_pretrained('$MODEL_NAME')"
+export MODEL_NAME="Qwen/Qwen3-8B"
+export SKIP_MODEL_DOWNLOAD=0
+bash scripts/setup_cloud.sh
 ```
 
 Store the model on the network volume (e.g. under `/workspace`) so it persists.
+
+### 3b. Hugging Face model-card gate (before burning GPU time)
+
+Quick, read-only Hub scan for obvious exclusion flags (MoE-ish language, multimodal/VL language, “thinking mode” keywords):
+
+```bash
+cd /workspace/metacog-llm-compute
+python scripts/hf_model_card_gate.py --models-file configs/models_runpod.yaml
+```
 
 ### 4. Run unit tests on the pod (no GPU needed)
 
@@ -221,17 +240,30 @@ Run the pilot **with real inference** on the pod (Pilot 2):
 
 ```bash
 cd /workspace/metacog-llm-compute
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir /workspace/metacog-llm-compute/data/results --pilot-mode cuda
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir /workspace/metacog-llm-compute/data/results --pilot-mode cuda --real
 ```
 
 Or use `--real` to auto-detect (on the pod this will select `cuda`).
 
-You should see:
+You should see a new timestamped folder like `data/results/pilot_YYYYMMDD_HHMMSS/` containing at least:
 
-- `data/results/pilot_benchmark.json` — real inference speed, VRAM, latency
-- `data/results/pilot_calibration.json` — episode data with TLE, VC, compute stage
-- `data/results/pilot_cost_validation.md` — measured vs expected throughput and budget note
-- `data/results/pilot_feasibility_report.md` — Go/No-Go checklist
+- `run_info.json` — resolved config + model id + pilot mode
+- `pilot_sanity.json`, `pilot_test1_inference.json`, `pilot_test2_tle.json`, `pilot_test3_vc.json`, `pilot_test5_toh.json`, `pilot_feasibility.json`
+- TextWorld + ToH episode JSONs (`ep_*.json`) plus optional `trace_*.jsonl`, `logprobs/`, `vc/`
+
+### 5b. Multi-model batch (recommended for model selection)
+
+```bash
+cd /workspace/metacog-llm-compute
+python scripts/run_pilot_models.py --config configs/pilot.yaml --pilot-mode cuda --real \
+  --models-file configs/models_runpod.yaml --continue-on-fail
+```
+
+Afterwards, you can summarize the batch folder with:
+
+```bash
+python scripts/summarize_pilot_batch.py data/results/pilot_batch_YYYYMMDD_HHMMSS
+```
 
 ### 6. Download results from the pod
 

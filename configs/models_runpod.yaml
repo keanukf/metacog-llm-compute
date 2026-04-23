@@ -1,0 +1,14 @@
+# RunPod / vLLM candidate ids for `scripts/run_pilot_models.py` (Pilot 2 / L0.4-style sweeps).
+# Dense instruct-ish models up to ~9B (literature SLM framing may treat <=10B as "small").
+#
+# Usage:
+#   python scripts/run_pilot_models.py --config configs/pilot.yaml --pilot-mode cuda --real \
+#     --models-file configs/models_runpod.yaml --continue-on-fail
+
+models:
+  # Official Qwen3 text checkpoint on the Hub (dense, ~8.2B). There is no public `Qwen/Qwen3-8B-Instruct`
+  # repo id at time of writing; this is the practical RunPod anchor for "Qwen3 @ ~8B".
+  - "Qwen/Qwen3-8B"
+  - "Qwen/Qwen2.5-7B-Instruct"
+  - "meta-llama/Llama-3.1-8B-Instruct"
+  - "google/gemma-2-9b-it"
