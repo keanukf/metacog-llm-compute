@@ -161,7 +161,11 @@ class TextWorldEnv:
         self.step_results: list[dict[str, Any]] = []
         self.current_step = 0
         self.task_success = False
+        self.task_lost = False
         self._last_score: float | None = None
+        # Cache admissible commands from the *previous* state so we can assess whether
+        # the submitted action was parser-legal at the time it was chosen.
+        self._last_admissible: Any = None
         self.sidecar_metadata: dict[str, Any] | None = _load_sidecar(game_file)
         self.walkthrough: list[str] = []
         if isinstance(self.sidecar_metadata, dict):
@@ -225,7 +229,9 @@ class TextWorldEnv:
         self.current_step = 0
         self.step_results = []
         self.task_success = False
+        self.task_lost = False
         self._last_score = None
+        self._last_admissible = None
         if self._use_real and self._gym_env is not None:
             result = self._gym_env.reset()
             info: dict[str, Any] = {}
@@ -237,6 +243,7 @@ class TextWorldEnv:
                 obs = result
             self.observation = obs if isinstance(obs, str) else str(obs)
             self._last_score = self._parse_score(info)
+            self._last_admissible = info.get("admissible_commands")
             self.observation = _append_admissible_to_observation(self.observation, info)
             return self.observation
         self.observation = (
@@ -250,6 +257,7 @@ class TextWorldEnv:
         state_before = self.observation
 
         if self._use_real and self._gym_env is not None:
+            pre_admissible = self._last_admissible
             result = self._gym_env.step(action)
             obs, reward, done, info = _unpack_gym_step(result)
             self.observation = obs if isinstance(obs, str) else str(obs)
@@ -264,7 +272,7 @@ class TextWorldEnv:
                 if score_before is None or score_after is None
                 else score_after - score_before
             )
-            admissible = info.get("admissible_commands")
+            admissible = pre_admissible
             use_admissible = admissible is not None
             if use_admissible:
                 try:
@@ -292,9 +300,14 @@ class TextWorldEnv:
                 else:
                     correctness = "legal"
 
-            if info.get("won") is True or info.get("game_won") is True:
+            won_now = info.get("won") is True or info.get("game_won") is True
+            lost_now = info.get("lost") is True or info.get("game_lost") is True
+            if won_now:
                 self.task_success = True
+            if lost_now:
+                self.task_lost = True
             self._last_score = score_after
+            self._last_admissible = info.get("admissible_commands")
 
             rec: dict[str, Any] = {
                 "step_index": self.current_step,
@@ -307,6 +320,8 @@ class TextWorldEnv:
                 "score_before": score_before,
                 "score_after": score_after,
                 "score_delta": score_delta,
+                "won": bool(won_now),
+                "lost": bool(lost_now),
                 "walkthrough_step_hint": (
                     self.walkthrough[self.current_step]
                     if self.current_step < len(self.walkthrough)

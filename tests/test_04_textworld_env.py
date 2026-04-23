@@ -110,3 +110,61 @@ def test_append_admissible_to_observation():
 
     assert _append_admissible_to_observation("x", {}) == "x"
     assert _append_admissible_to_observation("x", {"admissible_commands": []}) == "x"
+
+
+class _FakeGymEnv:
+    def __init__(self) -> None:
+        self._reset_result: tuple[str, dict] | str = ("reset", {})
+        self._step_result: tuple[str, float, bool, dict] = ("step", 0.0, False, {})
+
+    def reset(self):
+        return self._reset_result
+
+    def step(self, action: str):
+        return self._step_result
+
+
+def _make_realish_env(fake: _FakeGymEnv) -> TextWorldEnv:
+    env = TextWorldEnv(game_file=None, max_steps=5)
+    env._use_real = True
+    env._gym_env = fake
+    return env
+
+
+def test_correctness_uses_pre_step_admissible():
+    fake = _FakeGymEnv()
+    fake._reset_result = ("reset", {"admissible_commands": ["eat lettuce", "look"], "score": 0})
+    fake._step_result = ("*** You lost! ***", 0.0, True, {"admissible_commands": ["look"], "score": 0})
+
+    env = _make_realish_env(fake)
+    env.reset()
+    env.step("eat lettuce")
+    assert env.step_results[-1]["correctness"] == "legal"
+
+
+def test_info_lost_sets_task_lost_and_step_record():
+    fake = _FakeGymEnv()
+    fake._reset_result = ("reset", {"admissible_commands": ["eat lettuce"], "score": 0})
+    fake._step_result = ("*** You lost! ***", 0.0, True, {"lost": True, "admissible_commands": [], "score": 0})
+
+    env = _make_realish_env(fake)
+    env.reset()
+    env.step("eat lettuce")
+    assert env.task_lost is True
+    assert env.task_success is False
+    assert env.step_results[-1]["lost"] is True
+    assert env.step_results[-1]["won"] is False
+
+
+def test_info_won_sets_task_success_and_step_record():
+    fake = _FakeGymEnv()
+    fake._reset_result = ("reset", {"admissible_commands": ["eat meal"], "score": 0})
+    fake._step_result = ("*** You won! ***", 1.0, True, {"won": True, "admissible_commands": [], "score": 1})
+
+    env = _make_realish_env(fake)
+    env.reset()
+    env.step("eat meal")
+    assert env.task_success is True
+    assert env.task_lost is False
+    assert env.step_results[-1]["won"] is True
+    assert env.step_results[-1]["lost"] is False
