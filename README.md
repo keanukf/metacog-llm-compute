@@ -84,6 +84,12 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/result
 
 `--only` accepts one or more of: `sanity`, `test1`, `test2`, `test3`, `test4`, `test5`, `feasibility` (executed in that order). For `feasibility`, missing inputs are filled from JSON already present in `output_dir` when available.
 
+After a run, aggregate TextWorld / ToH episode JSONs (success rate by stage, mean TLE, VC spread, optional ECE proxy):
+
+```bash
+PYTHONPATH=. python scripts/summarize_pilot_calibration.py data/results/pilot_<UTC>/
+```
+
 ### Pilot 1 — HuggingFace on Apple Silicon (hf)
 
 On a Mac with M1/M2/M3, run the same pipeline with the real model via HuggingFace on Metal (MPS). No CUDA or vLLM required:

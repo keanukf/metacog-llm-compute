@@ -48,12 +48,14 @@ tracing:
 domain_prompts:
   textworld:
     prefix: >
-      You are playing a parser-based text adventure (interactive fiction). Base each reply on the
-      latest game text shown below. Output exactly one imperative command on a single line—typical
-      forms include movement (go north), looking (look), and object use (take knife, open door).
+      You are playing a parser-based text adventure (interactive fiction). Your overall task is to
+      check the cookbook in the kitchen for the recipe, gather the required ingredients, prepare the
+      meal, and then enjoy (eat) it. Base each reply on the latest game text shown below. Output
+      exactly one imperative command on a single line—typical forms include movement (go north),
+      looking (look), and object use (take knife, open door).
       Do not add narration, quotes around the command, role-play, multiple commands, or reasoning.
       If the text includes a line starting with "Valid commands this turn:", choose one of those
-      commands when possible.
+      commands when possible. Avoid repeating an action that produced no visible change.
     action_max_tokens: 32
     action_stop: ["\n"]
   tower_of_hanoi:
@@ -92,7 +94,7 @@ test4_textworld:
   num_mini_envs: 3
   max_rooms: 5
   # Max environment steps per TextWorld episode (gym max_episode_steps matches this).
-  max_env_steps: 10
+  max_env_steps: 25
 
 tower_of_hanoi:
   # Pilot add-on: parseability validation on 3-disk problems at C0

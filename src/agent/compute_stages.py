@@ -38,6 +38,22 @@ def _extract_first_line(text: str) -> str:
     return (text or "").strip()
 
 
+def _normalize_action_line(text: str) -> str:
+    line = _extract_first_line(text)
+    if line.upper().startswith("ACTION:"):
+        return line.split(":", 1)[1].strip()
+    return line
+
+
+def _extract_draft_action_from_cot(cot_text: str) -> str:
+    """Prefer an explicit ``ACTION:`` line from the CoT output; else first non-empty line."""
+    for line in (cot_text or "").splitlines():
+        ls = line.strip()
+        if ls.upper().startswith("ACTION:"):
+            return ls.split(":", 1)[1].strip()
+    return _normalize_action_line(cot_text)
+
+
 def _action_generate_kwargs(
     action_max_tokens: int | None,
     action_temperature: float | None,
@@ -172,20 +188,60 @@ def _c1_step_core(
     followup_temperature: float,
     vc_followup_logprobs: bool,
 ) -> StepReturn:
-    return _c0_step_core(
-        observation,
-        history,
+    """
+    C1: two LM calls — (1) short chain-of-thought with a draft ``ACTION:`` line,
+    (2) self-verify pass that outputs the final single-line imperative with logprobs (TLE).
+    """
+    base_prompt = _build_prompt(observation, history, prompt_prefix)
+    cot_instruction = (
+        "\n\nThink step by step (brief bullets or short sentences are fine). "
+        "Then output exactly one line starting with ACTION: followed by your proposed "
+        "single imperative command for this turn."
+    )
+    cot_prompt = f"{base_prompt}{cot_instruction}"
+    act_tok = int(action_max_tokens) if action_max_tokens is not None else 32
+    cot_max_tokens = max(128, act_tok * 2)
+    cot_kw: dict[str, Any] = {
+        "max_tokens": cot_max_tokens,
+        "temperature": float(action_temperature) if action_temperature is not None else 0.5,
+    }
+    cot_text, _cot_lp = model.generate(cot_prompt, logprobs=False, **cot_kw)
+    draft = _extract_draft_action_from_cot(cot_text or "")
+    if not draft:
+        draft = "(no draft parsed)"
+
+    verify_instruction = (
+        "\n\n--- Self-check ---\n"
+        f"Your draft command was: {draft}\n"
+        "Re-read the game/task text above. Output exactly one imperative command on a single line "
+        "(no ACTION: prefix, no quotes, no explanation). If the draft is still correct, repeat it verbatim; "
+        "otherwise output your revised command only."
+    )
+    verify_prompt = f"{base_prompt}{verify_instruction}"
+    gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
+    final_text, logprobs = model.generate(verify_prompt, logprobs=True, **gen_kw)
+    tle = token_entropy.extract_tle_from_response(final_text, logprobs) if logprobs else None
+    tokens_used = len(logprobs) if logprobs else 0
+    tokens_used += max(1, len(cot_text or "") // 4)
+    lm_calls = 2
+
+    action = _normalize_action_line(final_text or "")
+
+    vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
         model,
-        save_action_logprobs=save_action_logprobs,
+        action,
         vc_mode=vc_mode,
-        prompt_prefix=prompt_prefix,
-        action_max_tokens=action_max_tokens,
-        action_temperature=action_temperature,
-        action_stop=action_stop,
+        inline_text=final_text or "",
+        vc_followup_logprobs=vc_followup_logprobs,
         followup_max_tokens=followup_max_tokens,
         followup_temperature=followup_temperature,
-        vc_followup_logprobs=vc_followup_logprobs,
     )
+    tokens_used += extra_tok
+    lm_calls += extra_calls
+
+    lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
+    response_full = f"=== C1 CoT ===\n{cot_text}\n\n=== C1 verify ===\n{final_text}"
+    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, verify_prompt, response_full)
 
 
 def _majority_vote(actions: list[str]) -> str:
@@ -303,8 +359,22 @@ def c1_step(
     history: list[str],
     model: Any,
 ) -> tuple[str, dict[str, float] | None, float | None, int, int]:
-    """C1: CoT + verify stub — single call."""
-    return c0_step(observation, history, model)
+    """C1: CoT + self-verify (two action LM calls); VC disabled (legacy helper)."""
+    r = _c1_step_core(
+        observation,
+        history,
+        model,
+        save_action_logprobs=False,
+        vc_mode="none",
+        prompt_prefix="",
+        action_max_tokens=None,
+        action_temperature=None,
+        action_stop=None,
+        followup_max_tokens=4,
+        followup_temperature=0.0,
+        vc_followup_logprobs=False,
+    )
+    return r[0], r[1], r[2], r[3], r[4]
 
 
 def c2_step(
