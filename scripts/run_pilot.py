@@ -654,6 +654,13 @@ def run_test5_tower_of_hanoi(
     parseable_steps = 0
     total_steps = 0
     episodes_data: list[dict[str, Any]] = []
+    success_eps = 0
+    optimal_steps_total = 0
+    legal_steps_total = 0
+    steps_total = 0
+    oscillation_eps = 0
+    min_opt_moves_remaining_sum = 0.0
+    min_opt_moves_remaining_n = 0
     save_tr, trace_hk = _step_trace_settings(config)
     model_nm = str(config.get("model", {}).get("name", ""))
     session_id = str(output_dir.name)
@@ -739,11 +746,62 @@ def run_test5_tower_of_hanoi(
         _maybe_write_vc_artifacts(config, ep_toh, result, output_dir)
         episodes_data.append(data)
         step_corr = result.get("step_correctness") or []
+        # Behavioral metrics (legal/optimal/oscillation/min-distance), robust to missing fields.
+        ep_steps = 0
+        ep_optimal = 0
+        ep_legal = 0
+        seen_states: set[tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]] = set()
+        ep_osc = False
+        ep_min_opt_rem: int | None = None
         for d in step_corr:
             total_steps += 1
             if isinstance(d, dict) and d.get("action_parsed") is not None:
                 parseable_steps += 1
+            if not isinstance(d, dict):
+                continue
+            corr = d.get("correctness")
+            if corr is not None:
+                ep_steps += 1
+                if corr == "optimal":
+                    ep_optimal += 1
+                    ep_legal += 1
+                elif corr == "legal":
+                    ep_legal += 1
+            omr = d.get("optimal_moves_remaining")
+            if isinstance(omr, int):
+                ep_min_opt_rem = omr if ep_min_opt_rem is None else min(ep_min_opt_rem, omr)
+            st = d.get("state_after")
+            if isinstance(st, dict) and all(k in st for k in ("A", "B", "C")):
+                try:
+                    key = (tuple(st["A"]), tuple(st["B"]), tuple(st["C"]))
+                except Exception:
+                    key = None
+                if key is not None:
+                    if key in seen_states:
+                        ep_osc = True
+                    else:
+                        seen_states.add(key)
+
+        steps_total += ep_steps
+        optimal_steps_total += ep_optimal
+        legal_steps_total += ep_legal
+        if bool(result.get("task_success")):
+            success_eps += 1
+        if ep_osc:
+            oscillation_eps += 1
+        if ep_min_opt_rem is not None:
+            min_opt_moves_remaining_sum += float(ep_min_opt_rem)
+            min_opt_moves_remaining_n += 1
     parse_rate = (parseable_steps / total_steps) if total_steps else 0.0
+    success_rate = (success_eps / num_episodes) if num_episodes else 0.0
+    avg_optimal_rate = (optimal_steps_total / steps_total) if steps_total else 0.0
+    avg_legal_rate = (legal_steps_total / steps_total) if steps_total else 0.0
+    oscillation_rate = (oscillation_eps / num_episodes) if num_episodes else 0.0
+    avg_min_optimal_moves_remaining = (
+        (min_opt_moves_remaining_sum / min_opt_moves_remaining_n)
+        if min_opt_moves_remaining_n
+        else None
+    )
     return {
         "num_episodes": num_episodes,
         "num_disks": num_disks,
@@ -753,6 +811,11 @@ def run_test5_tower_of_hanoi(
         "total_steps": total_steps,
         "parseable_steps": parseable_steps,
         "parse_rate": parse_rate,
+        "success_rate": success_rate,
+        "avg_optimal_rate": avg_optimal_rate,
+        "avg_legal_rate": avg_legal_rate,
+        "oscillation_rate": oscillation_rate,
+        "avg_min_optimal_moves_remaining": avg_min_optimal_moves_remaining,
     }
 
 def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]:
@@ -924,6 +987,11 @@ def _build_feasibility_report(
     vc_parse_rate, tle_nonnull_rate = _episode_vc_tle_rates(textworld_episodes, toh_episodes)
 
     toh_parse_rate = toh.get("parse_rate")
+    toh_success_rate = toh.get("success_rate")
+    toh_avg_optimal_rate = toh.get("avg_optimal_rate")
+    toh_avg_legal_rate = toh.get("avg_legal_rate")
+    toh_oscillation_rate = toh.get("oscillation_rate")
+    toh_avg_min_optimal_moves_remaining = toh.get("avg_min_optimal_moves_remaining")
 
     # ECE on TextWorld episodes: use last non-null VC as confidence proxy; fallback 0.5.
     predictions: list[float] = []
@@ -1029,6 +1097,11 @@ def _build_feasibility_report(
             "vc_parse_rate": vc_parse_rate,
             "tle_nonnull_rate": tle_nonnull_rate,
             "toh_parse_rate": toh_parse_rate,
+            "toh_success_rate": toh_success_rate,
+            "toh_avg_optimal_rate": toh_avg_optimal_rate,
+            "toh_avg_legal_rate": toh_avg_legal_rate,
+            "toh_oscillation_rate": toh_oscillation_rate,
+            "toh_avg_min_optimal_moves_remaining": toh_avg_min_optimal_moves_remaining,
             "ece": ece,
             "n_episodes_textworld": int(len(textworld_episodes)),
             "n_episodes_toh": int(toh.get("num_episodes") or 0),

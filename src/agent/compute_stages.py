@@ -205,7 +205,7 @@ def _c1_step_core(
         "max_tokens": cot_max_tokens,
         "temperature": float(action_temperature) if action_temperature is not None else 0.5,
     }
-    cot_text, _cot_lp = model.generate(cot_prompt, logprobs=False, **cot_kw)
+    cot_text, cot_lp = model.generate(cot_prompt, logprobs=True, **cot_kw)
     draft = _extract_draft_action_from_cot(cot_text or "")
     if not draft:
         draft = "(no draft parsed)"
@@ -222,7 +222,7 @@ def _c1_step_core(
     final_text, logprobs = model.generate(verify_prompt, logprobs=True, **gen_kw)
     tle = token_entropy.extract_tle_from_response(final_text, logprobs) if logprobs else None
     tokens_used = len(logprobs) if logprobs else 0
-    tokens_used += max(1, len(cot_text or "") // 4)
+    tokens_used += len(cot_lp) if cot_lp else 0
     lm_calls = 2
 
     action = _normalize_action_line(final_text or "")
