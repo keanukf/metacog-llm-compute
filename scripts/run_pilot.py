@@ -286,7 +286,25 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
             # like "mlx" — that would create a base ModelWrapper and fail at runtime.
             if backend not in {"vllm", "hf"}:
                 backend = "vllm"
-            return create_wrapper(backend=backend, model_name=model_name, dtype=dtype), None
+            inf = config.get("inference", {}) or {}
+            # vLLM will default to the model's advertised max_seq_len. Some models (e.g. Qwen3)
+            # advertise very large context (e.g. 40960) that does not fit KV cache on 24GB GPUs
+            # for even a single request. Default to a safe context length unless explicitly set.
+            max_model_len = inf.get("max_model_len") or inf.get("vllm_max_model_len")
+            if max_model_len is None:
+                max_model_len = 8192
+            gpu_mem_util = inf.get("gpu_memory_utilization")
+            extra = {}
+            try:
+                extra["max_model_len"] = int(max_model_len)
+            except Exception:
+                extra["max_model_len"] = 8192
+            if gpu_mem_util is not None:
+                try:
+                    extra["gpu_memory_utilization"] = float(gpu_mem_util)
+                except Exception:
+                    pass
+            return create_wrapper(backend=backend, model_name=model_name, dtype=dtype, **extra), None
         if pilot_mode == "lmstudio":
             inf = config.get("inference", {})
             base_url = inf.get("lmstudio_base_url") or os.environ.get(

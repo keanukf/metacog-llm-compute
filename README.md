@@ -203,6 +203,24 @@ export HF_TOKEN="..."   # read-only token is enough for downloads
 
 This also improves rate limits for metadata scripts like `scripts/hf_model_card_gate.py`.
 
+**Optional — Langfuse tracing (recommended if you want cloud traces)**
+
+These secrets are **not committed** (don’t put them in git). Set them on the pod before running pilots:
+
+```bash
+export LANGFUSE_PUBLIC_KEY="..."
+export LANGFUSE_SECRET_KEY="..."
+# Optional (EU): export LANGFUSE_HOST="https://eu.cloud.langfuse.com"
+```
+
+If you prefer a file instead of re-exporting every session, create a local env file on the pod and source it:
+
+```bash
+cd /workspace/metacog-llm-compute
+nano .env   # add HF_TOKEN / LANGFUSE_* exports (or KEY=VALUE lines)
+set -a && source .env && set +a
+```
+
 ### Step 5 — Clone the repo on the pod
 
 This repo is `keanukf/metacog-llm-compute`. On RunPod, the most reliable way is cloning via **GitHub SSH**.
@@ -280,6 +298,10 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir /workspace/
 ```
 
 Or use `--real` to auto-detect (on the pod this will select `cuda`).
+
+**If vLLM fails during model init with a KV-cache / max-seq-len error (common on 24 GB GPUs):**
+
+Some models advertise very large context lengths (e.g. 40960). On 24 GB GPUs, vLLM may fail with a message like “KV cache needed … larger than available …”. In that case set a smaller `inference.max_model_len` in `configs/pilot.yaml` (e.g. `8192` or `16384`) and rerun.
 
 You should see a new timestamped folder like `data/results/pilot_YYYYMMDD_HHMMSS/` containing at least:
 
