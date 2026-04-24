@@ -280,7 +280,12 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
         if pilot_mode == "hf":
             return create_wrapper(backend="hf", model_name=model_name, dtype=dtype, device="mps"), None
         if pilot_mode == "cuda":
-            backend = config.get("inference", {}).get("backend", "vllm")
+            backend = str(config.get("inference", {}).get("backend", "vllm") or "vllm").strip().lower()
+            # The YAML config is shared across local (Apple/MLX) and cloud (CUDA/vLLM) runs.
+            # For RunPod smoke tests, cuda must never accidentally select a non-CUDA backend
+            # like "mlx" — that would create a base ModelWrapper and fail at runtime.
+            if backend not in {"vllm", "hf"}:
+                backend = "vllm"
             return create_wrapper(backend=backend, model_name=model_name, dtype=dtype), None
         if pilot_mode == "lmstudio":
             inf = config.get("inference", {})

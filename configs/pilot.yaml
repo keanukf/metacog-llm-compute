@@ -10,7 +10,7 @@ model:
   dtype: float16
 
 inference:
-  backend: mlx
+  backend: cuda
   temperature: 0.3
   max_tokens: 256
   avg_tokens_per_call: 200  # input ~120, output ~80

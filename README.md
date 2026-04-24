@@ -152,16 +152,48 @@ python scripts/run_pilot_models.py --config configs/pilot.yaml --pilot-mode lmst
 
 The pilot with `--real` is designed for **~2 GPU-hours** on an **RTX 3090** (24 GB VRAM). Budget: about **$0.44** (see `blueprints/infrastructureplan_pilot.md` Section V).
 
-### 1. Create and start a RunPod pod
+### Step 1 — Create & start the pod (dashboard settings)
 
-- **GPU:** RTX 3090/4090-class (24 GB VRAM is the common baseline; larger VRAM helps for 8–9B FP16 pilots)
-- **Template:** RunPod PyTorch 2.x
-- **Volume:** 30 GB Network Volume (persistent for model and results)
-- **Pricing:** Spot (~$0.22/hr) is sufficient; use On-Demand if you need no preemption.
+- **GPU**: RTX 4090 (or 3090-class), **count = 1**
+- **Template/Image**: RunPod **PyTorch 2.x**
+  - PyTorch **2.4.0 vs 2.8.0**: either works; this repo installs pinned Python deps from `requirements.txt` anyway. If unsure, **2.4.0 is fine**.
+- **Pricing**:
+  - **On‑Demand**: not preemptible
+  - **Spot** (if available): cheaper but can be preempted
+- **Storage**:
+  - **Container Disk** (ephemeral root disk): pick large enough for **one** 7–9B model download/cache at a time (rule of thumb **≥ 50 GB**, “no surprises” **~100 GB**).
+  - **Network Volume** (persistent, mounted at `/workspace`): **10 GB is enough for results** (they’re MB-scale).
 
-Connect via SSH using the credentials shown in the RunPod dashboard.
+### Step 2 — Connect via SSH (interactive)
 
-### 1b. Hugging Face token (recommended)
+Use the SSH command shown in the RunPod UI (gateway SSH is fine for interactive work).
+
+### Step 3 — Quick disk check (+ decide what persists)
+
+On the pod:
+
+```bash
+df -h
+ls -la /workspace
+```
+
+Expected:
+
+- `/` reflects your **Container Disk** size (ephemeral)
+- `/workspace` is mounted (your **Network Volume**, persistent)
+
+If you want **results persistent** but **models ephemeral**, set:
+
+```bash
+# Keep results on the Network Volume:
+export RESULTS_DIR="/workspace/metacog-llm-compute/data/results"
+
+# Keep HF cache on the container disk (default behavior; make it explicit anyway):
+export HF_HOME="$HOME/.cache/huggingface"
+export TRANSFORMERS_CACHE="$HF_HOME/hub"
+```
+
+### Step 4 — Hugging Face token (recommended)
 
 Some checkpoints are **gated** on the Hub. On the pod:
 
@@ -171,28 +203,32 @@ export HF_TOKEN="..."   # read-only token is enough for downloads
 
 This also improves rate limits for metadata scripts like `scripts/hf_model_card_gate.py`.
 
-### 2. Clone or upload the repo on the pod
+### Step 5 — Clone the repo on the pod
 
-From your **local machine**, upload the repo (e.g. rsync or git clone if the pod has network access):
-
-```bash
-# From your laptop: sync repo to the pod (replace POD_IP and KEY with your values)
-rsync -avz -e "ssh -i /path/to/key" \
-  --exclude '.git' --exclude '__pycache__' --exclude 'data/results/*.json' \
-  ./ user@POD_IP:/workspace/metacog-llm-compute/
-```
-
-Or on the **pod** (if git is available):
+This repo is `keanukf/metacog-llm-compute`. On RunPod, the most reliable way is cloning via **GitHub SSH**.
 
 ```bash
+# On the pod:
 cd /workspace
-git clone <your-repo-url> metacog-llm-compute
-cd metacog-llm-compute
+
+# 1) Create a new SSH key for this pod (one-time per pod)
+ssh-keygen -t ed25519 -C "runpod" -f ~/.ssh/id_ed25519_runpod
+cat ~/.ssh/id_ed25519_runpod.pub
+# 2) Add that public key in GitHub → Settings → SSH and GPG keys
+
+# 3) Sanity check (must say "Hi keanukf!")
+ssh -T -i ~/.ssh/id_ed25519_runpod git@github.com
+
+# 4) Clone using the key explicitly (important: forces the right key)
+GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519_runpod -o IdentitiesOnly=yes' \
+  git clone git@github.com:keanukf/metacog-llm-compute.git metacog-llm-compute
+
+cd /workspace/metacog-llm-compute
 ```
 
 Use `/workspace` so that code and results live on the network volume and persist across pod restarts.
 
-### 3. Set up the environment on the pod
+### Step 6 — Set up the environment on the pod
 
 On the pod, from the repo root:
 
@@ -203,7 +239,7 @@ bash scripts/setup_cloud.sh
 
 This installs the **pinned** dependency set from `requirements.txt` (includes `vllm`, `transformers`, `textworld`, `numpy`, `pandas`, `scipy`, `pyyaml`, test deps, etc.).
 
-**Optional — pre-download the model** (saves time during the pilot; `scripts/setup_cloud.sh` already does this using `MODEL_NAME`, default `Qwen/Qwen3-8B`; override if your pilot uses another id):
+**Optional — pre-download the model** (saves time during the pilot; `scripts/setup_cloud.sh` does this unless `SKIP_MODEL_DOWNLOAD=1`. If `MODEL_NAME` is unset, it uses the **first** model in `configs/models_runpod.yaml`):
 
 ```bash
 export MODEL_NAME="Qwen/Qwen3-8B"
@@ -213,7 +249,7 @@ bash scripts/setup_cloud.sh
 
 Store the model on the network volume (e.g. under `/workspace`) so it persists.
 
-### 3b. Hugging Face model-card gate (before burning GPU time)
+### Step 7 — Hugging Face model-card gate (before burning GPU time)
 
 Quick, read-only Hub scan for obvious exclusion flags (MoE-ish language, multimodal/VL language, “thinking mode” keywords):
 
@@ -222,7 +258,7 @@ cd /workspace/metacog-llm-compute
 python scripts/hf_model_card_gate.py --models-file configs/models_runpod.yaml
 ```
 
-### 4. Run unit tests on the pod (no GPU needed)
+### Step 8 — Run unit tests on the pod (no GPU needed)
 
 Same as locally; all tests use mocks:
 
@@ -234,7 +270,7 @@ python -m pytest tests/ -v
 
 All tests should pass (run `pytest` locally to see the current count). This confirms the codebase and interfaces before you run the real pilot.
 
-### 5. Run the pilot with real model (GPU workload)
+### Step 9 — Run the pilot with real model (GPU workload)
 
 Run the pilot **with real inference** on the pod (Pilot 2):
 
