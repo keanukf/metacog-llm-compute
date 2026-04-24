@@ -6,7 +6,7 @@
 
 model:
   #CUDA/vLLM candidate for RunPod pilot validation
-  name: "Qwen/Qwen3.5-4B"
+  name: "Qwen/Qwen3-8B"
   dtype: float16
 
 inference:
