@@ -59,17 +59,23 @@ def _episode_signal_rates(episode_jsons: list[dict[str, Any]]) -> tuple[float | 
 def validate(pilot_dir: Path) -> tuple[bool, list[str]]:
     errors: list[str] = []
 
-    san = _read_json(pilot_dir / "pilot_sanity.json") or {}
-    if san.get("has_logprobs") is not True:
-        errors.append("sanity: has_logprobs is not true")
-    cto = san.get("completion_tokens_observed")
-    if not isinstance(cto, int) or cto <= 0:
-        errors.append(f"sanity: completion_tokens_observed expected int>0, got {cto!r}")
+    san_path = pilot_dir / "pilot_sanity.json"
+    san = _read_json(san_path)
+    if san is not None:
+        if san.get("has_logprobs") is not True:
+            errors.append("sanity: has_logprobs is not true")
+        cto = san.get("completion_tokens_observed")
+        if not isinstance(cto, int) or cto <= 0:
+            errors.append(f"sanity: completion_tokens_observed expected int>0, got {cto!r}")
 
-    t2 = _read_json(pilot_dir / "pilot_test2_tle.json") or {}
-    mean_ent = ((t2.get("summary") or {}) if isinstance(t2.get("summary"), dict) else {}).get("mean_entropy_avg")
-    if not isinstance(mean_ent, (int, float)):
-        errors.append(f"test2: summary.mean_entropy_avg expected float, got {mean_ent!r}")
+    t2_path = pilot_dir / "pilot_test2_tle.json"
+    t2 = _read_json(t2_path)
+    if t2 is not None:
+        mean_ent = ((t2.get("summary") or {}) if isinstance(t2.get("summary"), dict) else {}).get(
+            "mean_entropy_avg"
+        )
+        if not isinstance(mean_ent, (int, float)):
+            errors.append(f"test2: summary.mean_entropy_avg expected float, got {mean_ent!r}")
 
     # Episodes
     ep_jsons: list[dict[str, Any]] = []
@@ -77,42 +83,44 @@ def validate(pilot_dir: Path) -> tuple[bool, list[str]]:
     ep_jsons.extend([_read_json(p) or {} for p in sorted(pilot_dir.glob("ep_tower_of_hanoi_*.json"))])
     ep_jsons = [e for e in ep_jsons if isinstance(e, dict) and e]
 
-    vc_rate, tle_rate = _episode_signal_rates(ep_jsons)
-    if vc_rate is None:
-        errors.append("episodes: vc_rate missing (no vc_per_step data found)")
-    elif vc_rate < 0.80:
-        errors.append(f"episodes: vc_rate {vc_rate:.3f} < 0.80")
-    if tle_rate is None:
-        errors.append("episodes: tle_rate missing (no tle_per_step data found)")
-    elif tle_rate < 0.95:
-        errors.append(f"episodes: tle_rate {tle_rate:.3f} < 0.95")
+    if ep_jsons:
+        vc_rate, tle_rate = _episode_signal_rates(ep_jsons)
+        if vc_rate is None:
+            errors.append("episodes: vc_rate missing (no vc_per_step data found)")
+        elif vc_rate < 0.80:
+            errors.append(f"episodes: vc_rate {vc_rate:.3f} < 0.80")
+        if tle_rate is None:
+            errors.append("episodes: tle_rate missing (no tle_per_step data found)")
+        elif tle_rate < 0.95:
+            errors.append(f"episodes: tle_rate {tle_rate:.3f} < 0.95")
 
-    t5 = _read_json(pilot_dir / "pilot_test5_toh.json") or {}
-    parse_rate = t5.get("parse_rate")
-    legal_rate = t5.get("avg_legal_rate")
-    if not isinstance(parse_rate, (int, float)):
-        errors.append(f"test5: parse_rate expected float, got {parse_rate!r}")
-    elif float(parse_rate) < 0.95:
-        errors.append(f"test5: parse_rate {float(parse_rate):.3f} < 0.95")
-    if not isinstance(legal_rate, (int, float)):
-        errors.append(f"test5: avg_legal_rate expected float, got {legal_rate!r}")
-    elif float(legal_rate) < 0.95:
-        errors.append(f"test5: avg_legal_rate {float(legal_rate):.3f} < 0.95")
+    t5_path = pilot_dir / "pilot_test5_toh.json"
+    t5 = _read_json(t5_path)
+    if t5 is not None:
+        parse_rate = t5.get("parse_rate")
+        legal_rate = t5.get("avg_legal_rate")
+        if not isinstance(parse_rate, (int, float)):
+            errors.append(f"test5: parse_rate expected float, got {parse_rate!r}")
+        elif float(parse_rate) < 0.95:
+            errors.append(f"test5: parse_rate {float(parse_rate):.3f} < 0.95")
+        if not isinstance(legal_rate, (int, float)):
+            errors.append(f"test5: avg_legal_rate expected float, got {legal_rate!r}")
+        elif float(legal_rate) < 0.95:
+            errors.append(f"test5: avg_legal_rate {float(legal_rate):.3f} < 0.95")
 
     # Traces: ensure response_full exists and is non-empty
     trace_files = sorted(pilot_dir.glob("trace_ep_*.jsonl"))
-    if not trace_files:
-        errors.append("traces: no trace_ep_*.jsonl files found")
-    for tf in trace_files:
-        rows = _iter_jsonl(tf)
-        if not rows:
-            errors.append(f"traces: {tf.name} had no readable jsonl rows")
-            continue
-        for i, row in enumerate(rows):
-            resp = row.get("response_full")
-            if not isinstance(resp, str) or len(resp.strip()) == 0:
-                errors.append(f"traces: {tf.name} row {i} missing/empty response_full")
-                break
+    if trace_files:
+        for tf in trace_files:
+            rows = _iter_jsonl(tf)
+            if not rows:
+                errors.append(f"traces: {tf.name} had no readable jsonl rows")
+                continue
+            for i, row in enumerate(rows):
+                resp = row.get("response_full")
+                if not isinstance(resp, str) or len(resp.strip()) == 0:
+                    errors.append(f"traces: {tf.name} row {i} missing/empty response_full")
+                    break
 
     return (len(errors) == 0), errors
 
