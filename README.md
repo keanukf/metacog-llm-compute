@@ -347,9 +347,18 @@ scp -O -i ~/.ssh/id_ed25519 -P YOUR_PORT -r \
   ./data/results/runpod_pilot/
 ```
 
+To download **only one run folder** (what you did; recommended when iterating):
+
+```bash
+mkdir -p data/results/runpod_pilot
+scp -O -i ~/.ssh/id_ed25519 -P YOUR_PORT -r \
+  root@YOUR_IP:/workspace/metacog-llm-compute/data/results/pilot_YYYYMMDD_HHMMSS \
+  ./data/results/runpod_pilot/
+```
+
 The gateway URL (`ssh.runpod.io`) is fine for **interactive** `ssh`; for **scp/rsync** use **TCP** or workarounds (HTTP server on the pod, etc.).
 
-After download, look for `pilot_benchmark.json` directly under `data/results/runpod_pilot/` (not `…/runpod_pilot/results/`). The pod must be **running** for `scp` to succeed.
+After download, look for `run_info.json` and `pilot_*.json` inside the run folder under `data/results/runpod_pilot/`. The pod must be **running** for `scp` to succeed.
 
 Then run analysis locally (e.g. ECE on `pilot_calibration.json` via `src/analysis/calibration.py`).
 

@@ -30,10 +30,30 @@ def _normalize_logprobs(raw: Any) -> list[dict[str, Any]] | None:
     if not hasattr(raw, "__iter__") or isinstance(raw, (str, bytes)):
         return None
     for x in raw:
+        # Common shapes:
+        # - list[{"logprob": -0.1, ...}, ...]
+        # - list[float, ...]
+        # - vLLM v0.19+: list[dict[token_id -> Logprob]] when SamplingParams(logprobs=k)
         if isinstance(x, dict):
             lp = x.get("logprob", x.get("logprob_value"))
             if lp is not None:
                 out.append({"logprob": float(lp)})
+                continue
+
+            # vLLM: dict[int, Logprob] (or dict[str, Logprob]) for this generated position.
+            # With logprobs=1, this often contains exactly one entry (the chosen token).
+            vals = list(x.values())
+            if not vals:
+                continue
+            v0 = vals[0]
+            if hasattr(v0, "logprob"):
+                out.append({"logprob": float(getattr(v0, "logprob"))})
+                continue
+            if isinstance(v0, dict):
+                lp2 = v0.get("logprob", v0.get("logprob_value"))
+                if lp2 is not None:
+                    out.append({"logprob": float(lp2)})
+                    continue
         elif hasattr(x, "logprob"):
             out.append({"logprob": float(x.logprob)})
         elif isinstance(x, (int, float)):
