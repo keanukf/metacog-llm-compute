@@ -80,6 +80,8 @@ domain_prompts:
       ONLY your move as X->Y using peg letters A, B, or C (e.g. A->C). Do not use disk numbers. Do
       not explain your reasoning.
     action_max_tokens: 32
+    action_stop: ["\n"]
+    action_temperature: 0.0
 
 vc:
   mode: followup
