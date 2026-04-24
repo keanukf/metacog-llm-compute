@@ -299,6 +299,19 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir /workspace/
 
 Or use `--real` to auto-detect (on the pod this will select `cuda`).
 
+#### Troubleshooting: weird model outputs (blank actions / prompt echo / VC always null)
+
+- **Model outputs empty actions (0 tokens) / stops immediately**
+  - Ensure `configs/pilot.yaml` has `inference.chat_template: true` (required for instruct/chat models like Qwen3).
+  - For TextWorld, avoid stopping on a single newline: use `domain_prompts.textworld.action_stop: ["\n\n"]` (or remove `action_stop` entirely).
+- **Model echoes prompt fragments (e.g. “Do not use disk numbers.”)**
+  - This is also a strong signal that the chat template is not applied. Keep `inference.chat_template: true`.
+- **VC is always `null`**
+  - Increase `vc.followup_max_tokens` (default is small). In `configs/pilot.yaml` we use **24**.
+  - If the VC follow-up output contains words instead of a number, it will parse as `null`.
+- **Thinking text floods the action**
+  - Keep `inference.enable_thinking: false` for baseline runs; enable only in dedicated A/B variants.
+
 **If vLLM fails during model init with a KV-cache / max-seq-len error (common on 24 GB GPUs):**
 
 Some models advertise very large context lengths (e.g. 40960). On 24 GB GPUs, vLLM may fail with a message like “KV cache needed … larger than available …”. In that case set a smaller `inference.max_model_len` in `configs/pilot.yaml` (e.g. `8192` or `16384`) and rerun.
@@ -322,6 +335,20 @@ Afterwards, you can summarize the batch folder with:
 ```bash
 python scripts/summarize_pilot_batch.py data/results/pilot_batch_YYYYMMDD_HHMMSS
 ```
+
+### Prompt A/B testing (small, fast)
+
+This repo includes a small A/B harness to compare prompt variants on a single model before running the full shortlist batch.
+
+- **Variant configs**: `configs/prompt_variants/` (`v_base.yaml`, `v_nofewshot.yaml`, `v_think.yaml`)
+- **Runner**:
+
+```bash
+cd /workspace/metacog-llm-compute
+python scripts/run_prompt_ab.py --pilot-mode cuda --output-dir data/results/runpod_pilot
+```
+
+This writes `data/results/runpod_pilot/ab_YYYYMMDD_HHMMSS/ab_summary.json` plus per-variant pilot folders.
 
 ### 6. Download results from the pod
 

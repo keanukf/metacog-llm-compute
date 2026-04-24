@@ -13,6 +13,27 @@ python -m pip install --upgrade pip
 echo "Installing pinned Python dependencies from requirements.txt..."
 python -m pip install -r requirements.txt
 
+echo "Sanity-checking key dependency versions..."
+python - <<'PY'
+import sys
+
+def _get(name: str) -> str:
+    try:
+        import importlib.metadata as md
+        return md.version(name)
+    except Exception:
+        return "UNKNOWN"
+
+vllm_v = _get("vllm")
+tx_v = _get("transformers")
+torch_v = _get("torch")
+print("vllm:", vllm_v)
+print("transformers:", tx_v)
+print("torch:", torch_v)
+if vllm_v != "UNKNOWN" and not vllm_v.startswith("0.19."):
+    print("WARNING: expected vllm 0.19.x (update requirements.txt if intentional).", file=sys.stderr)
+PY
+
 # Optional: pre-download weights/tokenizer into the HF cache (persistent volume recommended).
 # - Set SKIP_MODEL_DOWNLOAD=1 to skip.
 # - Set MODEL_NAME to the HF repo id you will actually run first.

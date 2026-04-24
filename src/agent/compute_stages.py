@@ -75,9 +75,9 @@ def _vc_followup_prompt(action_text: str) -> str:
         truncated = truncated[:500] + "…"
     return (
         f"You just chose the action:\n{truncated}\n\n"
-        "Rate your confidence that this action is correct for the current "
-        "task, from 0 (no confidence) to 100 (certain).\n"
-        "Respond with ONLY a single integer. Example: 75"
+        "Output ONLY a single integer from 0 to 100 on one line. Nothing else.\n"
+        "Example 1: 85\n"
+        "Example 2: 40"
     )
 
 

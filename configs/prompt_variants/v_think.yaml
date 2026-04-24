@@ -1,0 +1,95 @@
+model:
+  name: "Qwen/Qwen3-8B"
+  dtype: float16
+
+inference:
+  backend: cuda
+  temperature: 0.3
+  max_tokens: 256
+  max_model_len: 16384
+  chat_template: true
+  enable_thinking: true
+
+pilot:
+  instances: 2
+  compute_stages: 1
+  runs_per_instance: 1
+
+logging:
+  save_logprob_distributions: true
+  logprob_export_format: json
+  logprob_subdir: logprobs
+  save_vc_distributions: true
+  vc_export_format: json
+  vc_subdir: vc
+  save_step_traces: true
+
+tracing:
+  langfuse_enabled: true
+
+domain_prompts:
+  textworld:
+    prefix: >
+      You are playing a parser-based text adventure. Your GOAL is to WIN the game.
+      You WIN when you have successfully prepared the meal AND eaten it.
+
+      Important: You have an inventory from the start of the game. You can inspect it any time with: inventory.
+
+      Rules for your output:
+      - Output exactly ONE imperative command on a single line. No reasoning, no quotes, no narration.
+      - If a line "Valid commands this turn:" appears, pick one of those commands verbatim when possible.
+      - If an action produces no visible change, try a different action instead of repeating it.
+      - Examples:
+        - If you see: "You are in a small room. Exits: north." you can reply: go north
+        - If you see: "You see a key here." you can reply: take key
+    action_max_tokens: 128
+    action_stop: ["\n\n"]
+    action_temperature: 0.0
+    history_keep_last_pairs: 1000000
+    history_max_obs_chars: 0
+    history_current_obs_max_chars: 0
+    history_obs_head_ratio: 0.15
+    pin_recipe: true
+
+  tower_of_hanoi:
+    prefix: >
+      You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty
+      peg or on a larger-numbered disk. Each turn you must choose exactly one move from the line
+      starting with "Valid moves:" in the task text—do not output any other peg pair. Respond with
+      ONLY your move as X->Y using peg letters A, B, or C (e.g. A->C). Do not use disk numbers. Do
+      not explain your reasoning.
+      Example:
+      OBSERVATION says "Valid moves: A->B, A->C" → reply "A->C"
+    action_max_tokens: 128
+    action_stop: ["\n"]
+    action_temperature: 0.0
+    history_keep_last_pairs: 4
+
+vc:
+  mode: followup
+  followup_max_tokens: 24
+  followup_temperature: 0.0
+
+paths:
+  tasks_dir: "data/tasks"
+
+test1_inference:
+  num_prompts: 5
+
+test3_verbalized_confidence:
+  num_easy: 3
+  num_hard: 3
+
+test4_textworld:
+  num_mini_envs: 2
+  max_rooms: 5
+  max_env_steps: 25
+
+tower_of_hanoi:
+  pilot_episodes: 5
+  pilot_num_disks: 3
+  pilot_max_steps: 20
+  num_disks_range: [3, 4]
+  partial_start_range: [0, 2]
+  task_generation_seed: 42
+
