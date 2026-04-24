@@ -304,6 +304,8 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
                     extra["gpu_memory_utilization"] = float(gpu_mem_util)
                 except Exception:
                     pass
+            extra["chat_template"] = bool(inf.get("chat_template", True))
+            extra["enable_thinking"] = bool(inf.get("enable_thinking", False))
             return create_wrapper(backend=backend, model_name=model_name, dtype=dtype, **extra), None
         if pilot_mode == "lmstudio":
             inf = config.get("inference", {})

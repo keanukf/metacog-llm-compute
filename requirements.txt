@@ -1,8 +1,10 @@
 # Core (blueprint: vLLM, TextWorld, analysis)
-vllm>=0.18.0
+# Pin these to keep RunPod installs reproducible. If you update them on the pod, update here too.
+vllm==0.19.1
 # Qwen3.5+ checkpoints use model_type qwen3_5 (needs transformers >= 5.2)
-transformers>=4.56.0,<5
+transformers==4.56.2
 openai>=1.0.0
+torch==2.4.0
 accelerate
 textworld
 numpy

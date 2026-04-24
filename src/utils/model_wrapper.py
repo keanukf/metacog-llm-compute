@@ -261,11 +261,15 @@ class VLLMWrapper(ModelWrapper):
         model_name: str,
         dtype: str = "float16",
         max_model_len: int | None = None,
+        chat_template: bool = True,
+        enable_thinking: bool = False,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
         self._dtype = dtype
         self._max_model_len = max_model_len
+        self._chat_template = bool(chat_template)
+        self._enable_thinking = bool(enable_thinking)
         self._kwargs = kwargs
         self._llm: Any = None
         self._tokenizer: Any = None
@@ -274,10 +278,12 @@ class VLLMWrapper(ModelWrapper):
         if self._llm is not None:
             return
         from vllm import LLM
+        from transformers import AutoTokenizer
 
         import torch
         if not torch.cuda.is_available():
             raise RuntimeError("VLLMWrapper requires CUDA")
+        self._tokenizer = AutoTokenizer.from_pretrained(self._model_name, trust_remote_code=True)
         self._llm = LLM(
             model=self._model_name,
             trust_remote_code=True,
@@ -285,6 +291,45 @@ class VLLMWrapper(ModelWrapper):
             max_model_len=self._max_model_len,
             **self._kwargs,
         )
+
+    def _maybe_apply_chat_template(self, prompt: str) -> str:
+        """
+        For instruct/chat-tuned models (e.g. Qwen3), wrap raw text as a single user turn
+        and apply the model's chat template so generation starts in the right mode.
+        """
+        if not self._chat_template:
+            return prompt
+        tok = self._tokenizer
+        if tok is None or not hasattr(tok, "apply_chat_template"):
+            return prompt
+        messages = [{"role": "user", "content": str(prompt)}]
+        # Qwen3 templates support enable_thinking; older templates may not.
+        try:
+            rendered = tok.apply_chat_template(  # type: ignore[attr-defined]
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=self._enable_thinking,
+            )
+        except TypeError:
+            rendered = tok.apply_chat_template(  # type: ignore[attr-defined]
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        return rendered if isinstance(rendered, str) and rendered else prompt
+
+    def _default_stop_tokens(self) -> list[str]:
+        out: list[str] = []
+        tok = self._tokenizer
+        if tok is None:
+            return out
+        eos = getattr(tok, "eos_token", None)
+        if isinstance(eos, str) and eos:
+            out.append(eos)
+        # Common chat boundary token for chat templates.
+        out.append("<|im_end|>")
+        return out
 
     def generate(
         self,
@@ -298,15 +343,35 @@ class VLLMWrapper(ModelWrapper):
         from vllm import SamplingParams
 
         self._ensure_loaded()
+        rendered_prompt = self._maybe_apply_chat_template(prompt)
         # logprobs=1 returns the chosen token's logprob per position
         logprobs_param = 1 if logprobs else None
+        user_stop = kwargs.get("stop")
+        default_stop = self._default_stop_tokens()
+        merged_stop: list[str] | None = None
+        if user_stop is None:
+            merged_stop = default_stop or None
+        else:
+            merged: list[str] = []
+            if isinstance(user_stop, (list, tuple)):
+                merged.extend(str(s) for s in user_stop if s is not None)
+            else:
+                merged.append(str(user_stop))
+            merged.extend(s for s in default_stop if s and s not in merged)
+            merged_stop = merged or None
+
         sampling_params = SamplingParams(
             temperature=temperature,
             max_tokens=max_tokens,
             logprobs=logprobs_param,
-            **{k: v for k, v in kwargs.items() if k not in ("prompt", "logprobs", "max_tokens", "temperature")},
+            stop=merged_stop,
+            **{
+                k: v
+                for k, v in kwargs.items()
+                if k not in ("prompt", "logprobs", "max_tokens", "temperature", "stop")
+            },
         )
-        outputs = self._llm.generate([prompt], sampling_params)
+        outputs = self._llm.generate([rendered_prompt], sampling_params)
         if not outputs or not outputs[0].outputs:
             return "", None
         out = outputs[0].outputs[0]

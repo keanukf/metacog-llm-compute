@@ -47,6 +47,7 @@ def summarize_run_dir(run_dir: Path) -> dict[str, Any]:
     t5 = _read_json(run_dir / "pilot_test5_toh.json") or {}
     san = _read_json(run_dir / "pilot_sanity.json") or {}
     fea = _read_json(run_dir / "pilot_feasibility.json") or {}
+    t2 = _read_json(run_dir / "pilot_test2_tle.json") or {}
 
     return {
         "model": str(model),
@@ -54,6 +55,7 @@ def summarize_run_dir(run_dir: Path) -> dict[str, Any]:
         "tok_s": t1.get("tokens_per_sec"),
         "vc_parse_rate": fea.get("summary", {}).get("vc_parse_rate") if isinstance(fea.get("summary"), dict) else None,
         "test3_parse_rate": t3.get("parse_rate"),
+        "tle_mean_entropy_avg": _safe_get(t2, "summary", "mean_entropy_avg"),
         "toh_parse_rate": t5.get("parse_rate"),
         "toh_success_rate": t5.get("success_rate"),
         "toh_oscillation_rate": t5.get("oscillation_rate"),
@@ -61,6 +63,7 @@ def summarize_run_dir(run_dir: Path) -> dict[str, Any]:
         "feasibility_go": fea.get("go"),
         "feasibility_passed": f"{fea.get('passed')}/{fea.get('total')}" if fea.get("passed") is not None else None,
         "sanity_has_logprobs": san.get("has_logprobs"),
+        "sanity_completion_tokens_observed": san.get("completion_tokens_observed"),
     }
 
 
@@ -90,6 +93,8 @@ def main() -> None:
         "model",
         "tok_s",
         "sanity_has_logprobs",
+        "sanity_completion_tokens_observed",
+        "tle_mean_entropy_avg",
         "vc_parse_rate",
         "test3_parse_rate",
         "toh_parse_rate",
