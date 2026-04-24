@@ -15,9 +15,35 @@ python -m pip install -r requirements.txt
 
 # Optional: pre-download weights/tokenizer into the HF cache (persistent volume recommended).
 # - Set SKIP_MODEL_DOWNLOAD=1 to skip.
-# - Set MODEL_NAME to the HF repo id you will actually run first (default matches the RunPod smoke-test anchor).
+# - Set MODEL_NAME to the HF repo id you will actually run first.
+#   If unset, we default to the first entry in configs/models_runpod.yaml (single source of truth).
 SKIP_MODEL_DOWNLOAD="${SKIP_MODEL_DOWNLOAD:-0}"
-MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3-8B}"
+MODEL_NAME="${MODEL_NAME:-}"
+
+if [[ -z "${MODEL_NAME}" ]]; then
+  MODEL_NAME="$(python - <<'PY'
+try:
+    import yaml
+except Exception:
+    print("Qwen/Qwen3-8B")
+    raise SystemExit(0)
+
+with open("configs/models_runpod.yaml", "r", encoding="utf-8") as f:
+    raw = yaml.safe_load(f) or {}
+
+models = None
+if isinstance(raw, dict):
+    models = raw.get("models")
+elif isinstance(raw, list):
+    models = raw
+
+if isinstance(models, list) and models and isinstance(models[0], str) and models[0].strip():
+    print(models[0].strip())
+else:
+    print("Qwen/Qwen3-8B")
+PY
+)"
+fi
 
 if [[ "${SKIP_MODEL_DOWNLOAD}" == "1" ]]; then
   echo "Skipping model pre-download (SKIP_MODEL_DOWNLOAD=1)."
