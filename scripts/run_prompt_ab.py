@@ -35,12 +35,20 @@ def _rate_nonnull(values: list[Any]) -> float | None:
 
 
 def _summarize_variant_dir(run_dir: Path) -> dict[str, Any]:
-    san = _read_json(run_dir / "pilot_sanity.json") or {}
-    t2 = _read_json(run_dir / "pilot_test2_tle.json") or {}
-    t5 = _read_json(run_dir / "pilot_test5_toh.json") or {}
+    # run_pilot.py normally creates a timestamped pilot_* subfolder under --output-dir.
+    # Prefer a direct layout (via --no-timestamp-run), but if we see nested pilot_* folders,
+    # summarize the newest one.
+    root = run_dir
+    nested = sorted([p for p in run_dir.glob("pilot_*") if p.is_dir()], key=lambda p: p.stat().st_mtime)
+    if nested:
+        root = nested[-1]
+
+    san = _read_json(root / "pilot_sanity.json") or {}
+    t2 = _read_json(root / "pilot_test2_tle.json") or {}
+    t5 = _read_json(root / "pilot_test5_toh.json") or {}
 
     episodes: list[dict[str, Any]] = []
-    for p in sorted(run_dir.glob("ep_textworld_*.json")) + sorted(run_dir.glob("ep_tower_of_hanoi_*.json")):
+    for p in sorted(root.glob("ep_textworld_*.json")) + sorted(root.glob("ep_tower_of_hanoi_*.json")):
         ep = _read_json(p)
         if isinstance(ep, dict):
             episodes.append(ep)
@@ -64,7 +72,7 @@ def _summarize_variant_dir(run_dir: Path) -> dict[str, Any]:
         "toh_oscillation_rate": t5.get("oscillation_rate"),
         "vc_nonnull_rate": _rate_nonnull(vc_vals),
         "tle_nonnull_rate": _rate_nonnull(tle_vals),
-        "dir": str(run_dir),
+        "dir": str(root),
     }
 
 
@@ -126,6 +134,7 @@ def main() -> None:
             "--real",
             "--config",
             str(v.config_path),
+            "--no-timestamp-run",
             "--only",
             "sanity",
             "test2",
