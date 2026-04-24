@@ -13,6 +13,7 @@ inference:
   backend: cuda
   temperature: 0.3
   max_tokens: 256
+  max_model_len: 16384
   avg_tokens_per_call: 200  # input ~120, output ~80
   # For pilot-mode lmstudio: LM Studio local server (OpenAI-compatible). URL may be …/v1 or host:port only.
   # lmstudio_base_url: "http://192.168.178.173:1234/v1"
