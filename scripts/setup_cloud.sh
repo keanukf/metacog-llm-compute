@@ -7,6 +7,17 @@
 
 set -euo pipefail
 
+ENV_FILE="${ENV_FILE:-/workspace/secrets/env.sh}"
+if [[ -f "${ENV_FILE}" ]]; then
+  echo "Loading environment from ${ENV_FILE}..."
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+  set +a
+else
+  echo "No env file found at ${ENV_FILE}; continuing without loading secrets."
+fi
+
 echo "Upgrading pip (recommended on fresh pods)..."
 python -m pip install --upgrade pip
 
