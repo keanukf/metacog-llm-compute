@@ -12,6 +12,8 @@ pandas
 scipy
 pyyaml
 python-dotenv>=1.0.0
+matplotlib
+seaborn
 
 # Dev / tests
 pytest>=7.0.0
