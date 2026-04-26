@@ -3,7 +3,9 @@ Calibration metrics: ECE (Expected Calibration Error), Brier score, reliability 
 """
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
+
+CorrectnessPolicy = Literal["optimal_only", "legal_or_optimal"]
 
 
 def compute_ece(
@@ -42,6 +44,34 @@ def compute_ece(
         conf = sum(predictions[j] for j in range(len(mask)) if mask[j]) / count
         ece += (count / total) * abs(acc - conf)
     return ece
+
+
+def compute_mce(
+    predictions: Sequence[float],
+    correctness: Sequence[float | int],
+    n_bins: int = 10,
+) -> float:
+    """
+    Maximum Calibration Error: max over bins of |accuracy(bin) - confidence(bin)|.
+    """
+    predictions = list(predictions)
+    correctness = list(correctness)
+    if not predictions or len(predictions) != len(correctness):
+        return 0.0
+    bin_edges = [i / n_bins for i in range(n_bins + 1)]
+    mce = 0.0
+    for i in range(n_bins):
+        low, high = bin_edges[i], bin_edges[i + 1]
+        mask = [low <= p < high for p in predictions]
+        if i == n_bins - 1:
+            mask = [low <= p <= 1.0 for p in predictions]
+        count = sum(mask)
+        if count == 0:
+            continue
+        acc = sum(correctness[j] for j in range(len(mask)) if mask[j]) / count
+        conf = sum(predictions[j] for j in range(len(mask)) if mask[j]) / count
+        mce = max(mce, abs(acc - conf))
+    return float(mce)
 
 
 def compute_brier(
@@ -137,11 +167,82 @@ def compute_auroc(scores: Sequence[float], labels: Sequence[int]) -> float:
     return float(u / (n_pos * n_neg))
 
 
+def compute_auprc(scores: Sequence[float], labels: Sequence[int]) -> float:
+    """
+    Area under Precision-Recall curve for binary labels (0/1).
+
+    This is a simple, dependency-free implementation using threshold sweeps over sorted scores.
+    Returns the step-wise (right-continuous) PR AUC.
+    """
+    xs = list(scores)
+    ys = [int(l) for l in labels]
+    if len(xs) != len(ys) or not xs:
+        return 0.0
+    n_pos = sum(1 for y in ys if y == 1)
+    if n_pos == 0:
+        return 0.0
+
+    order = sorted(range(len(xs)), key=lambda i: xs[i], reverse=True)
+    tp = 0
+    fp = 0
+    prev_recall = 0.0
+    area = 0.0
+    for idx in order:
+        if ys[idx] == 1:
+            tp += 1
+        else:
+            fp += 1
+        recall = tp / n_pos
+        precision = tp / max(tp + fp, 1)
+        # Integrate precision w.r.t recall (step function)
+        area += precision * max(0.0, recall - prev_recall)
+        prev_recall = recall
+    return float(area)
+
+
 def compute_efficiency(success_rate: float, normalized_compute_cost: float) -> float | None:
     """Efficiency score: success_rate / normalized_compute_cost. Returns None if cost is 0."""
     if normalized_compute_cost <= 0:
         return None
     return float(success_rate) / float(normalized_compute_cost)
+
+
+def vc_to_prob(vc: float) -> float:
+    """Map a verbalized confidence in [0,100] into a probability in [0,1]."""
+    return max(0.0, min(1.0, float(vc) / 100.0))
+
+
+def tle_entropy_to_prob(mean_entropy: float) -> float:
+    """
+    Baseline monotonic mapping from token-level entropy to a probability in [0,1].
+
+    Note: entropy is not a probability; this mapping is only a heuristic baseline.
+    For thesis-grade calibration, prefer a fitted calibrator trained on Phase-1 validation.
+    """
+    return max(0.0, min(1.0, 1.0 - float(mean_entropy)))
+
+
+def _label_from_correctness(corr: Any, policy: CorrectnessPolicy) -> float | None:
+    if corr is None:
+        return None
+    if isinstance(corr, str):
+        c = corr.strip().lower()
+        if policy == "optimal_only":
+            if c == "optimal":
+                return 1.0
+            if c in {"legal", "illegal"}:
+                return 0.0
+            return None
+        if policy == "legal_or_optimal":
+            if c in {"optimal", "legal"}:
+                return 1.0
+            if c == "illegal":
+                return 0.0
+            return None
+        return None
+    if isinstance(corr, (int, float)):
+        return 1.0 if float(corr) > 0 else 0.0
+    return None
 
 
 def _cohens_d(a: Sequence[float], b: Sequence[float]) -> float | None:
@@ -164,6 +265,7 @@ def calibration_by_step_position(
     signal: str,  # "tle" or "vc"
     n_bins: int = 4,
     correctness_key: str = "correctness",
+    correctness_policy: CorrectnessPolicy = "optimal_only",
 ) -> list[dict[str, Any]]:
     """
     Compute calibration metrics (ECE, Brier) per step-position bin.
@@ -210,34 +312,18 @@ def calibration_by_step_position(
                 v = tle.get("mean_entropy")
                 if not isinstance(v, (int, float)):
                     continue
-                pred = float(v)
-                # TLE isn't a probability; for calibration we map higher entropy -> lower confidence
-                # by a simple monotonic transform into [0,1] using a soft clamp.
-                # This keeps the function usable without needing per-domain calibration mapping here.
-                pred01 = max(0.0, min(1.0, 1.0 - pred))
+                pred01 = tle_entropy_to_prob(float(v))
             elif signal == "vc":
                 v = sd.get("vc")
                 if not isinstance(v, (int, float)):
                     continue
-                pred01 = max(0.0, min(1.0, float(v) / 100.0))
+                pred01 = vc_to_prob(float(v))
             else:
                 raise ValueError("signal must be 'tle' or 'vc'")
 
             corr = sd.get(correctness_key)
-            if corr is None:
-                continue
-            # Default: treat any legal (or optimal) move as correct; illegal as incorrect.
-            correct01 = 0.0
-            if isinstance(corr, str):
-                if corr.lower() in {"optimal", "legal"}:
-                    correct01 = 1.0
-                elif corr.lower() == "illegal":
-                    correct01 = 0.0
-                else:
-                    continue
-            elif isinstance(corr, (int, float)):
-                correct01 = 1.0 if float(corr) > 0 else 0.0
-            else:
+            correct01 = _label_from_correctness(corr, correctness_policy)
+            if correct01 is None:
                 continue
 
             per_bin_preds[bin_idx].append(pred01)
@@ -283,10 +369,8 @@ def signal_discrimination_report(episodes: list[dict[str, Any]], signal: str) ->
             if not isinstance(sd, dict):
                 continue
             corr = sd.get("correctness")
-            if not isinstance(corr, str):
-                continue
-            y = 1 if corr.lower() in {"optimal", "legal"} else 0 if corr.lower() == "illegal" else None
-            if y is None:
+            y01 = _label_from_correctness(corr, "optimal_only")
+            if y01 is None:
                 continue
             if signal == "tle":
                 tle = sd.get("tle")
@@ -304,6 +388,7 @@ def signal_discrimination_report(episodes: list[dict[str, Any]], signal: str) ->
             else:
                 raise ValueError("signal must be 'tle' or 'vc'")
             scores.append(s)
+            y = 1 if y01 >= 0.5 else 0
             labels.append(y)
             (sig_correct if y == 1 else sig_incorrect).append(s)
 
