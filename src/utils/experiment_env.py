@@ -6,6 +6,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from src.agent.compute_stages import VC_FOLLOWUP_PROMPT_MARKER
+
 
 def resolve_textworld_game_path(instance: int, config: dict, repo_root: Path) -> Path | None:
     """
@@ -33,8 +35,8 @@ class MockExperimentModel:
     """Lightweight stand-in when ``--real`` is off or model creation fails."""
 
     def generate(self, prompt, logprobs=False, **kwargs):
-        # VC follow-up prompt (matches compute_stages._vc_followup_prompt)
-        if "You just chose the action:" in (prompt or ""):
+        # VC follow-up prompt (see ``compute_stages.VC_FOLLOWUP_PROMPT_MARKER``)
+        if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
             text = "75"
             lp = (
                 [{"token": "7", "logprob": -0.1}, {"token": "5", "logprob": -0.05}]

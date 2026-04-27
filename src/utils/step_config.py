@@ -46,6 +46,9 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         - ``mode`` (inline | followup | none)
         - ``followup_max_tokens`` (int)
         - ``followup_temperature`` (float)
+        - ``followup_max_context_chars`` (int | null, optional): emergency cap on the full VC follow-up prompt
+        - ``followup_cot_max_chars`` (int, optional): C1 chain-of-thought budget inside VC follow-up (default 12000)
+        - ``vc_raw_completion_max_chars`` (int, optional): C0 completion snippet budget in VC follow-up (default 8000)
 
     Backward compatibility:
     Older configs used ``vc.prompt_prefix`` / ``vc.action_max_tokens`` / ``vc.textworld_action_stop``
@@ -191,6 +194,13 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
             # Preserve old default behavior for TextWorld even if domain_prompts is missing.
             action_stop = ["\n"]
 
+    fmc_raw = vc.get("followup_max_context_chars")
+    followup_max_context_chars: int | None
+    if fmc_raw is None:
+        followup_max_context_chars = None
+    else:
+        followup_max_context_chars = int(fmc_raw)
+
     return {
         "vc_mode": mode,
         "prompt_prefix": prompt_prefix,
@@ -199,6 +209,9 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         "action_stop": action_stop,
         "followup_max_tokens": int(vc.get("followup_max_tokens", 4)),
         "followup_temperature": float(vc.get("followup_temperature", 0.0)),
+        "followup_max_context_chars": followup_max_context_chars,
+        "followup_cot_max_chars": int(vc.get("followup_cot_max_chars", 12000)),
+        "vc_raw_completion_max_chars": int(vc.get("vc_raw_completion_max_chars", 8000)),
         # History / memory controls (consumed by base_agent.run_episode / run_adaptive_episode).
         # These live under domain_prompts.<domain> so they're experiment-controlled and visible in YAML.
         "history_keep_last_pairs": int(dom_cfg.get("history_keep_last_pairs", 4)) if isinstance(dom_cfg, dict) else 4,
