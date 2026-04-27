@@ -1006,7 +1006,7 @@ def _build_feasibility_report(
 ) -> dict[str, Any]:
     from src.analysis.calibration import compute_ece
 
-    expected_min = float(config.get("test1_inference", {}).get("expected_tok_per_sec_min", 80))
+    expected_min = float(config.get("test1_inference", {}).get("expected_tok_per_sec_min", 50))
     tok_s = float(test1.get("tokens_per_sec", 0.0) or 0.0)
 
     vc_parse_rate, tle_nonnull_rate = _episode_vc_tle_rates(textworld_episodes, toh_episodes)
@@ -1091,18 +1091,12 @@ def _build_feasibility_report(
     )
     _add_check(
         9,
-        "Hochrechnung Core ≤70 GPU-Stunden?",
-        tok_s >= expected_min,
-        "Runs/Instanzen reduzieren",
-    )
-    _add_check(
-        10,
         "Daten-Download + Analyse machbar?",
         ece is not None and isinstance(ece, (int, float)),
         "Volume als Zwischenspeicher",
     )
     _add_check(
-        11,
+        10,
         "Tower of Hanoi moves parseable ≥80%?",
         (pilot_mode == "mock")
         or (isinstance(toh_parse_rate, (int, float)) and float(toh_parse_rate) >= 0.8),

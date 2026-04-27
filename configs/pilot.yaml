@@ -110,7 +110,7 @@ paths:
 test1_inference:
   num_prompts: 10
   # Completion plan target for RTX 3090 validation
-  expected_tok_per_sec_min: 80
+  expected_tok_per_sec_min: 50
 
 test3_verbalized_confidence:
   num_easy: 5

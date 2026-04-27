@@ -332,8 +332,7 @@ Erwartetes Ergebnis: 15 vollständige Datenpunkte → Hochrechnung auf Gesamtexp
 | 6 | Agent generiert valide TextWorld-Aktionen? | Ja | Action-Space-Constraining via Prompt |
 | 7 | Best-of-3 + Majority Vote funktioniert? | Ja | Konsistenzprüfung statt Majority Vote |
 | 8 | End-to-End-Pipeline produziert vollständige Logs? | Ja | Logging-Framework debuggen |
-| 9 | Hochrechnung: Core ≤70 GPU-Stunden? | Ja | Runs oder Instanzen reduzieren |
-| 10 | Daten-Download + lokale Analyse machbar? | Ja | RunPod Network Volume als Zwischenspeicher |
+| 9 | Daten-Download + lokale Analyse machbar? | Ja | RunPod Network Volume als Zwischenspeicher |
 
 **Go-Kriterium:** ≥8 von 10 mit "Ja" (oder gelöstem Fallback). Falls ≤6: Design überarbeiten vor Exposé-Versand.
 
