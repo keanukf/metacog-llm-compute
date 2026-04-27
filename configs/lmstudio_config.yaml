@@ -35,7 +35,7 @@ pilot:
 
 test1_inference:
   num_prompts: 10
-  expected_tok_per_sec_min: 30
+  expected_tok_per_sec_min: 50
 
 test3_verbalized_confidence:
   num_easy: 5
