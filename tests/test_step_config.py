@@ -1,6 +1,7 @@
 """resolve_step_fn_kwargs from YAML."""
 from __future__ import annotations
 
+from src.agent.compute_stages import DEFAULT_VC_FOLLOWUP_INSTRUCTION
 from src.utils.step_config import resolve_step_fn_kwargs
 
 
@@ -17,6 +18,18 @@ def test_tower_of_hanoi_gets_default_prefix_and_action_cap():
     assert k["followup_max_context_chars"] is None
     assert k["followup_cot_max_chars"] == 12000
     assert k["vc_raw_completion_max_chars"] == 8000
+    assert k["vc_followup_instruction"] == DEFAULT_VC_FOLLOWUP_INSTRUCTION
+
+
+def test_vc_followup_instruction_from_yaml():
+    custom = "Custom VC instruction.\n\nConfidence:"
+    cfg = {
+        "inference": {"max_tokens": 128, "temperature": 0.2},
+        "vc": {"mode": "followup", "followup_instruction": custom},
+        "domain_prompts": {"tower_of_hanoi": {"prefix": "x"}},
+    }
+    k = resolve_step_fn_kwargs(cfg, "tower_of_hanoi")
+    assert k["vc_followup_instruction"] == custom
 
 
 def test_vc_followup_budget_keys_from_yaml():

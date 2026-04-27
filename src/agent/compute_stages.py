@@ -13,6 +13,14 @@ StepReturn = tuple[str, dict[str, float] | None, float | None, int, int, Any, An
 # Present in every VC follow-up prompt — tests and mocks can detect the second call without coupling to wording details.
 VC_FOLLOWUP_PROMPT_MARKER = "=== YOUR OUTPUT TO JUDGE ==="
 
+# Default when YAML omits ``vc.followup_instruction`` (overridable per experiment).
+DEFAULT_VC_FOLLOWUP_INSTRUCTION = (
+    "How likely is the chosen action to be correct in this situation?\n"
+    "Respond with only a single integer between 0 and 100,\n"
+    "where 0 means certainly wrong and 100 means certainly correct.\n\n"
+    "Confidence:"
+)
+
 
 def _build_prompt(observation: str, history: list[str], prompt_prefix: str) -> str:
     obs = (observation or "").strip()
@@ -142,6 +150,7 @@ def _build_vc_followup_prompt(
     *,
     stage_tag: str,
     action_line: str,
+    instruction: str,
     raw_action_completion: str | None = None,
     cot_text: str | None = None,
     verify_completion: str | None = None,
@@ -167,21 +176,14 @@ def _build_vc_followup_prompt(
         followup_cot_max_chars=followup_cot_max_chars,
         raw_completion_max_chars=raw_completion_max_chars,
     )
-    instruction = (
-        "Rate your metacognitive confidence (0-100) that your output under "
-        f'"{VC_FOLLOWUP_PROMPT_MARKER}" is appropriate for the task context above '
-        "(account for your reasoning where it was part of your answer).\n"
-        "Output ONLY a single integer from 0 to 100 on one line. Nothing else.\n"
-        "Example 1: 85\n"
-        "Example 2: 40"
-    )
+    instr = (instruction or "").strip() or DEFAULT_VC_FOLLOWUP_INSTRUCTION
     full = (
         "=== TASK CONTEXT ===\n"
         f"{task_context}\n\n"
         f"{VC_FOLLOWUP_PROMPT_MARKER}\n"
         f"{judged}\n\n"
         "=== INSTRUCTION ===\n"
-        f"{instruction}"
+        f"{instr}"
     )
     if followup_max_context_chars is not None and followup_max_context_chars > 0:
         full = _truncate_text(full, max_chars=followup_max_context_chars)
@@ -196,6 +198,7 @@ def _run_vc_followup(
     prompt_prefix: str,
     stage_tag: str,
     action_line: str,
+    vc_followup_instruction: str,
     raw_action_completion: str | None = None,
     cot_text: str | None = None,
     verify_completion: str | None = None,
@@ -215,6 +218,7 @@ def _run_vc_followup(
         prompt_prefix,
         stage_tag=stage_tag,
         action_line=action_line,
+        instruction=vc_followup_instruction,
         raw_action_completion=raw_action_completion,
         cot_text=cot_text,
         verify_completion=verify_completion,
@@ -224,7 +228,11 @@ def _run_vc_followup(
         followup_max_context_chars=followup_max_context_chars,
         raw_completion_max_chars=raw_completion_max_chars,
     )
-    gen_kw = {"max_tokens": int(followup_max_tokens), "temperature": float(followup_temperature)}
+    gen_kw = {
+        "max_tokens": int(followup_max_tokens),
+        "temperature": float(followup_temperature),
+        "enable_thinking": False,
+    }
     if request_logprobs:
         text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
     else:
@@ -250,6 +258,7 @@ def _resolve_vc(
     prompt_prefix: str,
     stage_tag: str,
     action_line: str,
+    vc_followup_instruction: str,
     raw_action_completion: str | None = None,
     cot_text: str | None = None,
     verify_completion: str | None = None,
@@ -274,6 +283,7 @@ def _resolve_vc(
             prompt_prefix=prompt_prefix,
             stage_tag=stage_tag,
             action_line=action_line,
+            vc_followup_instruction=vc_followup_instruction,
             raw_action_completion=raw_action_completion,
             cot_text=cot_text,
             verify_completion=verify_completion,
@@ -298,6 +308,7 @@ def _c0_step_core(
     save_action_logprobs: bool,
     vc_mode: str,
     prompt_prefix: str,
+    vc_followup_instruction: str,
     action_max_tokens: int | None,
     action_temperature: float | None,
     action_stop: list[str] | None,
@@ -326,6 +337,7 @@ def _c0_step_core(
         prompt_prefix=prompt_prefix,
         stage_tag="C0",
         action_line=action,
+        vc_followup_instruction=vc_followup_instruction,
         raw_action_completion=text,
         cot_text=None,
         verify_completion=None,
@@ -353,6 +365,7 @@ def _c1_step_core(
     save_action_logprobs: bool,
     vc_mode: str,
     prompt_prefix: str,
+    vc_followup_instruction: str,
     action_max_tokens: int | None,
     action_temperature: float | None,
     action_stop: list[str] | None,
@@ -411,6 +424,7 @@ def _c1_step_core(
         prompt_prefix=prompt_prefix,
         stage_tag="C1",
         action_line=action,
+        vc_followup_instruction=vc_followup_instruction,
         raw_action_completion=None,
         cot_text=cot_text or "",
         verify_completion=final_text or "",
@@ -453,6 +467,7 @@ def _c2_step_core(
     save_action_logprobs: bool,
     vc_mode: str,
     prompt_prefix: str,
+    vc_followup_instruction: str,
     action_max_tokens: int | None,
     action_temperature: float | None,
     action_stop: list[str] | None,
@@ -509,6 +524,7 @@ def _c2_step_core(
             prompt_prefix=prompt_prefix,
             stage_tag="C2",
             action_line=winner,
+            vc_followup_instruction=vc_followup_instruction,
             c2_n_samples=n_samples,
             c2_sample_first_lines=list(actions),
             followup_max_tokens=followup_max_tokens,
@@ -543,6 +559,7 @@ def c0_step(
         save_action_logprobs=False,
         vc_mode="inline",
         prompt_prefix="",
+        vc_followup_instruction=DEFAULT_VC_FOLLOWUP_INSTRUCTION,
         action_max_tokens=None,
         action_temperature=None,
         action_stop=None,
@@ -569,6 +586,7 @@ def c1_step(
         save_action_logprobs=False,
         vc_mode="none",
         prompt_prefix="",
+        vc_followup_instruction=DEFAULT_VC_FOLLOWUP_INSTRUCTION,
         action_max_tokens=None,
         action_temperature=None,
         action_stop=None,
@@ -597,6 +615,7 @@ def c2_step(
         save_action_logprobs=False,
         vc_mode="inline",
         prompt_prefix="",
+        vc_followup_instruction=DEFAULT_VC_FOLLOWUP_INSTRUCTION,
         action_max_tokens=None,
         action_temperature=None,
         action_stop=None,
@@ -617,6 +636,7 @@ def get_step_fn(
     save_vc_distributions: bool = False,
     vc_mode: str = "inline",
     prompt_prefix: str = "",
+    vc_followup_instruction: str | None = None,
     action_max_tokens: int | None = None,
     action_temperature: float | None = None,
     action_stop: list[str] | None = None,
@@ -645,7 +665,10 @@ def get_step_fn(
     ``followup_cot_max_chars``: max characters for the C1 CoT block inside the VC follow-up (head/tail truncation).
 
     ``vc_raw_completion_max_chars``: max characters for the C0 full completion snippet in VC follow-up.
+
+    ``vc_followup_instruction``: text under ``=== INSTRUCTION ===`` for VC follow-up (from YAML ``vc.followup_instruction``).
     """
+    vc_instr = (vc_followup_instruction or "").strip() or DEFAULT_VC_FOLLOWUP_INSTRUCTION
     core_map = {
         "C0": _c0_step_core,
         "C1": _c1_step_core,
@@ -664,6 +687,7 @@ def get_step_fn(
                 save_action_logprobs=save_logprob_distributions,
                 vc_mode=vc_mode,
                 prompt_prefix=prompt_prefix,
+                vc_followup_instruction=vc_instr,
                 action_max_tokens=action_max_tokens,
                 action_temperature=action_temperature,
                 action_stop=action_stop,
@@ -685,6 +709,7 @@ def get_step_fn(
             save_action_logprobs=save_logprob_distributions,
             vc_mode=vc_mode,
             prompt_prefix=prompt_prefix,
+            vc_followup_instruction=vc_instr,
             action_max_tokens=action_max_tokens,
             action_temperature=action_temperature,
             action_stop=action_stop,
