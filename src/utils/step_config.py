@@ -6,6 +6,8 @@ from __future__ import annotations
 import warnings
 from typing import Any
 
+from src.agent.compute_stages import DEFAULT_VC_FOLLOWUP_INSTRUCTION
+
 # Legacy-only fallback defaults for old configs that omitted any prefix configuration.
 # New configs should provide these via config["domain_prompts"][domain]["prefix"].
 _LEGACY_DEFAULT_PREFIX_BY_DOMAIN: dict[str, str] = {
@@ -49,6 +51,7 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         - ``followup_max_context_chars`` (int | null, optional): emergency cap on the full VC follow-up prompt
         - ``followup_cot_max_chars`` (int, optional): C1 chain-of-thought budget inside VC follow-up (default 12000)
         - ``vc_raw_completion_max_chars`` (int, optional): C0 completion snippet budget in VC follow-up (default 8000)
+    - ``followup_instruction`` (str, optional): VC follow-up text under ``=== INSTRUCTION ===`` (default in code)
 
     Backward compatibility:
     Older configs used ``vc.prompt_prefix`` / ``vc.action_max_tokens`` / ``vc.textworld_action_stop``
@@ -194,6 +197,11 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
             # Preserve old default behavior for TextWorld even if domain_prompts is missing.
             action_stop = ["\n"]
 
+    fi_raw = vc.get("followup_instruction")
+    vc_followup_instruction = (
+        str(fi_raw).strip() if fi_raw is not None and str(fi_raw).strip() else DEFAULT_VC_FOLLOWUP_INSTRUCTION
+    )
+
     fmc_raw = vc.get("followup_max_context_chars")
     followup_max_context_chars: int | None
     if fmc_raw is None:
@@ -212,6 +220,7 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         "followup_max_context_chars": followup_max_context_chars,
         "followup_cot_max_chars": int(vc.get("followup_cot_max_chars", 12000)),
         "vc_raw_completion_max_chars": int(vc.get("vc_raw_completion_max_chars", 8000)),
+        "vc_followup_instruction": vc_followup_instruction,
         # History / memory controls (consumed by base_agent.run_episode / run_adaptive_episode).
         # These live under domain_prompts.<domain> so they're experiment-controlled and visible in YAML.
         "history_keep_last_pairs": int(dom_cfg.get("history_keep_last_pairs", 4)) if isinstance(dom_cfg, dict) else 4,

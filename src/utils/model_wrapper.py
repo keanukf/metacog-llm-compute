@@ -292,10 +292,13 @@ class VLLMWrapper(ModelWrapper):
             **self._kwargs,
         )
 
-    def _maybe_apply_chat_template(self, prompt: str) -> str:
+    def _maybe_apply_chat_template(self, prompt: str, *, enable_thinking: bool | None = None) -> str:
         """
         For instruct/chat-tuned models (e.g. Qwen3), wrap raw text as a single user turn
         and apply the model's chat template so generation starts in the right mode.
+
+        ``enable_thinking``: if set, overrides the wrapper default (e.g. VC follow-up must use False
+        even when action calls use ``inference.enable_thinking: true``).
         """
         if not self._chat_template:
             return prompt
@@ -303,13 +306,14 @@ class VLLMWrapper(ModelWrapper):
         if tok is None or not hasattr(tok, "apply_chat_template"):
             return prompt
         messages = [{"role": "user", "content": str(prompt)}]
+        use_thinking = self._enable_thinking if enable_thinking is None else bool(enable_thinking)
         # Qwen3 templates support enable_thinking; older templates may not.
         try:
             rendered = tok.apply_chat_template(  # type: ignore[attr-defined]
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
-                enable_thinking=self._enable_thinking,
+                enable_thinking=use_thinking,
             )
         except TypeError:
             rendered = tok.apply_chat_template(  # type: ignore[attr-defined]
@@ -343,7 +347,8 @@ class VLLMWrapper(ModelWrapper):
         from vllm import SamplingParams
 
         self._ensure_loaded()
-        rendered_prompt = self._maybe_apply_chat_template(prompt)
+        et = kwargs.pop("enable_thinking", None)
+        rendered_prompt = self._maybe_apply_chat_template(prompt, enable_thinking=et)
         # logprobs=1 returns the chosen token's logprob per position
         logprobs_param = 1 if logprobs else None
         user_stop = kwargs.get("stop")
@@ -368,7 +373,8 @@ class VLLMWrapper(ModelWrapper):
             **{
                 k: v
                 for k, v in kwargs.items()
-                if k not in ("prompt", "logprobs", "max_tokens", "temperature", "stop")
+                if k
+                not in ("prompt", "logprobs", "max_tokens", "temperature", "stop", "enable_thinking")
             },
         )
         outputs = self._llm.generate([rendered_prompt], sampling_params)
@@ -448,7 +454,7 @@ class HFWrapper(ModelWrapper):
         self._ensure_loaded()
         inputs = self._tokenizer(prompt, return_tensors="pt").to(self._model.device)
         # HuggingFace ``generate`` does not accept OpenAI-style ``stop``; agent uses first-line extraction instead.
-        hf_kwargs = {k: v for k, v in kwargs.items() if k != "stop"}
+        hf_kwargs = {k: v for k, v in kwargs.items() if k not in ("stop", "enable_thinking")}
         gen_kw: dict[str, Any] = {
             "max_new_tokens": max_tokens,
             "temperature": temperature if temperature > 0 else 1e-7,
@@ -547,7 +553,11 @@ class LMStudioWrapper(ModelWrapper):
     ) -> tuple[str, list[dict[str, Any]] | None]:
         import os
 
-        extra = {k: v for k, v in kwargs.items() if k not in ("prompt", "logprobs", "max_tokens", "temperature")}
+        extra = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ("prompt", "logprobs", "max_tokens", "temperature", "enable_thinking")
+        }
 
         if logprobs:
             key = self._api_key or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")

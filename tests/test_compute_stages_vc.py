@@ -1,7 +1,12 @@
 """Compute stages: VC follow-up and prompt prefix."""
 from __future__ import annotations
 
-from src.agent.compute_stages import VC_FOLLOWUP_PROMPT_MARKER, _extract_first_line, get_step_fn
+from src.agent.compute_stages import (
+    DEFAULT_VC_FOLLOWUP_INSTRUCTION,
+    VC_FOLLOWUP_PROMPT_MARKER,
+    _extract_first_line,
+    get_step_fn,
+)
 
 
 class _CountingModel:
@@ -11,6 +16,7 @@ class _CountingModel:
     def generate(self, prompt: str, logprobs: bool = False, **kwargs):
         self.calls += 1
         if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
+            assert kwargs.get("enable_thinking") is False
             return "65", [{"logprob": -0.1}] * 2 if logprobs else None
         return "A->C", [{"logprob": -0.5}] * 3 if logprobs else None
 
@@ -39,6 +45,27 @@ def test_followup_vc_prompt_contains_task_context():
     assert "Scoped prefix line." in m.vc_prompt
     assert "=== TASK CONTEXT ===" in m.vc_prompt
     assert "current_obs" in m.vc_prompt
+    assert DEFAULT_VC_FOLLOWUP_INSTRUCTION in m.vc_prompt
+
+
+def test_followup_vc_prompt_can_override_instruction():
+    custom = "Rate 0-100 only.\n\nConfidence:"
+
+    class _Cap2:
+        vc_prompt: str | None = None
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
+                self.vc_prompt = prompt
+                return "60", [{"logprob": -0.1}] * 2 if logprobs else None
+            return "north", [{"logprob": -0.5}] * 3 if logprobs else None
+
+    m2 = _Cap2()
+    step = get_step_fn("C0", vc_mode="followup", vc_followup_instruction=custom)
+    step("obs", [], m2)
+    assert m2.vc_prompt is not None
+    assert custom in m2.vc_prompt
+    assert DEFAULT_VC_FOLLOWUP_INSTRUCTION not in m2.vc_prompt
 
 
 def test_inline_single_call():

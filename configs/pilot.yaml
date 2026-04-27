@@ -97,6 +97,13 @@ vc:
   mode: followup
   followup_max_tokens: 24
   followup_temperature: 0.0
+  # Verbalized confidence follow-up (ends with "Confidence:" for format compliance on small instruct models).
+  followup_instruction: |
+    How likely is the chosen action to be correct in this situation?
+    Respond with only a single integer between 0 and 100,
+    where 0 means certainly wrong and 100 means certainly correct.
+
+    Confidence:
 
 paths:
   # TextWorld pilot episodes load ``textworld_{instance}.z8`` (or ``.ulx``) from here or
