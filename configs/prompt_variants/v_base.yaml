@@ -69,6 +69,9 @@ vc:
   mode: followup
   followup_max_tokens: 24
   followup_temperature: 0.0
+  # C1 CoT / C0 completion caps inside VC follow-up (head+tail truncation; same task context as action call)
+  followup_cot_max_chars: 12000
+  vc_raw_completion_max_chars: 8000
 
 paths:
   tasks_dir: "data/tasks"

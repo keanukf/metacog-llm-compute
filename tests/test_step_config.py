@@ -14,6 +14,26 @@ def test_tower_of_hanoi_gets_default_prefix_and_action_cap():
     assert k["vc_mode"] == "followup"
     assert "Tower of Hanoi" in k["prompt_prefix"]
     assert k["action_max_tokens"] == 32
+    assert k["followup_max_context_chars"] is None
+    assert k["followup_cot_max_chars"] == 12000
+    assert k["vc_raw_completion_max_chars"] == 8000
+
+
+def test_vc_followup_budget_keys_from_yaml():
+    cfg = {
+        "inference": {"max_tokens": 128, "temperature": 0.2},
+        "vc": {
+            "mode": "followup",
+            "followup_max_context_chars": 50000,
+            "followup_cot_max_chars": 9000,
+            "vc_raw_completion_max_chars": 6000,
+        },
+        "domain_prompts": {"tower_of_hanoi": {"prefix": "x"}},
+    }
+    k = resolve_step_fn_kwargs(cfg, "tower_of_hanoi")
+    assert k["followup_max_context_chars"] == 50000
+    assert k["followup_cot_max_chars"] == 9000
+    assert k["vc_raw_completion_max_chars"] == 6000
 
 
 def test_textworld_uses_default_action_cap_and_stop():

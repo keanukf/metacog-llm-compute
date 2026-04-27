@@ -10,6 +10,9 @@ from src.signals import token_entropy, verbalized_confidence
 # (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None, prompt_full, response_full)
 StepReturn = tuple[str, dict[str, float] | None, float | None, int, int, Any, Any, str, str]
 
+# Present in every VC follow-up prompt — tests and mocks can detect the second call without coupling to wording details.
+VC_FOLLOWUP_PROMPT_MARKER = "=== YOUR OUTPUT TO JUDGE ==="
+
 
 def _build_prompt(observation: str, history: list[str], prompt_prefix: str) -> str:
     obs = (observation or "").strip()
@@ -69,28 +72,158 @@ def _action_generate_kwargs(
     return kw
 
 
-def _vc_followup_prompt(action_text: str) -> str:
-    truncated = (action_text or "").strip()
-    if len(truncated) > 500:
-        truncated = truncated[:500] + "…"
-    return (
-        f"You just chose the action:\n{truncated}\n\n"
+def _truncate_text(text: str, *, max_chars: int, head_ratio: float = 0.5) -> str:
+    """Same head/tail strategy as ``base_agent._truncate_for_history`` (duplicated to avoid import cycles)."""
+    t = text or ""
+    if max_chars <= 0 or len(t) <= max_chars:
+        return t
+    r = float(head_ratio)
+    if r <= 0.0:
+        head = 0
+    elif r >= 1.0:
+        head = max_chars
+    else:
+        head = int(max_chars * r)
+    tail = max_chars - head
+    return f"{t[:head]}\n…[snip]…\n{t[-tail:]}"
+
+
+def _build_model_output_to_judge_section(
+    stage_tag: str,
+    action_line: str,
+    *,
+    raw_action_completion: str | None,
+    cot_text: str | None,
+    verify_completion: str | None,
+    c2_n_samples: int | None,
+    c2_sample_first_lines: list[str] | None,
+    followup_cot_max_chars: int,
+    raw_completion_max_chars: int,
+) -> str:
+    """Text block for VC: must reflect what the model actually produced this turn (stage-dependent)."""
+    al = (action_line or "").strip()
+    tag = (stage_tag or "C0").strip().upper()
+    if tag == "C0":
+        raw = (raw_action_completion or "").strip()
+        raw_t = _truncate_text(raw, max_chars=raw_completion_max_chars) if raw else ""
+        parts = [f"--- Chosen command (first line, executed) ---\n{al}"]
+        if raw_t:
+            parts.append(f"--- Your full model completion (same turn) ---\n{raw_t}")
+        return "\n\n".join(parts)
+    if tag == "C1":
+        cot = (cot_text or "").strip()
+        cot_t = _truncate_text(cot, max_chars=followup_cot_max_chars) if cot else "(empty)"
+        ver = (verify_completion or "").strip()
+        ver_cap = max(4000, int(followup_cot_max_chars))
+        ver_t = _truncate_text(ver, max_chars=ver_cap) if ver else ""
+        parts = [
+            "--- Chain-of-thought (your reasoning for this turn) ---",
+            cot_t,
+            f"--- Final command after self-check (executed) ---\n{al}",
+        ]
+        if ver_t:
+            parts.extend(["--- Verify-phase raw completion ---", ver_t])
+        return "\n\n".join(parts)
+    if tag == "C2":
+        n = int(c2_n_samples or 0)
+        lines = c2_sample_first_lines or []
+        summary = "\n".join(f"  sample {i + 1}: {fl!r}" for i, fl in enumerate(lines))
+        return (
+            f"--- Selected command (majority vote among {n} samples) ---\n{al}\n\n"
+            f"--- Sample first-line commands ---\n{summary}"
+        )
+    return f"--- Chosen command ---\n{al}"
+
+
+def _build_vc_followup_prompt(
+    observation: str,
+    history: list[str],
+    prompt_prefix: str,
+    *,
+    stage_tag: str,
+    action_line: str,
+    raw_action_completion: str | None = None,
+    cot_text: str | None = None,
+    verify_completion: str | None = None,
+    c2_n_samples: int | None = None,
+    c2_sample_first_lines: list[str] | None = None,
+    followup_cot_max_chars: int = 12000,
+    followup_max_context_chars: int | None = None,
+    raw_completion_max_chars: int = 8000,
+) -> str:
+    """
+    VC follow-up uses the same task context as the action call (``observation`` / ``history`` / ``prompt_prefix``
+    must match what was passed into the step for action generation).
+    """
+    task_context = _build_prompt(observation, history, prompt_prefix)
+    judged = _build_model_output_to_judge_section(
+        stage_tag,
+        action_line,
+        raw_action_completion=raw_action_completion,
+        cot_text=cot_text,
+        verify_completion=verify_completion,
+        c2_n_samples=c2_n_samples,
+        c2_sample_first_lines=c2_sample_first_lines,
+        followup_cot_max_chars=followup_cot_max_chars,
+        raw_completion_max_chars=raw_completion_max_chars,
+    )
+    instruction = (
+        "Rate your metacognitive confidence (0-100) that your output under "
+        f'"{VC_FOLLOWUP_PROMPT_MARKER}" is appropriate for the task context above '
+        "(account for your reasoning where it was part of your answer).\n"
         "Output ONLY a single integer from 0 to 100 on one line. Nothing else.\n"
         "Example 1: 85\n"
         "Example 2: 40"
     )
+    full = (
+        "=== TASK CONTEXT ===\n"
+        f"{task_context}\n\n"
+        f"{VC_FOLLOWUP_PROMPT_MARKER}\n"
+        f"{judged}\n\n"
+        "=== INSTRUCTION ===\n"
+        f"{instruction}"
+    )
+    if followup_max_context_chars is not None and followup_max_context_chars > 0:
+        full = _truncate_text(full, max_chars=followup_max_context_chars)
+    return full
 
 
 def _run_vc_followup(
     model: Any,
-    action_text: str,
     *,
+    observation: str,
+    history: list[str],
+    prompt_prefix: str,
+    stage_tag: str,
+    action_line: str,
+    raw_action_completion: str | None = None,
+    cot_text: str | None = None,
+    verify_completion: str | None = None,
+    c2_n_samples: int | None = None,
+    c2_sample_first_lines: list[str] | None = None,
     followup_max_tokens: int,
     followup_temperature: float,
     request_logprobs: bool,
+    followup_max_context_chars: int | None = None,
+    followup_cot_max_chars: int = 12000,
+    raw_completion_max_chars: int = 8000,
 ) -> tuple[float | None, dict[str, Any] | None, int, int]:
     """Second LM call for verbalized confidence. Returns (vc, detail, extra_tokens, extra_calls)."""
-    prompt = _vc_followup_prompt(action_text)
+    prompt = _build_vc_followup_prompt(
+        observation,
+        history,
+        prompt_prefix,
+        stage_tag=stage_tag,
+        action_line=action_line,
+        raw_action_completion=raw_action_completion,
+        cot_text=cot_text,
+        verify_completion=verify_completion,
+        c2_n_samples=c2_n_samples,
+        c2_sample_first_lines=c2_sample_first_lines,
+        followup_cot_max_chars=followup_cot_max_chars,
+        followup_max_context_chars=followup_max_context_chars,
+        raw_completion_max_chars=raw_completion_max_chars,
+    )
     gen_kw = {"max_tokens": int(followup_max_tokens), "temperature": float(followup_temperature)}
     if request_logprobs:
         text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
@@ -109,13 +242,25 @@ def _run_vc_followup(
 
 def _resolve_vc(
     model: Any,
-    action_text: str,
     *,
     vc_mode: str,
     inline_text: str,
+    observation: str,
+    history: list[str],
+    prompt_prefix: str,
+    stage_tag: str,
+    action_line: str,
+    raw_action_completion: str | None = None,
+    cot_text: str | None = None,
+    verify_completion: str | None = None,
+    c2_n_samples: int | None = None,
+    c2_sample_first_lines: list[str] | None = None,
     vc_followup_logprobs: bool,
     followup_max_tokens: int,
     followup_temperature: float,
+    followup_max_context_chars: int | None = None,
+    followup_cot_max_chars: int = 12000,
+    raw_completion_max_chars: int = 8000,
 ) -> tuple[float | None, dict[str, Any] | None, int, int]:
     """Returns (vc, vc_detail, extra_tokens, extra_lm_calls)."""
     mode = (vc_mode or "inline").strip().lower()
@@ -124,10 +269,22 @@ def _resolve_vc(
     if mode == "followup":
         return _run_vc_followup(
             model,
-            action_text,
+            observation=observation,
+            history=history,
+            prompt_prefix=prompt_prefix,
+            stage_tag=stage_tag,
+            action_line=action_line,
+            raw_action_completion=raw_action_completion,
+            cot_text=cot_text,
+            verify_completion=verify_completion,
+            c2_n_samples=c2_n_samples,
+            c2_sample_first_lines=c2_sample_first_lines,
             followup_max_tokens=followup_max_tokens,
             followup_temperature=followup_temperature,
             request_logprobs=vc_followup_logprobs,
+            followup_max_context_chars=followup_max_context_chars,
+            followup_cot_max_chars=followup_cot_max_chars,
+            raw_completion_max_chars=raw_completion_max_chars,
         )
     vc = verbalized_confidence.parse_confidence(inline_text)
     return vc, None, 0, 0
@@ -147,6 +304,9 @@ def _c0_step_core(
     followup_max_tokens: int,
     followup_temperature: float,
     vc_followup_logprobs: bool,
+    followup_max_context_chars: int | None,
+    followup_cot_max_chars: int,
+    vc_raw_completion_max_chars: int,
 ) -> StepReturn:
     prompt = _build_prompt(observation, history, prompt_prefix)
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
@@ -159,12 +319,24 @@ def _c0_step_core(
 
     vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
         model,
-        action,
         vc_mode=vc_mode,
         inline_text=text,
+        observation=observation,
+        history=history,
+        prompt_prefix=prompt_prefix,
+        stage_tag="C0",
+        action_line=action,
+        raw_action_completion=text,
+        cot_text=None,
+        verify_completion=None,
+        c2_n_samples=None,
+        c2_sample_first_lines=None,
         vc_followup_logprobs=vc_followup_logprobs,
         followup_max_tokens=followup_max_tokens,
         followup_temperature=followup_temperature,
+        followup_max_context_chars=followup_max_context_chars,
+        followup_cot_max_chars=followup_cot_max_chars,
+        raw_completion_max_chars=vc_raw_completion_max_chars,
     )
     tokens_used += extra_tok
     lm_calls += extra_calls
@@ -187,6 +359,9 @@ def _c1_step_core(
     followup_max_tokens: int,
     followup_temperature: float,
     vc_followup_logprobs: bool,
+    followup_max_context_chars: int | None,
+    followup_cot_max_chars: int,
+    vc_raw_completion_max_chars: int,
 ) -> StepReturn:
     """
     C1: two LM calls — (1) short chain-of-thought with a draft ``ACTION:`` line,
@@ -229,12 +404,24 @@ def _c1_step_core(
 
     vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
         model,
-        action,
         vc_mode=vc_mode,
         inline_text=final_text or "",
+        observation=observation,
+        history=history,
+        prompt_prefix=prompt_prefix,
+        stage_tag="C1",
+        action_line=action,
+        raw_action_completion=None,
+        cot_text=cot_text or "",
+        verify_completion=final_text or "",
+        c2_n_samples=None,
+        c2_sample_first_lines=None,
         vc_followup_logprobs=vc_followup_logprobs,
         followup_max_tokens=followup_max_tokens,
         followup_temperature=followup_temperature,
+        followup_max_context_chars=followup_max_context_chars,
+        followup_cot_max_chars=followup_cot_max_chars,
+        raw_completion_max_chars=vc_raw_completion_max_chars,
     )
     tokens_used += extra_tok
     lm_calls += extra_calls
@@ -272,6 +459,9 @@ def _c2_step_core(
     followup_max_tokens: int,
     followup_temperature: float,
     vc_followup_logprobs: bool,
+    followup_max_context_chars: int | None,
+    followup_cot_max_chars: int,
+    vc_raw_completion_max_chars: int,
 ) -> StepReturn:
     prompt = _build_prompt(observation, history, prompt_prefix)
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
@@ -314,10 +504,19 @@ def _c2_step_core(
     else:
         vc, vc_detail, extra_tok, extra_calls = _run_vc_followup(
             model,
-            winner,
+            observation=observation,
+            history=history,
+            prompt_prefix=prompt_prefix,
+            stage_tag="C2",
+            action_line=winner,
+            c2_n_samples=n_samples,
+            c2_sample_first_lines=list(actions),
             followup_max_tokens=followup_max_tokens,
             followup_temperature=followup_temperature,
             request_logprobs=vc_followup_logprobs,
+            followup_max_context_chars=followup_max_context_chars,
+            followup_cot_max_chars=followup_cot_max_chars,
+            raw_completion_max_chars=vc_raw_completion_max_chars,
         )
 
     total_tokens += extra_tok
@@ -350,6 +549,9 @@ def c0_step(
         followup_max_tokens=4,
         followup_temperature=0.0,
         vc_followup_logprobs=False,
+        followup_max_context_chars=None,
+        followup_cot_max_chars=12000,
+        vc_raw_completion_max_chars=8000,
     )
     return r[0], r[1], r[2], r[3], r[4]
 
@@ -373,6 +575,9 @@ def c1_step(
         followup_max_tokens=4,
         followup_temperature=0.0,
         vc_followup_logprobs=False,
+        followup_max_context_chars=None,
+        followup_cot_max_chars=12000,
+        vc_raw_completion_max_chars=8000,
     )
     return r[0], r[1], r[2], r[3], r[4]
 
@@ -398,6 +603,9 @@ def c2_step(
         followup_max_tokens=4,
         followup_temperature=0.0,
         vc_followup_logprobs=False,
+        followup_max_context_chars=None,
+        followup_cot_max_chars=12000,
+        vc_raw_completion_max_chars=8000,
     )
     return r[0], r[1], r[2], r[3], r[4]
 
@@ -414,6 +622,9 @@ def get_step_fn(
     action_stop: list[str] | None = None,
     followup_max_tokens: int = 4,
     followup_temperature: float = 0.0,
+    followup_max_context_chars: int | None = None,
+    followup_cot_max_chars: int = 12000,
+    vc_raw_completion_max_chars: int = 8000,
 ):
     """
     Return the step function for stage 'C0', 'C1', or 'C2'.
@@ -427,6 +638,13 @@ def get_step_fn(
     ``save_vc_distributions``: request logprobs on the VC follow-up call (when ``vc_mode`` is followup).
 
     ``vc_mode``: ``followup`` | ``inline`` | ``none``.
+
+    ``followup_max_context_chars``: optional hard cap on the full VC follow-up prompt length (can make VC
+    asymmetric vs the action prompt; prefer tightening ``history_*`` / observation limits instead).
+
+    ``followup_cot_max_chars``: max characters for the C1 CoT block inside the VC follow-up (head/tail truncation).
+
+    ``vc_raw_completion_max_chars``: max characters for the C0 full completion snippet in VC follow-up.
     """
     core_map = {
         "C0": _c0_step_core,
@@ -452,6 +670,9 @@ def get_step_fn(
                 followup_max_tokens=followup_max_tokens,
                 followup_temperature=followup_temperature,
                 vc_followup_logprobs=vc_followup_logprobs,
+                followup_max_context_chars=followup_max_context_chars,
+                followup_cot_max_chars=followup_cot_max_chars,
+                vc_raw_completion_max_chars=vc_raw_completion_max_chars,
             )
 
         return _w2
@@ -470,6 +691,9 @@ def get_step_fn(
             followup_max_tokens=followup_max_tokens,
             followup_temperature=followup_temperature,
             vc_followup_logprobs=vc_followup_logprobs,
+            followup_max_context_chars=followup_max_context_chars,
+            followup_cot_max_chars=followup_cot_max_chars,
+            vc_raw_completion_max_chars=vc_raw_completion_max_chars,
         )
 
     return _w

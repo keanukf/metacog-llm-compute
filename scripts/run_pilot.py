@@ -36,6 +36,7 @@ from src.utils.logging_utils import write_logprob_distribution_artifacts, write_
 from src.utils.step_config import resolve_step_fn_kwargs
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
 from src.utils.run_progress import format_run_elapsed, log, log_step_line
+from src.agent.compute_stages import VC_FOLLOWUP_PROMPT_MARKER
 
 
 def _logprob_export_settings(config: dict) -> tuple[bool, str, str]:
@@ -631,7 +632,7 @@ def run_test5_tower_of_hanoi(
 
     class MockModel:
         def generate(self, prompt, logprobs=False, **kwargs):
-            if "You just chose the action:" in (prompt or ""):
+            if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
                 t = "50"
                 lp = [{"logprob": -0.2}] * 2 if logprobs else None
                 return t, lp
@@ -859,7 +860,7 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
 
     class MockModel:
         def generate(self, prompt, logprobs=False, **kwargs):
-            if "You just chose the action:" in (prompt or ""):
+            if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
                 t = "80"
                 lp = [{"logprob": -0.15}] * 2 if logprobs else None
                 return t, lp
