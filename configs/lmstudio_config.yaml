@@ -46,7 +46,7 @@ test4_textworld:
   max_rooms: 5
 
 tower_of_hanoi:
-  pilot_episodes: 10
+  pilot_episodes: 1
   pilot_num_disks: 3
   pilot_max_steps: 20
   # Conservative local diversification to avoid 10× identical starts.
