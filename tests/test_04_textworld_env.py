@@ -14,6 +14,7 @@ def test_textworld_env_reset_returns_observation():
     assert isinstance(obs, str)
     assert len(obs) > 0
     assert env.observation == obs
+    assert "Valid commands this turn:" not in obs
 
 
 def test_textworld_env_step_returns_next_observation():
@@ -110,6 +111,26 @@ def test_append_admissible_to_observation():
 
     assert _append_admissible_to_observation("x", {}) == "x"
     assert _append_admissible_to_observation("x", {"admissible_commands": []}) == "x"
+
+
+def test_textworld_env_opt_in_includes_admissible_in_observation():
+    class _FakeGymEnv:
+        def __init__(self) -> None:
+            self._reset_result: tuple[str, dict] | str = ("reset", {"admissible_commands": ["go north"]})
+            self._step_result: tuple[str, float, bool, dict] = ("step", 0.0, False, {"admissible_commands": ["look"]})
+
+        def reset(self):
+            return self._reset_result
+
+        def step(self, action: str):
+            return self._step_result
+
+    fake = _FakeGymEnv()
+    env = TextWorldEnv(game_file=None, max_steps=5, include_admissible_commands=True)
+    env._use_real = True
+    env._gym_env = fake
+    obs = env.reset()
+    assert "Valid commands this turn:" in obs
 
 
 class _FakeGymEnv:

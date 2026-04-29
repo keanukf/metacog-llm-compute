@@ -711,7 +711,9 @@ def run_test5_tower_of_hanoi(
         max_steps = max_steps_default
         if task_max_steps > 0:
             max_steps = max(max_steps_default, task_max_steps)
-        env = TowerOfHanoiEnv(task=task, max_steps=max_steps)
+        dom_cfg = (config.get("domain_prompts") or {}).get("tower_of_hanoi") if isinstance(config.get("domain_prompts"), dict) else None
+        include_vm = bool(dom_cfg.get("include_valid_moves", False)) if isinstance(dom_cfg, dict) else False
+        env = TowerOfHanoiEnv(task=task, max_steps=max_steps, include_valid_moves=include_vm)
         step_cfg = resolve_step_fn_kwargs(config, "tower_of_hanoi")
         hist_keys = {
             "history_keep_last_pairs",

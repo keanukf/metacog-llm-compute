@@ -151,9 +151,16 @@ class TextWorldEnv:
     When game_file is set and textworld is available, uses textworld.gym; else stub.
     """
 
-    def __init__(self, game_file: str | None = None, max_steps: int = 20) -> None:
+    def __init__(
+        self,
+        game_file: str | None = None,
+        max_steps: int = 20,
+        *,
+        include_admissible_commands: bool = False,
+    ) -> None:
         self._game_file = game_file
         self._max_steps = max_steps
+        self._include_admissible_commands = bool(include_admissible_commands)
         self.observation = ""
         self.done = False
         self._step_count = 0
@@ -244,7 +251,8 @@ class TextWorldEnv:
             self.observation = obs if isinstance(obs, str) else str(obs)
             self._last_score = self._parse_score(info)
             self._last_admissible = info.get("admissible_commands")
-            self.observation = _append_admissible_to_observation(self.observation, info)
+            if self._include_admissible_commands:
+                self.observation = _append_admissible_to_observation(self.observation, info)
             return self.observation
         self.observation = (
             "You are in a small room. Exits: north.\n\n"
@@ -261,7 +269,8 @@ class TextWorldEnv:
             result = self._gym_env.step(action)
             obs, reward, done, info = _unpack_gym_step(result)
             self.observation = obs if isinstance(obs, str) else str(obs)
-            self.observation = _append_admissible_to_observation(self.observation, info)
+            if self._include_admissible_commands:
+                self.observation = _append_admissible_to_observation(self.observation, info)
             self.done = done
             score_before = self._last_score
             score_after = self._parse_score(info)

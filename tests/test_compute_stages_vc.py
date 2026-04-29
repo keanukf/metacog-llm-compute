@@ -9,6 +9,67 @@ from src.agent.compute_stages import (
 )
 
 
+def test_c0_tle_is_action_line_only_when_tokens_present():
+    class _M:
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            # Multiline completion: action line then extra text.
+            text = "go north\nextra reasoning"
+            if not logprobs:
+                return text, None
+            lp = [
+                {"token": "go", "logprob": -0.1},
+                {"token": " ", "logprob": -0.1},
+                {"token": "north", "logprob": -0.1},
+                {"token": "\n", "logprob": -0.1},
+                {"token": "extra", "logprob": -5.0},
+            ]
+            return text, lp
+
+    m = _M()
+    step = get_step_fn("C0", vc_mode="none")
+    _action, tle, _vc, _tok, _calls, *_rest = step("obs", [], m)
+    assert tle is not None
+    # Ensure we did not include the very low-prob extra token by verifying mean entropy differs
+    # from computing on the full sequence.
+    from src.signals.token_entropy import compute_tle
+
+    assert tle["mean_entropy"] != compute_tle([{"logprob": -0.1}] * 4 + [{"logprob": -5.0}])["mean_entropy"]
+
+
+def test_c1_tle_comes_from_verify_call_and_is_action_only():
+    class _C1Model:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.calls += 1
+            if "--- Verify ---" in (prompt or ""):
+                text = "take key\nbecause..."
+                if not logprobs:
+                    return text, None
+                lp = [
+                    {"token": "take", "logprob": -0.2},
+                    {"token": " ", "logprob": -0.2},
+                    {"token": "key", "logprob": -0.2},
+                    {"token": "\n", "logprob": -0.2},
+                    {"token": "because", "logprob": -6.0},
+                ]
+                return text, lp
+            # CoT call (ignored for TLE)
+            return "Think.\nACTION: take key", ([{"logprob": -0.01}] * 50 if logprobs else None)
+
+    m = _C1Model()
+    step = get_step_fn("C1", vc_mode="none")
+    _action, tle, _vc, _tok, calls, *_rest = step("obs", [], m)
+    assert calls == 2
+    assert m.calls == 2
+    assert tle is not None
+    from src.signals.token_entropy import compute_tle
+
+    # TLE should reflect only the action line tokens (first 4), not the low-prob tail token.
+    assert tle["mean_entropy"] == compute_tle([{"logprob": -0.2}] * 4)["mean_entropy"]
+
+
 class _CountingModel:
     def __init__(self) -> None:
         self.calls = 0
@@ -150,6 +211,18 @@ def test_c1_two_lm_calls_with_followup_vc():
     assert lm_calls == 3
     assert m.calls == 3
     assert vc == 70.0
+
+
+def test_c0_multiline_without_token_text_yields_no_tle():
+    class _M:
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            text = "go north\nextra"
+            return text, ([{"logprob": -0.2}] * 5 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn("C0", vc_mode="none")
+    _action, tle, _vc, _tok, _calls, *_rest = step("obs", [], m)
+    assert tle is None
 
 
 def test_c1_vc_followup_includes_chain_of_thought():

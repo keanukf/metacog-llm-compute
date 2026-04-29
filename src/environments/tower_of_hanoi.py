@@ -99,13 +99,20 @@ class TowerOfHanoiEnv:
     Text environment with reset() and step(action) API used by the agent loop.
     """
 
-    def __init__(self, task: dict, max_steps: int = 50) -> None:
+    def __init__(
+        self,
+        task: dict,
+        max_steps: int = 50,
+        *,
+        include_valid_moves: bool = False,
+    ) -> None:
         self._task = task
         self._num_disks = int(task["num_disks"])
         self._initial_state: PegState = _copy_state(task["initial_state"])
         self._state: PegState = _copy_state(self._initial_state)
         self._error_message = ""
         self._max_steps = int(max_steps)
+        self._include_valid_moves = bool(include_valid_moves)
         self.observation: str = ""
         self.done = False
         self.task_success = False
@@ -116,7 +123,6 @@ class TowerOfHanoiEnv:
             self._optimal_solution = _shortest_path_to_goal(self._state, self._num_disks)
 
     def _render_observation(self) -> str:
-        valid = ", ".join(_format_move(mv) for mv in _legal_moves(self._state))
         lines = [
             "Current state:",
             f"  Peg A: {self._state['A']}",
@@ -124,9 +130,14 @@ class TowerOfHanoiEnv:
             f"  Peg C: {self._state['C']}",
             "Goal: Move all disks to Peg C.",
             "Rules: move only the top disk from a peg; never put a larger disk on a smaller one.",
-            f"Valid moves: {valid} — choose exactly one of these.",
             "Reply with a single move: peg letters only, e.g. A->C or A to C.",
         ]
+        if self._include_valid_moves:
+            valid = ", ".join(_format_move(mv) for mv in _legal_moves(self._state))
+            lines.insert(
+                6,
+                f"Valid moves: {valid} — choose exactly one of these.",
+            )
         if self._error_message:
             lines.insert(0, f"Illegal move: {self._error_message}")
         return "\n".join(lines)

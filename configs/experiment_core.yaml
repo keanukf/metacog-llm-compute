@@ -65,18 +65,31 @@ domain_prompts:
       latest game text shown below. Output exactly one imperative command on a single line—typical
       forms include movement (go north), looking (look), and object use (take knife, open door).
       Do not add narration, quotes around the command, role-play, multiple commands, or reasoning.
-      If the text includes a line starting with "Valid commands this turn:", choose one of those
-      commands when possible.
+      
+      Command templates (valid forms; do NOT assume an explicit list of allowed commands will be provided):
+      - go [north|south|east|west|up|down]
+      - take [object]
+      - drop [object]
+      - examine [object]
+      - open [container]
+      - close [container]
+      - put [object] in [container]
+      - cook [object] with [tool]
+      - inventory
+      - look
     action_max_tokens: 32
     action_stop: ["\n"]
+    include_admissible_commands: false
   tower_of_hanoi:
     prefix: >
       You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty
-      peg or on a larger-numbered disk. Each turn you must choose exactly one move from the line
-      starting with "Valid moves:" in the task text—do not output any other peg pair. Respond with
-      ONLY your move as X->Y using peg letters A, B, or C (e.g. A->C). Do not use disk numbers. Do
-      not explain your reasoning.
+      peg or on a larger-numbered disk.
+
+      Output format:
+      - Output exactly ONE move as [source_peg]->[target_peg] using only A, B, or C (e.g. A->C).
+      - No disk numbers. No explanation. Single line only.
     action_max_tokens: 32
+    include_valid_moves: false
 
 # Verbalized confidence: separate short follow-up call (recommended) or parse from action text (inline).
 vc:

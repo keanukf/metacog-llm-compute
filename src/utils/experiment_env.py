@@ -77,9 +77,21 @@ def make_experiment_env(
     """Create environment for calibration / phase-2 runs (TextWorld, Tower of Hanoi)."""
     from src.environments.textworld_env import TextWorldEnv
 
+    dom_cfg: dict[str, Any] | None = None
+    domain_prompts = config.get("domain_prompts")
+    if isinstance(domain_prompts, dict):
+        raw = domain_prompts.get(domain)
+        if isinstance(raw, dict):
+            dom_cfg = raw
+
     if domain == "textworld":
         game_file = resolve_textworld_game_path(instance, config, repo_root)
-        return TextWorldEnv(game_file=str(game_file) if game_file else None, max_steps=max_steps)
+        include_adm = bool(dom_cfg.get("include_admissible_commands", False)) if dom_cfg else False
+        return TextWorldEnv(
+            game_file=str(game_file) if game_file else None,
+            max_steps=max_steps,
+            include_admissible_commands=include_adm,
+        )
     if domain == "tower_of_hanoi":
         from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
 
@@ -94,5 +106,6 @@ def make_experiment_env(
             num_disks_range=(int(num_disks_range[0]), int(num_disks_range[1])),
             partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
         )[0]
-        return TowerOfHanoiEnv(task=task_instance, max_steps=max_steps)
+        include_vm = bool(dom_cfg.get("include_valid_moves", False)) if dom_cfg else False
+        return TowerOfHanoiEnv(task=task_instance, max_steps=max_steps, include_valid_moves=include_vm)
     return TextWorldEnv(game_file=None, max_steps=max_steps)

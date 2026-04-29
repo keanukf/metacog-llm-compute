@@ -27,9 +27,10 @@ DEFAULT_VC_FOLLOWUP_INSTRUCTION = (
 DEFAULT_C1_VERIFY_INSTRUCTION = (
     "You are doing a verification pass over a draft command.\n"
     "Check the following criteria against the task context above:\n"
-    "1) Availability: The command must be feasible in the current state; if the observation lists valid commands/moves, prefer one of those.\n"
-    "2) Goal-advancement: Prefer commands that make progress toward the stated goal; avoid repeating no-op actions.\n"
-    "3) Better-alternative check: If a strictly better available command exists (more progress / fixes an error), output that instead.\n\n"
+    "1) Format: Output exactly ONE imperative command on a single line (no quotes, no explanation, no ACTION: prefix).\n"
+    "2) Plausibility: The command must be feasible in the current state (e.g., referenced objects/pegs exist).\n"
+    "3) Goal-advancement: Prefer commands that make progress toward the stated goal; avoid repeating no-op actions.\n"
+    "4) Consistency: Avoid trivial oscillation unless the observation/state has changed in a way that warrants it.\n\n"
     "Output exactly ONE imperative command on a single line (no ACTION: prefix, no quotes, no explanation).\n"
 )
 
@@ -413,7 +414,7 @@ def _c0_step_core(
     prompt = _build_prompt(observation, history, prompt_prefix)
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
     text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
-    tle = token_entropy.extract_tle_from_response(text, logprobs) if logprobs else None
+    tle = token_entropy.extract_action_tle_from_response(text, logprobs) if logprobs else None
     tokens_used = len(logprobs) if logprobs else 0
     lm_calls = 1
 
@@ -511,7 +512,7 @@ def _c1_step_core(
     verify_stop = c1_verify_stop if c1_verify_stop is not None else action_stop
     gen_kw = _action_generate_kwargs(verify_max_tokens, float(c1_verify_temperature), verify_stop)
     final_text, logprobs = model.generate(verify_prompt, logprobs=True, **gen_kw)
-    tle = token_entropy.extract_tle_from_response(final_text, logprobs) if logprobs else None
+    tle = token_entropy.extract_action_tle_from_response(final_text, logprobs) if logprobs else None
     tokens_used = len(logprobs) if logprobs else 0
     tokens_used += len(cot_lp) if cot_lp else 0
     lm_calls = 2
@@ -682,7 +683,7 @@ def _c2_step_core(
     for s in samples:
         lp = s.get("logprobs")
         raw_text = str(s.get("response") or "")
-        s["tle"] = token_entropy.extract_tle_from_response(raw_text, lp) if lp else None
+        s["tle"] = token_entropy.extract_action_tle_from_response(raw_text, lp) if lp else None
         if lp and isinstance(lp, list):
             vals = [float(x.get("logprob")) for x in lp if isinstance(x, dict) and x.get("logprob") is not None]
             s["mean_logprob"] = (sum(vals) / len(vals)) if vals else None
