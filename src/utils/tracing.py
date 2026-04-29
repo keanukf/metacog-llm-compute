@@ -8,6 +8,7 @@ Requires ``langfuse`` (see optional dependency group ``tracing`` in pyproject.to
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import warnings
 from typing import Any, Protocol
@@ -46,6 +47,40 @@ class TraceHook(Protocol):
     ) -> None: ...
 
     # Optional richer API (used when implemented):
+    def start_step_observation(  # pragma: no cover - protocol only
+        self,
+        *,
+        step_index: int,
+        stage: str,
+        observation: str,
+        metadata: dict[str, Any] | None,
+    ):
+        """
+        Context manager that brackets the *entire step wall time*.
+
+        Duration in Langfuse is derived from observation start/end, so this must be entered
+        before step work begins and exited after all step work completes.
+        """
+        ...
+
+    def log_step_children(  # pragma: no cover - protocol only
+        self,
+        *,
+        step_span: Any,
+        step_index: int,
+        stage: str,
+        action: str,
+        prompt: str,
+        action_output: str,
+        model_name: str | None,
+        metadata: dict[str, Any] | None,
+        strategy: str | None = None,
+        vc_prompt: str | None = None,
+        vc_output: str | None = None,
+    ) -> None:
+        """Create action + VC observations as children of an already-active step span."""
+        ...
+
     def log_step(  # pragma: no cover - protocol only
         self,
         *,
@@ -103,6 +138,33 @@ class NullTraceHook:
         step_index: int,
         stage: str,
         observation: str,
+        action: str,
+        prompt: str,
+        action_output: str,
+        model_name: str | None,
+        metadata: dict[str, Any] | None,
+        strategy: str | None = None,
+        vc_prompt: str | None = None,
+        vc_output: str | None = None,
+    ) -> None:
+        return None
+
+    def start_step_observation(
+        self,
+        *,
+        step_index: int,
+        stage: str,
+        observation: str,
+        metadata: dict[str, Any] | None,
+    ):
+        return contextlib.nullcontext(None)
+
+    def log_step_children(
+        self,
+        *,
+        step_span: Any,
+        step_index: int,
+        stage: str,
         action: str,
         prompt: str,
         action_output: str,
@@ -393,6 +455,94 @@ class LangfuseTraceHook:
             warnings.warn(
                 f"Langfuse log_action_generation failed (step_{step_index}_{compute_stage}): {e!s}"
             )
+
+    def start_step_observation(
+        self,
+        *,
+        step_index: int,
+        stage: str,
+        observation: str,
+        metadata: dict[str, Any] | None,
+    ):
+        if self._otel_api and self._root_span is not None:
+            step_meta = dict(metadata or {})
+            step_meta["stage"] = stage
+            if self._session_id:
+                step_meta["session_id"] = self._session_id
+            if self._episode_tags:
+                step_meta["trace_tags"] = list(self._episode_tags)
+            return self._client.start_as_current_observation(
+                as_type="span",
+                name=f"step_{step_index}",
+                input=observation,
+                metadata=step_meta,
+            )
+        return contextlib.nullcontext(None)
+
+    def log_step_children(
+        self,
+        *,
+        step_span: Any,
+        step_index: int,
+        stage: str,
+        action: str,
+        prompt: str,
+        action_output: str,
+        model_name: str | None,
+        metadata: dict[str, Any] | None,
+        strategy: str | None = None,
+        vc_prompt: str | None = None,
+        vc_output: str | None = None,
+    ) -> None:
+        if not (self._otel_api and step_span is not None):
+            return
+        try:
+            action_meta = dict(metadata or {})
+            action_meta["stage"] = stage
+            action_meta["action"] = action
+            if strategy:
+                action_meta["strategy"] = strategy
+            if self._session_id:
+                action_meta["session_id"] = self._session_id
+            if self._episode_tags:
+                action_meta["trace_tags"] = list(self._episode_tags)
+
+            # Keep action + VC as children of step (hierarchy stable).
+            action_gen = step_span.start_observation(
+                name=f"action_{step_index}_{stage}",
+                as_type="generation",
+                model=model_name or "unknown",
+                input=prompt,
+                metadata=action_meta,
+            )
+            try:
+                action_gen.update(output=action_output)
+            except Exception:
+                pass
+
+            if vc_prompt and vc_output:
+                vc_meta = dict(metadata or {})
+                vc_meta["stage"] = stage
+                vc_meta["kind"] = "vc_followup"
+                if self._session_id:
+                    vc_meta["session_id"] = self._session_id
+                if self._episode_tags:
+                    vc_meta["trace_tags"] = list(self._episode_tags)
+                with step_span.start_as_current_observation(
+                    as_type="generation",
+                    name=f"vc_followup_{step_index}",
+                    model=model_name or "unknown",
+                    input=vc_prompt,
+                    metadata=vc_meta,
+                ) as vc_gen:
+                    vc_gen.update(output=vc_output)
+
+            try:
+                action_gen.end()
+            except Exception:
+                pass
+        except Exception as e:
+            warnings.warn(f"Langfuse log_step_children failed (step_{step_index}): {e!s}")
 
     def log_step(
         self,
