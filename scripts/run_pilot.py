@@ -624,7 +624,13 @@ def run_test5_tower_of_hanoi(
     Completion-plan add-on: Tower of Hanoi move parseability on real outputs.
     Measures fraction of steps where env recorded a parsed move (action_parsed != None).
     """
-    log("Test 5: Tower of Hanoi parseability — start (C0; per-step progress below)")
+    from src.utils.compute_stage_selection import resolve_compute_stages_for_domain
+
+    stages = resolve_compute_stages_for_domain(config, domain="tower_of_hanoi")
+    stage = stages[0] if stages else "C0"
+    if len(stages) > 1:
+        log(f"Test 5: note: multiple stages configured ({stages}); running first only: {stage}")
+    log(f"Test 5: Tower of Hanoi parseability — start ({stage}; per-step progress below)")
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
@@ -675,7 +681,7 @@ def run_test5_tower_of_hanoi(
         "Test 5: ToH plan "
         f"{num_episodes} episodes; num_disks_range={list(num_disks_range)} "
         f"partial_start_range={list(partial_start_range)} "
-        f"default_max_steps={max_steps_default} → ≤{worst_lm} steps (C0)"
+        f"default_max_steps={max_steps_default} → ≤{worst_lm} steps ({stage})"
     )
     parseable_steps = 0
     total_steps = 0
@@ -714,21 +720,21 @@ def run_test5_tower_of_hanoi(
         }
         history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in hist_keys}
         step_fn = get_step_fn(
-            "C0",
+            stage,
             save_logprob_distributions=save_lp,
             save_vc_distributions=save_vc,
             **step_cfg,
         )
         log(
-            f"Test 5: ToH episode {i + 1}/{num_episodes} — running "
+            f"Test 5: ToH {stage} episode {i + 1}/{num_episodes} — running "
             f"(num_disks={task.get('num_disks')}, partial_start_moves={task.get('partial_start_moves')}, "
             f"max_steps={max_steps})..."
         )
-        ep_toh = f"ep_tower_of_hanoi_{i}_C0_0"
+        ep_toh = f"ep_tower_of_hanoi_{i}_{stage}_0"
         result = run_episode(
             env,
             model,
-            "C0",
+            stage,
             step_fn=step_fn,
             max_steps=max_steps,
             on_step=_make_toh_on_step(i, num_episodes),
@@ -740,12 +746,12 @@ def run_test5_tower_of_hanoi(
             trace_model_name=model_nm or None,
             trace_hook=trace_hk,
             trace_session_id=session_id,
-            trace_tags=[t for t in ([*base_tags, "C0", model_nm] if model_nm else [*base_tags, "C0"]) if t],
+            trace_tags=[t for t in ([*base_tags, stage, model_nm] if model_nm else [*base_tags, stage]) if t],
             trace_name=ep_toh,
             **history_cfg,
         )
         log(
-            f"Test 5: ToH episode done {i + 1}/{num_episodes} — steps={result['steps']} "
+            f"Test 5: ToH {stage} episode done {i + 1}/{num_episodes} — steps={result['steps']} "
             f"lm_calls={result.get('total_lm_calls', 0)} wall={result.get('wall_clock_time', 0):.2f}s "
             f"success={result.get('task_success')}"
         )
@@ -753,7 +759,7 @@ def run_test5_tower_of_hanoi(
             "episode_id": ep_toh,
             "domain": "tower_of_hanoi",
             "instance": i,
-            "compute_stage": "C0",
+            "compute_stage": stage,
             "run": 0,
             "task_success": result["task_success"],
             "steps": result["steps"],
@@ -856,6 +862,7 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
     log("Test 4: end-to-end TextWorld episodes — start")
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
+    from src.utils.compute_stage_selection import resolve_compute_stages_for_domain
     from src.utils.logging_utils import log_episode
 
     class MockModel:
@@ -872,7 +879,7 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
     save_lp, _, _ = _logprob_export_settings(config)
     save_vc, _, _ = _vc_export_settings(config)
     instances = config.get("pilot", {}).get("instances", 5)
-    stages = ["C0", "C1", "C2"]
+    stages = resolve_compute_stages_for_domain(config, domain="textworld")
     runs = config.get("pilot", {}).get("runs_per_instance", 1)
     total_episodes = instances * len(stages) * runs
     episode_idx = [0]
