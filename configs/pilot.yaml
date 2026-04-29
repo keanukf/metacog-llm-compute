@@ -97,7 +97,7 @@ domain_prompts:
       OBSERVATION says "Valid moves: A->B, A->C" → reply "A->C"
     action_max_tokens: 32
     action_stop: ["\n"]
-    action_temperature: 0.0
+    action_temperature: 0.3
     history_keep_last_pairs: 4
 
 vc:
