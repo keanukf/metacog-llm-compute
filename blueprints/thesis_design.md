@@ -119,14 +119,14 @@ Die Analogie:
 Die Studie implementiert ein kontrolliertes Experiment mit einem **2 × 3 × 2 Core-Design**:
 
 - **Faktor 1 — Metacognitives Signal (2 Stufen):** Token-Level Entropy (TLE), Verbalisierte Konfidenz (VC)
-- **Faktor 2 — Compute-Stufe (3 Stufen):** Direct Inference (C0), Chain-of-Thought mit Self-Check (C1), Best-of-N Sampling (C2)
+- **Faktor 2 — Compute-Stufe (3 Stufen):** Direct Inference (C0), Chain-of-Thought mit Self-Check (C1), Self-Consistency Sampling / Majority Vote (C2)
 - **Faktor 3 — Task-Domäne (2 Stufen):** Text-Navigation, Delayed-Cue Recall
 
 **Vereinfachungen gegenüber v1 und Begründung:**
 
 | v1 | v2 | Begründung |
 |----|-----|-----------|
-| 4 Compute-Stufen (Direct, Short CoT, Deep CoT, Tree Search) | 3 Stufen (Direct, CoT+Verify, Best-of-N) | CoT-Länge ist bei Instruction-Tuned-Modellen nicht extern steuerbar; Tree Search ersetzt durch Best-of-N (einfacher, dennoch starke Baseline nach Snell et al., 2024) |
+| 4 Compute-Stufen (Direct, Short CoT, Deep CoT, Tree Search) | 3 Stufen (Direct, CoT+Verify, Self-Consistency Vote) | CoT-Länge ist bei Instruction-Tuned-Modellen nicht extern steuerbar; Tree Search ersetzt durch Self-Consistency (einfacher, dennoch starke Baseline nach Snell et al., 2024) |
 | 3 Signale (TLE, VC, SC) | 2 Signale Core (TLE, VC) | Semantic Consistency erfordert 5× Sampling pro Step — zu teuer für Core; bleibt Extension |
 | 3 Domänen | 2 Domänen Core | Logical Reasoning bleibt Extension; 2 Domänen reichen für Cross-Domain-Test (RQ4) |
 | 2 Modelle | 1 Modell Core | Zweites Modell bleibt Extension; 1 Modell reicht für Kernhypothesen |
@@ -164,9 +164,9 @@ Das Modell wird explizit aufgefordert, nach seiner initialen Antwort eine Konfid
 |-------|-------------|----------|---------------|
 | C0 — Direct | Einzelner Forward Pass, keine Elaboration | System 1 | 1 |
 | C1 — CoT + Verify | Chain-of-Thought-Generierung + Self-Verification-Prompt | Deliberation | 2 |
-| C2 — Best-of-N | N=3 parallele Generierungen + Majority Vote | Exhaustive Analyse | 3 |
+| C2 — Self-Consistency (Majority Vote) | N=3 parallele Generierungen + Majority Vote | Exhaustive Analyse | 3 |
 
-**Begründung der Vereinfachung:** Die klare Abstufung 1/2/3 LM-Calls pro Step macht den Compute-Kontrast quantifizierbar und reproduzierbar. Best-of-N ersetzt Tree Search: einfacher zu implementieren, keine Branching-Logik nötig, und in der aktuellen Literatur als starke Test-Time-Compute-Methode etabliert (Snell et al., 2024).
+**Begründung der Vereinfachung:** Die klare Abstufung 1/2/3 LM-Calls pro Step macht den Compute-Kontrast quantifizierbar und reproduzierbar. Self-Consistency (Majority Vote über N Samples) ersetzt Tree Search: einfacher zu implementieren, keine Branching-Logik nötig, und in der aktuellen Literatur als starke Test-Time-Compute-Methode etabliert (Snell et al., 2024).
 
 ### D. Adaptiver Allokator (Regelbasiert)
 
@@ -174,7 +174,7 @@ Der Allokator nutzt das metacognitive Signal s ∈ [0,1] (normalisiert) und zwei
 
     if s < θ₁:        → C0 (Direct — hohe Konfidenz)
     elif s < θ₂:      → C1 (CoT + Verify — moderate Unsicherheit)
-    else:              → C2 (Best-of-N — hohe Unsicherheit)
+    else:              → C2 (Self-Consistency — hohe Unsicherheit)
 
 Die Schwellenwerte werden auf einem Validierungssplit (10% der Aufgaben pro Domäne) über Grid-Search optimiert.
 
@@ -212,7 +212,7 @@ Begründung für SLMs: (a) Lokale Inferenz ohne API-Abhängigkeit, (b) Reproduzi
 | Baseline | Beschreibung | Funktion |
 |----------|-------------|----------|
 | Always-C0 | Immer Direct Inference | Lower Bound (Speed) |
-| Always-C2 | Immer Best-of-N | Upper Bound (Performance) |
+| Always-C2 | Immer C2 Self-Consistency | Upper Bound (Performance) |
 | Random-Alloc | Zufällige Compute-Stufe pro Step | Kontrolle für den Effekt *informierter* Allokation |
 | EAGer-Style | Episoden-Level-Allokation: Entropie des ersten Steps bestimmt ein festes Compute-Level für alle Steps der Episode | Kontrolle für den Mehrwert von *Step-Level*- vs. Prompt-Level-Allokation |
 

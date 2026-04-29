@@ -502,7 +502,7 @@ class LangfuseTraceHook:
         if not (self._otel_api and step_span is not None):
             return
         try:
-            # If C1 provides subcalls, log them explicitly (cot + verify) instead of one merged action generation.
+            # If stages provide subcalls, log them explicitly instead of one merged action generation.
             did_subcalls = False
             if stage == "C1" and isinstance(subcalls, list) and subcalls:
                 for sc in subcalls:
@@ -528,6 +528,51 @@ class LangfuseTraceHook:
                         sc_meta["trace_tags"] = list(self._episode_tags)
                     gen = step_span.start_observation(
                         name=f"{kind}_{step_index}_{stage}",
+                        as_type="generation",
+                        model=model_name or "unknown",
+                        input=str(sc.get("prompt") or ""),
+                        metadata=sc_meta,
+                    )
+                    try:
+                        gen.update(output=str(sc.get("response") or ""))
+                    except Exception:
+                        pass
+                    try:
+                        gen.end()
+                    except Exception:
+                        pass
+                did_subcalls = True
+
+            if stage == "C2" and isinstance(subcalls, list) and subcalls:
+                for sc in subcalls:
+                    if not isinstance(sc, dict):
+                        continue
+                    kind = str(sc.get("kind") or "").strip().lower()
+                    if kind != "sample":
+                        continue
+                    sc_meta = dict(metadata or {})
+                    sc_meta["stage"] = stage
+                    sc_meta["kind"] = "sample"
+                    sc_meta["counts_toward_compute"] = True
+                    if isinstance(sc.get("sample_index"), int):
+                        sc_meta["sample_index"] = int(sc.get("sample_index"))
+                    if isinstance(sc.get("is_winner"), bool):
+                        sc_meta["is_winner"] = bool(sc.get("is_winner"))
+                    if isinstance(sc.get("tokens_generated"), int):
+                        sc_meta["tokens_generated"] = int(sc.get("tokens_generated"))
+                    if sc.get("mean_logprob") is not None:
+                        sc_meta["mean_logprob"] = sc.get("mean_logprob")
+                    if sc.get("tle") is not None:
+                        sc_meta["tle"] = sc.get("tle")
+                    if strategy:
+                        sc_meta["strategy"] = strategy
+                    if self._session_id:
+                        sc_meta["session_id"] = self._session_id
+                    if self._episode_tags:
+                        sc_meta["trace_tags"] = list(self._episode_tags)
+                    si = sc_meta.get("sample_index", 0)
+                    gen = step_span.start_observation(
+                        name=f"sample_{si}_{step_index}_{stage}",
                         as_type="generation",
                         model=model_name or "unknown",
                         input=str(sc.get("prompt") or ""),
@@ -667,6 +712,49 @@ class LangfuseTraceHook:
                                 pass
                         did_subcalls = True
 
+                    if stage == "C2" and isinstance(subcalls, list) and subcalls:
+                        for sc in subcalls:
+                            if not isinstance(sc, dict):
+                                continue
+                            kind = str(sc.get("kind") or "").strip().lower()
+                            if kind != "sample":
+                                continue
+                            sc_meta = dict(metadata or {})
+                            sc_meta["stage"] = stage
+                            sc_meta["kind"] = "sample"
+                            sc_meta["counts_toward_compute"] = True
+                            if isinstance(sc.get("sample_index"), int):
+                                sc_meta["sample_index"] = int(sc.get("sample_index"))
+                            if isinstance(sc.get("is_winner"), bool):
+                                sc_meta["is_winner"] = bool(sc.get("is_winner"))
+                            if isinstance(sc.get("tokens_generated"), int):
+                                sc_meta["tokens_generated"] = int(sc.get("tokens_generated"))
+                            if sc.get("mean_logprob") is not None:
+                                sc_meta["mean_logprob"] = sc.get("mean_logprob")
+                            if sc.get("tle") is not None:
+                                sc_meta["tle"] = sc.get("tle")
+                            if self._session_id:
+                                sc_meta["session_id"] = self._session_id
+                            if self._episode_tags:
+                                sc_meta["trace_tags"] = list(self._episode_tags)
+                            si = sc_meta.get("sample_index", 0)
+                            gen = step_span.start_observation(
+                                name=f"sample_{si}_{step_index}_{stage}",
+                                as_type="generation",
+                                model=model_name or "unknown",
+                                input=str(sc.get("prompt") or ""),
+                                metadata=sc_meta,
+                            )
+                            try:
+                                gen.update(output=str(sc.get("response") or ""))
+                            except Exception:
+                                pass
+                            try:
+                                gen.end()
+                            except Exception:
+                                pass
+                        did_subcalls = True
+
                     if not did_subcalls:
                         action_meta = dict(metadata or {})
                         action_meta["stage"] = stage
@@ -764,6 +852,47 @@ class LangfuseTraceHook:
                         parent_span=step_span,
                         ctx=ctx,
                         name=f"{kind}_{step_index}_{stage}",
+                        model=model_name or "unknown",
+                        input_text=str(sc.get("prompt") or ""),
+                        output_text=str(sc.get("response") or ""),
+                        metadata=sc_meta,
+                        tags=list(self._episode_tags) if self._episode_tags else None,
+                        start_time=None,
+                        end_time=None,
+                    )
+                    self._end_observation(gen, end_time=None)
+                did_subcalls = True
+
+            if stage == "C2" and isinstance(subcalls, list) and subcalls:
+                for sc in subcalls:
+                    if not isinstance(sc, dict):
+                        continue
+                    kind = str(sc.get("kind") or "").strip().lower()
+                    if kind != "sample":
+                        continue
+                    sc_meta = dict(metadata or {})
+                    sc_meta["stage"] = stage
+                    sc_meta["kind"] = "sample"
+                    sc_meta["counts_toward_compute"] = True
+                    if isinstance(sc.get("sample_index"), int):
+                        sc_meta["sample_index"] = int(sc.get("sample_index"))
+                    if isinstance(sc.get("is_winner"), bool):
+                        sc_meta["is_winner"] = bool(sc.get("is_winner"))
+                    if isinstance(sc.get("tokens_generated"), int):
+                        sc_meta["tokens_generated"] = int(sc.get("tokens_generated"))
+                    if sc.get("mean_logprob") is not None:
+                        sc_meta["mean_logprob"] = sc.get("mean_logprob")
+                    if sc.get("tle") is not None:
+                        sc_meta["tle"] = sc.get("tle")
+                    if self._session_id:
+                        sc_meta["session_id"] = self._session_id
+                    if (not self._supports_observation_tags) and self._episode_tags:
+                        sc_meta["trace_tags"] = list(self._episode_tags)
+                    si = sc_meta.get("sample_index", 0)
+                    gen = self._start_generation_child(
+                        parent_span=step_span,
+                        ctx=ctx,
+                        name=f"sample_{si}_{step_index}_{stage}",
                         model=model_name or "unknown",
                         input_text=str(sc.get("prompt") or ""),
                         output_text=str(sc.get("response") or ""),

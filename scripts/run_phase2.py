@@ -291,6 +291,9 @@ def main() -> None:
                                 return _inner
 
                             on_step = _make_on_step(ep_id)
+                        # For adaptive runs we pass a per-episode seed into C2 so tie-breaking is reproducible.
+                        step_cfg = resolve_step_fn_kwargs(config, domain)
+                        step_cfg["c2_tie_break_seed"] = ep_id
                         result = run_adaptive_episode(
                             env,
                             model,
@@ -313,7 +316,7 @@ def main() -> None:
                                 str(model_cfg.get("name", "")) if str(model_cfg.get("name", "")) else "",
                             ],
                             trace_name=ep_id,
-                            **resolve_step_fn_kwargs(config, domain),
+                            **step_cfg,
                         )
                         data = {
                             "episode_id": ep_id,

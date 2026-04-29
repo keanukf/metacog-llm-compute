@@ -60,6 +60,7 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
     vc = config.get("vc") or {}
     inf = config.get("inference") or {}
     c1 = config.get("c1") or {}
+    c2 = config.get("c2") or {}
     mode = str(vc.get("mode", "inline")).strip() or "inline"
 
     domain_prompts = config.get("domain_prompts") or {}
@@ -229,6 +230,9 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         c1_verify_stop = [str(c1_verify_stop_raw)]
 
     return {
+        # C2 stage controls (self-consistency / majority vote)
+        "c2_n_samples": int(c2.get("n_samples", 3)),
+        "c2_tie_break_seed": c2.get("tie_break_seed"),
         "vc_mode": mode,
         "prompt_prefix": prompt_prefix,
         "action_max_tokens": action_max_tokens,

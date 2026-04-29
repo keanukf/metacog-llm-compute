@@ -2,7 +2,7 @@
 
 ## General information
 
-**Repository goal.** This is the thesis codebase for **metacognitive effort allocation in sequential language-model agents**. The core idea is to use lightweight proxy signals—**token-level entropy (TLE)** and **verbalized confidence (VC)**—to decide how much compute to spend per step (direct answer vs chain-of-thought with verification vs best-of-N). The pipeline includes calibration, an agent loop with fixed compute stages (**C0 / C1 / C2**), environments such as TextWorld and delayed-cue recall, and runners for local pilots and cloud experiments (e.g. RunPod). Design choices, sample sizes, and infrastructure are documented under `blueprints/`.
+**Repository goal.** This is the thesis codebase for **metacognitive effort allocation in sequential language-model agents**. The core idea is to use lightweight proxy signals—**token-level entropy (TLE)** and **verbalized confidence (VC)**—to decide how much compute to spend per step (direct answer vs chain-of-thought with verification vs **self-consistency sampling (majority vote over N samples)**). The pipeline includes calibration, an agent loop with fixed compute stages (**C0 / C1 / C2**), environments such as TextWorld and delayed-cue recall, and runners for local pilots and cloud experiments (e.g. RunPod). Design choices, sample sizes, and infrastructure are documented under `blueprints/`.
 
 **Structure (high level).**
 

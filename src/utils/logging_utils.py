@@ -310,7 +310,7 @@ def load_steps(checkpoint_dir: str | Path):
 
 def write_logprob_distribution_artifacts(
     episode_id: str,
-    logprob_raw_per_step: list[list[dict[str, Any]] | None] | None,
+    logprob_raw_per_step: list[Any] | None,
     output_dir: str | Path,
     *,
     export_format: str = "json",
@@ -329,14 +329,35 @@ def write_logprob_distribution_artifacts(
     out_dir = Path(output_dir) / logprob_subdir
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{episode_id}_logprobs"
-    steps_payload = [
-        {"step_index": i, "logprob_tokens": lp if lp is not None else []}
-        for i, lp in enumerate(logprob_raw_per_step)
-    ]
+    any_multi = False
+    steps_payload: list[dict[str, Any]] = []
+    for i, lp in enumerate(logprob_raw_per_step):
+        # Schema v1 per step: lp is list[dict] (token-level records).
+        if isinstance(lp, list) and (not lp or isinstance(lp[0], dict)):
+            steps_payload.append({"step_index": i, "logprob_tokens": lp if lp is not None else []})
+            continue
+        # Schema v2 per step (C2): lp is list[list[dict] | None] with one entry per sample.
+        if isinstance(lp, list) and lp and (lp[0] is None or isinstance(lp[0], list)):
+            any_multi = True
+            samples_payload = []
+            for si, s_lp in enumerate(lp):
+                samples_payload.append(
+                    {
+                        "sample_index": int(si),
+                        "logprob_tokens": s_lp if isinstance(s_lp, list) else [],
+                    }
+                )
+            steps_payload.append({"step_index": i, "samples": samples_payload})
+            continue
+        # Unknown / disabled for this step
+        steps_payload.append({"step_index": i, "logprob_tokens": []})
     body: dict[str, Any] = {
         "episode_id": episode_id,
-        "schema_version": 1,
-        "description": "Per env step: list of per-completion-token records (token, logprob, optional top_logprobs).",
+        "schema_version": 2 if any_multi else 1,
+        "description": (
+            "Per env step: token-level logprob records. "
+            "Schema v1 uses steps[].logprob_tokens; schema v2 may use steps[].samples[].logprob_tokens for multi-sample stages."
+        ),
         "steps": steps_payload,
     }
     written: list[Path] = []
@@ -354,6 +375,7 @@ def write_logprob_distribution_artifacts(
                 [
                     "episode_id",
                     "env_step_index",
+                    "sample_index",
                     "completion_token_index",
                     "rank_in_topk",
                     "token",
@@ -361,44 +383,82 @@ def write_logprob_distribution_artifacts(
                     "p_renorm_topk",
                 ]
             )
-            for env_i, lp_list in enumerate(logprob_raw_per_step):
-                if not lp_list:
-                    continue
-                for tok_i, tok in enumerate(lp_list):
-                    if not isinstance(tok, dict):
-                        continue
-                    top = tok.get("top_logprobs")
-                    if isinstance(top, list) and top:
-                        cands = [
-                            x
-                            for x in top
-                            if isinstance(x, dict) and x.get("logprob") is not None
-                        ]
-                        probs = softmax_probs_from_top_logprobs(top)
-                        for rank, (cand, pr) in enumerate(zip(cands, probs)):
+            for env_i, lp in enumerate(logprob_raw_per_step):
+                # Single-sample: list[dict]
+                if isinstance(lp, list) and (not lp or isinstance(lp[0], dict)):
+                    lp_list = lp
+                    for tok_i, tok in enumerate(lp_list):
+                        if not isinstance(tok, dict):
+                            continue
+                        top = tok.get("top_logprobs")
+                        if isinstance(top, list) and top:
+                            cands = [x for x in top if isinstance(x, dict) and x.get("logprob") is not None]
+                            probs = softmax_probs_from_top_logprobs(top)
+                            for rank, (cand, pr) in enumerate(zip(cands, probs)):
+                                w.writerow(
+                                    [
+                                        episode_id,
+                                        env_i,
+                                        0,
+                                        tok_i,
+                                        rank,
+                                        cand.get("token", ""),
+                                        cand.get("logprob", ""),
+                                        f"{pr:.8g}",
+                                    ]
+                                )
+                        else:
                             w.writerow(
                                 [
                                     episode_id,
                                     env_i,
+                                    0,
                                     tok_i,
-                                    rank,
-                                    cand.get("token", ""),
-                                    cand.get("logprob", ""),
-                                    f"{pr:.8g}",
+                                    0,
+                                    tok.get("token", ""),
+                                    tok.get("logprob", ""),
+                                    "1.0",
                                 ]
                             )
-                    else:
-                        w.writerow(
-                            [
-                                episode_id,
-                                env_i,
-                                tok_i,
-                                0,
-                                tok.get("token", ""),
-                                tok.get("logprob", ""),
-                                "1.0",
-                            ]
-                        )
+                    continue
+                # Multi-sample: list[list[dict] | None]
+                if isinstance(lp, list) and lp and (lp[0] is None or isinstance(lp[0], list)):
+                    for si, s_lp in enumerate(lp):
+                        if not isinstance(s_lp, list) or not s_lp:
+                            continue
+                        for tok_i, tok in enumerate(s_lp):
+                            if not isinstance(tok, dict):
+                                continue
+                            top = tok.get("top_logprobs")
+                            if isinstance(top, list) and top:
+                                cands = [x for x in top if isinstance(x, dict) and x.get("logprob") is not None]
+                                probs = softmax_probs_from_top_logprobs(top)
+                                for rank, (cand, pr) in enumerate(zip(cands, probs)):
+                                    w.writerow(
+                                        [
+                                            episode_id,
+                                            env_i,
+                                            si,
+                                            tok_i,
+                                            rank,
+                                            cand.get("token", ""),
+                                            cand.get("logprob", ""),
+                                            f"{pr:.8g}",
+                                        ]
+                                    )
+                            else:
+                                w.writerow(
+                                    [
+                                        episode_id,
+                                        env_i,
+                                        si,
+                                        tok_i,
+                                        0,
+                                        tok.get("token", ""),
+                                        tok.get("logprob", ""),
+                                        "1.0",
+                                    ]
+                                )
         written.append(p_csv)
     return written
 

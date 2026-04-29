@@ -10,7 +10,12 @@ import json
 import pytest
 
 from src.analysis.calibration import compute_ece
-from src.utils.logging_utils import compact_episode_for_storage, log_episode, write_vc_distribution_artifacts
+from src.utils.logging_utils import (
+    compact_episode_for_storage,
+    log_episode,
+    write_logprob_distribution_artifacts,
+    write_vc_distribution_artifacts,
+)
 
 
 def test_compact_episode_drops_verbose_keys():
@@ -70,3 +75,28 @@ def test_write_vc_distribution_artifacts_json(temp_results_dir):
         body = json.load(f)
     assert body["steps"][0]["vc_record"]["vc_value"] == 90.0
     assert body["steps"][1]["vc_record"] is None
+
+
+def test_write_logprob_distribution_artifacts_schema_v2_for_c2_multi_sample(temp_results_dir):
+    # Step 0: single-sample (schema v1 compatible)
+    lp0 = [{"token": "a", "logprob": -0.1}]
+    # Step 1: multi-sample (C2-like) - two samples
+    lp1 = [
+        [{"token": "b", "logprob": -0.2}],
+        [{"token": "c", "logprob": -0.3}],
+    ]
+    paths = write_logprob_distribution_artifacts(
+        "ep_test_lp_c2",
+        [lp0, lp1],
+        temp_results_dir,
+        export_format="json",
+        logprob_subdir="logprobs",
+    )
+    assert len(paths) == 1
+    assert paths[0].name == "ep_test_lp_c2_logprobs.json"
+    with open(paths[0]) as f:
+        body = json.load(f)
+    assert body["schema_version"] == 2
+    assert body["steps"][0]["logprob_tokens"][0]["token"] == "a"
+    assert body["steps"][1]["samples"][0]["sample_index"] == 0
+    assert body["steps"][1]["samples"][1]["sample_index"] == 1

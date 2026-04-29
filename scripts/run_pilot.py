@@ -693,6 +693,8 @@ def run_test5_tower_of_hanoi(
     oscillation_eps = 0
     min_opt_moves_remaining_sum = 0.0
     min_opt_moves_remaining_n = 0
+    c2_vote_agreements: list[float] = []
+    c2_unique_actions: list[int] = []
     save_tr, trace_hk = _step_trace_settings(config)
     model_nm = str(config.get("model", {}).get("name", ""))
     session_id = str(output_dir.name)
@@ -731,6 +733,8 @@ def run_test5_tower_of_hanoi(
             f"max_steps={max_steps})..."
         )
         ep_toh = f"ep_tower_of_hanoi_{i}_{stage}_0"
+        # Seed C2 tie-breaking deterministically per episode.
+        step_cfg["c2_tie_break_seed"] = ep_toh
         result = run_episode(
             env,
             model,
@@ -755,6 +759,16 @@ def run_test5_tower_of_hanoi(
             f"lm_calls={result.get('total_lm_calls', 0)} wall={result.get('wall_clock_time', 0):.2f}s "
             f"success={result.get('task_success')}"
         )
+        if stage == "C2":
+            for sd in result.get("steps_detail") or []:
+                if not isinstance(sd, dict):
+                    continue
+                va = sd.get("vote_agreement")
+                ua = sd.get("unique_actions")
+                if isinstance(va, (int, float)):
+                    c2_vote_agreements.append(float(va))
+                if isinstance(ua, int):
+                    c2_unique_actions.append(int(ua))
         data = {
             "episode_id": ep_toh,
             "domain": "tower_of_hanoi",
@@ -834,6 +848,22 @@ def run_test5_tower_of_hanoi(
         if min_opt_moves_remaining_n
         else None
     )
+    if stage == "C2" and c2_vote_agreements:
+        xs = sorted(c2_vote_agreements)
+        med = xs[len(xs) // 2]
+        mean = sum(xs) / len(xs)
+        log(
+            f"Test 5: C2 diversity summary — vote_agreement median={med:.3f} mean={mean:.3f} "
+            f"(n_steps={len(xs)})"
+        )
+    if stage == "C2" and c2_unique_actions:
+        ys = sorted(c2_unique_actions)
+        med_u = ys[len(ys) // 2]
+        mean_u = sum(ys) / len(ys)
+        log(
+            f"Test 5: C2 diversity summary — unique_actions median={med_u:.3f} mean={mean_u:.3f} "
+            f"(n_steps={len(ys)})"
+        )
     return {
         "num_episodes": num_episodes,
         "num_disks": num_disks,
@@ -902,6 +932,8 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
     session_id = str(output_dir.name)
     base_tags = ["pilot", "textworld", str(config.get("pilot_mode", "unknown")), session_id]
     episodes_data = []
+    c2_vote_agreements: list[float] = []
+    c2_unique_actions: list[int] = []
     for inst in range(instances):
         game_path = resolve_textworld_game_path(inst, config, REPO_ROOT)
         if game_path is not None:
@@ -929,6 +961,8 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     REPO_ROOT,
                 )
                 step_cfg = resolve_step_fn_kwargs(config, "textworld")
+                # Seed C2 tie-breaking deterministically per episode.
+                step_cfg["c2_tie_break_seed"] = ep_id
                 hist_keys = {
                     "history_keep_last_pairs",
                     "history_max_obs_chars",
@@ -968,6 +1002,16 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     f"lm_calls={result.get('total_lm_calls', 0)} wall={result.get('wall_clock_time', 0):.2f}s "
                     f"success={result.get('task_success')}"
                 )
+                if stage == "C2":
+                    for sd in result.get("steps_detail") or []:
+                        if not isinstance(sd, dict):
+                            continue
+                        va = sd.get("vote_agreement")
+                        ua = sd.get("unique_actions")
+                        if isinstance(va, (int, float)):
+                            c2_vote_agreements.append(float(va))
+                        if isinstance(ua, int):
+                            c2_unique_actions.append(int(ua))
                 data = {
                     "episode_id": ep_id,
                     "domain": "textworld",
@@ -990,6 +1034,22 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                 _maybe_write_vc_artifacts(config, ep_id, result, output_dir)
                 episodes_data.append(data)
                 _log_progress()
+    if c2_vote_agreements:
+        xs = sorted(c2_vote_agreements)
+        med = xs[len(xs) // 2]
+        mean = sum(xs) / len(xs)
+        log(
+            f"Test 4: C2 diversity summary — vote_agreement median={med:.3f} mean={mean:.3f} "
+            f"(n_steps={len(xs)})"
+        )
+    if c2_unique_actions:
+        ys = sorted(c2_unique_actions)
+        med_u = ys[len(ys) // 2]
+        mean_u = sum(ys) / len(ys)
+        log(
+            f"Test 4: C2 diversity summary — unique_actions median={med_u:.3f} mean={mean_u:.3f} "
+            f"(n_steps={len(ys)})"
+        )
     return episodes_data
 
 

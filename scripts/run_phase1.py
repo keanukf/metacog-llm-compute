@@ -272,6 +272,8 @@ def main() -> None:
                     try:
                         env = make_experiment_env(domain, inst, config, max_steps, REPO_ROOT)
                         step_cfg = resolve_step_fn_kwargs(config, domain)
+                        # Seed C2 tie-breaking deterministically per episode.
+                        step_cfg["c2_tie_break_seed"] = ep_id
                         hist_keys = {
                             "history_keep_last_pairs",
                             "history_max_obs_chars",

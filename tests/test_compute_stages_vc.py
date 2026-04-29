@@ -83,6 +83,42 @@ def test_c2_followup_adds_call_after_samples():
     assert m.calls == 4
 
 
+def test_c2_n_samples_is_configurable_and_traced():
+    class _M:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.calls += 1
+            # Make every sample identical so vote agreement is 1.0.
+            return "Go north.\nextra", ([{"logprob": -0.1}] * 2 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn("C2", vc_mode="none", c2_n_samples=5, c2_tie_break_seed="seed")
+    action, _tle, _vc, _tok, calls, *_rest = step("obs", [], m)
+    assert action == "Go north"  # punctuation stripped for execution
+    assert calls == 5
+    assert m.calls == 5
+
+
+def test_c2_vote_normalization_merges_surface_forms():
+    class _Seq:
+        def __init__(self) -> None:
+            self.i = 0
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.i += 1
+            outs = ["Go north.", "go  north", "GO NORTH!"]
+            text = outs[self.i - 1]
+            return text, ([{"logprob": -0.2}] * 2 if logprobs else None)
+
+    m = _Seq()
+    step = get_step_fn("C2", vc_mode="none", c2_n_samples=3, c2_tie_break_seed="seed")
+    action, _tle, _vc, _tok, _calls, *_rest = step("obs", [], m)
+    # All three should map to the same vote key; winner comes from the first matching sample.
+    assert action in {"Go north", "go north", "GO NORTH"}
+
+
 def test_extract_first_line_returns_first_non_empty():
     assert _extract_first_line("go north\nextra") == "go north"
     assert _extract_first_line("\n\n  take key  \n") == "take key"
