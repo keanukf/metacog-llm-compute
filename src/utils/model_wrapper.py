@@ -249,6 +249,36 @@ class ModelWrapper:
         """
         raise NotImplementedError("Use VLLMWrapper or HFWrapper in production")
 
+    def generate_many(
+        self,
+        prompt: str,
+        *,
+        n: int,
+        logprobs: bool = False,
+        max_tokens: int = 256,
+        temperature: float = 0.3,
+        **kwargs: Any,
+    ) -> list[tuple[str, list[dict[str, Any]] | None]]:
+        """
+        Generate N independent samples for the same prompt.
+
+        Default implementation falls back to calling ``generate`` N times.
+        Backends may override this to exploit native multi-sampling (e.g. vLLM SamplingParams(n=N)).
+        """
+        nn = max(1, int(n))
+        out: list[tuple[str, list[dict[str, Any]] | None]] = []
+        for _ in range(nn):
+            out.append(
+                self.generate(
+                    prompt,
+                    logprobs=logprobs,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    **kwargs,
+                )
+            )
+        return out
+
 
 class VLLMWrapper(ModelWrapper):
     """
@@ -389,6 +419,86 @@ class VLLMWrapper(ModelWrapper):
         else:
             lp_list = _normalize_logprobs(raw_lp) if logprobs else None
         return text, lp_list
+
+    def generate_many(
+        self,
+        prompt: str,
+        *,
+        n: int,
+        logprobs: bool = False,
+        max_tokens: int = 256,
+        temperature: float = 0.3,
+        **kwargs: Any,
+    ) -> list[tuple[str, list[dict[str, Any]] | None]]:
+        """
+        vLLM-native multi-sampling when supported; falls back to loop otherwise.
+        """
+        try:
+            from vllm import SamplingParams
+        except Exception:
+            return super().generate_many(
+                prompt,
+                n=n,
+                logprobs=logprobs,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                **kwargs,
+            )
+
+        self._ensure_loaded()
+        et = kwargs.pop("enable_thinking", None)
+        rendered_prompt = self._maybe_apply_chat_template(prompt, enable_thinking=et)
+        logprobs_param = 1 if logprobs else None
+        user_stop = kwargs.get("stop")
+        default_stop = self._default_stop_tokens()
+        merged_stop: list[str] | None = None
+        if user_stop is None:
+            merged_stop = default_stop or None
+        else:
+            merged: list[str] = []
+            if isinstance(user_stop, (list, tuple)):
+                merged.extend(str(s) for s in user_stop if s is not None)
+            else:
+                merged.append(str(user_stop))
+            merged.extend(s for s in default_stop if s and s not in merged)
+            merged_stop = merged or None
+
+        extra = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ("prompt", "logprobs", "max_tokens", "temperature", "stop", "enable_thinking")
+        }
+        nn = max(1, int(n))
+        try:
+            sampling_params = SamplingParams(
+                temperature=temperature,
+                max_tokens=max_tokens,
+                logprobs=logprobs_param,
+                stop=merged_stop,
+                n=nn,
+                **extra,
+            )
+            outputs = self._llm.generate([rendered_prompt], sampling_params)
+            if not outputs or not outputs[0].outputs:
+                return []
+            out: list[tuple[str, list[dict[str, Any]] | None]] = []
+            for o in outputs[0].outputs:
+                text = o.text or ""
+                raw_lp = getattr(o, "logprobs", None)
+                lp_list = _normalize_logprobs(raw_lp) if logprobs else None
+                out.append((text, lp_list))
+            return out
+        except TypeError:
+            # Some vLLM versions do not support SamplingParams(n=...). Fall back safely.
+            return super().generate_many(
+                prompt,
+                n=nn,
+                logprobs=logprobs,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stop=merged_stop,
+                enable_thinking=et,
+            )
 
 
 class HFWrapper(ModelWrapper):

@@ -68,7 +68,7 @@ Jede Instanz wird in 3 separaten Durchläufen (je 1 pro Compute-Stufe) absolvier
 |---------------|---------------|-----------|
 | C0 + Signale | 2 | 1 Action (+ Logprobs → TLE) + 1 VC-Prompt |
 | C1 (CoT+Verify) | 2 | 1 CoT-Generation + 1 Self-Verification |
-| C2 (Best-of-3) | 3 | 3 parallele Generierungen + Vote |
+| C2 (Self-Consistency, N=3) | 3 | 3 parallele Generierungen + Majority Vote |
 
 | Komponente | Berechnung | Ergebnis |
 |-----------|-----------|---------|
@@ -108,7 +108,7 @@ Jede Instanz wird in 3 separaten Durchläufen (je 1 pro Compute-Stufe) absolvier
 | Debugging & Reruns | +10% |
 | **Core Total** | **~59 GPU-Stunden** |
 
-**Reduktion gegenüber v1:** 108 → 59 Stunden (−45%). Hauptgrund: Tree Search (C3, ~14 Calls/Step) ersetzt durch Best-of-N (C2, 3 Calls/Step).
+**Reduktion gegenüber v1:** 108 → 59 Stunden (−45%). Hauptgrund: Tree Search (C3, ~14 Calls/Step) ersetzt durch Self-Consistency Sampling (C2, 3 Calls/Step).
 
 ### E. Extensions
 
@@ -175,7 +175,7 @@ Woche 6: Schreiben (Methodik + Ergebnisse + Diskussion)
 | Tag | Aufgabe | Wo |
 |-----|---------|-----|
 | Mo–Di | Signal-Extraktion (TLE via Logprobs + VC-Parsing) implementieren | Lokal (M1) |
-| Mi–Do | Compute-Stufen (C0, C1-CoT+Verify, C2-Best-of-3) implementieren | Lokal (M1) |
+| Mi–Do | Compute-Stufen (C0, C1-CoT+Verify, C2-Self-Consistency (N=3)) implementieren | Lokal (M1) |
 | Fr | Adaptiver Allokator + EAGer-Style-Baseline implementieren | Lokal (M1) |
 | Sa–So | 50 Task-Instanzen pro Domäne generieren + validieren | Lokal (M1) |
 
@@ -330,7 +330,7 @@ Erwartetes Ergebnis: 15 vollständige Datenpunkte → Hochrechnung auf Gesamtexp
 | 4 | Verbalisierte Konfidenz parsebar? | Ja | Few-Shot Prompting |
 | 5 | TextWorld installierbar und lauffähig? | Ja | Eigene Text-Environments |
 | 6 | Agent generiert valide TextWorld-Aktionen? | Ja | Action-Space-Constraining via Prompt |
-| 7 | Best-of-3 + Majority Vote funktioniert? | Ja | Konsistenzprüfung statt Majority Vote |
+| 7 | C2 Self-Consistency (N=3) + Majority Vote funktioniert? | Ja | Konsistenzprüfung statt Majority Vote |
 | 8 | End-to-End-Pipeline produziert vollständige Logs? | Ja | Logging-Framework debuggen |
 | 9 | Daten-Download + lokale Analyse machbar? | Ja | RunPod Network Volume als Zwischenspeicher |
 
@@ -361,7 +361,7 @@ thesis-metacognitive-allocation/
 ├── src/
 │   ├── agent/
 │   │   ├── base_agent.py          # Minimaler Agent-Loop (kein Framework)
-│   │   ├── compute_stages.py      # C0, C1 (CoT+Verify), C2 (Best-of-N)
+│   │   ├── compute_stages.py      # C0, C1 (CoT+Verify), C2 (Self-Consistency / majority vote)
 │   │   └── allocator.py           # Regelbasierter Allokator + Baselines
 │   ├── signals/
 │   │   ├── token_entropy.py       # TLE via vLLM-Logprobs

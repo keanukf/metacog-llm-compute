@@ -27,6 +27,10 @@ logging:
 tracing:
   langfuse_enabled: true
 
+# Compute stage C2 (Self-Consistency / majority vote).
+c2:
+  n_samples: 3
+
 domain_prompts:
   textworld:
     prefix: >

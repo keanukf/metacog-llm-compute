@@ -384,6 +384,10 @@ def run_episode(
                     "correctness": None,
                     "observation_length_chars": len(step_obs or ""),
                 }
+                if compute_stage == "C2" and isinstance(call_detail, dict):
+                    for k in ("vote_agreement", "unique_actions", "winner_index", "tie_broken"):
+                        if k in call_detail:
+                            row[k] = call_detail.get(k)
                 if vc_det:
                     row["vc_prompt"] = vc_det.get("vc_prompt")
                     row["vc_raw_text"] = vc_det.get("vc_raw_text")
@@ -602,6 +606,18 @@ def run_adaptive_episode(
     followup_max_tokens: int = 4,
     followup_temperature: float = 0.0,
     action_stop: list[str] | None = None,
+    followup_max_context_chars: int | None = None,
+    followup_cot_max_chars: int = 12000,
+    vc_raw_completion_max_chars: int = 8000,
+    vc_followup_instruction: str | None = None,
+    c1_cot_temperature: float | None = None,
+    c1_cot_max_tokens: int | None = None,
+    c1_verify_temperature: float = 0.0,
+    c1_verify_max_tokens: int | None = None,
+    c1_verify_stop: list[str] | None = None,
+    c1_verify_instruction: str | None = None,
+    c2_n_samples: int = 3,
+    c2_tie_break_seed: str | int | None = None,
     history_keep_last_pairs: int = 4,
     history_max_obs_chars: int = 1000,
     history_current_obs_max_chars: int = 1000,
@@ -632,13 +648,25 @@ def run_adaptive_episode(
                 stage,
                 save_logprob_distributions=save_logprob_distributions,
                 save_vc_distributions=save_vc_distributions,
+                c2_n_samples=int(c2_n_samples),
+                c2_tie_break_seed=c2_tie_break_seed,
                 vc_mode=vc_mode,
                 prompt_prefix=prompt_prefix,
+                vc_followup_instruction=vc_followup_instruction,
                 action_max_tokens=action_max_tokens,
                 action_temperature=action_temperature,
                 action_stop=action_stop,
                 followup_max_tokens=followup_max_tokens,
                 followup_temperature=followup_temperature,
+                followup_max_context_chars=followup_max_context_chars,
+                followup_cot_max_chars=followup_cot_max_chars,
+                vc_raw_completion_max_chars=vc_raw_completion_max_chars,
+                c1_cot_temperature=c1_cot_temperature,
+                c1_cot_max_tokens=c1_cot_max_tokens,
+                c1_verify_temperature=c1_verify_temperature,
+                c1_verify_max_tokens=c1_verify_max_tokens,
+                c1_verify_stop=c1_verify_stop,
+                c1_verify_instruction=c1_verify_instruction,
             )
 
     obs = env.reset()
@@ -724,6 +752,10 @@ def run_adaptive_episode(
                 "correctness": None,
                 "observation_length_chars": len(step_obs or ""),
             }
+            if stage == "C2" and isinstance(call_detail, dict):
+                for k in ("vote_agreement", "unique_actions", "winner_index", "tie_broken"):
+                    if k in call_detail:
+                        row_a[k] = call_detail.get(k)
             if vc_det:
                 row_a["vc_prompt"] = vc_det.get("vc_prompt")
                 row_a["vc_raw_text"] = vc_det.get("vc_raw_text")

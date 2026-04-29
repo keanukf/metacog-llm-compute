@@ -1,8 +1,11 @@
 """
-Compute stages: C0 (direct + logprobs), C1 (CoT + verify), C2 (best-of-N).
+Compute stages: C0 (direct + logprobs), C1 (CoT + verify), C2 (self-consistency / majority vote).
 """
 from __future__ import annotations
 
+import hashlib
+import random
+import re
 from typing import Any
 
 from src.signals import token_entropy, verbalized_confidence
@@ -92,6 +95,56 @@ def _normalize_action_line(text: str) -> str:
     if line.upper().startswith("ACTION:"):
         return line.split(":", 1)[1].strip()
     return line
+
+
+_TRAILING_PUNCT_RE = re.compile(r"[.!?]+$")
+
+
+def _normalize_vote_key(action_line: str) -> str:
+    """
+    Normalization used ONLY for voting / agreement statistics.
+
+    We intentionally do not over-normalize (e.g. we don't remove internal punctuation),
+    but we do collapse common surface-form variation so self-consistency is not
+    artificially deflated.
+    """
+    s = (action_line or "").strip()
+    if not s:
+        return ""
+    if s.upper().startswith("ACTION:"):
+        s = s.split(":", 1)[1].strip()
+    s = _TRAILING_PUNCT_RE.sub("", s).strip()
+    s = re.sub(r"\s+", " ", s)
+    return s.casefold()
+
+
+def _normalize_action_for_execution(action_line: str) -> str:
+    """
+    Canonical action string used for env.step(...).
+
+    Must be consistent with vote keys while being conservative (do NOT casefold),
+    so domains like Tower of Hanoi keep their expected surface form (e.g. "A->C").
+    """
+    s = (action_line or "").strip()
+    if not s:
+        return ""
+    if s.upper().startswith("ACTION:"):
+        s = s.split(":", 1)[1].strip()
+    s = _TRAILING_PUNCT_RE.sub("", s).strip()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+
+def _seeded_rng(seed_base: str | int | None, *, call_index: int) -> random.Random:
+    """
+    Deterministic RNG for tie-breaking in C2.
+
+    We use a stable hash to avoid Python's randomized hash() across processes.
+    """
+    base = "" if seed_base is None else str(seed_base)
+    h = hashlib.md5(f"{base}::{int(call_index)}".encode("utf-8")).hexdigest()
+    seed_int = int(h[:16], 16)
+    return random.Random(seed_int)
 
 
 def _extract_draft_action_from_cot(cot_text: str) -> str:
@@ -517,17 +570,27 @@ def _c1_step_core(
     return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, verify_prompt, response_full, call_detail)
 
 
-def _majority_vote(actions: list[str]) -> str:
-    if not actions:
-        return ""
+def _majority_vote(
+    vote_keys_in_order: list[str],
+    *,
+    rng: random.Random | None,
+) -> tuple[str, bool, dict[str, int]]:
+    """
+    Majority vote over pre-normalized vote keys.
+
+    Returns (winning_key, tie_broken, counts).
+    """
+    if not vote_keys_in_order:
+        return "", False, {}
     from collections import Counter
 
-    counts = Counter(actions)
+    counts = Counter(vote_keys_in_order)
     max_count = max(counts.values())
-    for a in actions:
-        if counts[a] == max_count:
-            return a
-    return actions[0]
+    tied = [k for k, c in counts.items() if c == max_count]
+    if len(tied) == 1:
+        return tied[0], False, dict(counts)
+    r = rng or random.Random(0)
+    return str(r.choice(tied)), True, dict(counts)
 
 
 def _c2_step_core(
@@ -536,6 +599,8 @@ def _c2_step_core(
     model: Any,
     n_samples: int = 3,
     *,
+    tie_break_seed: str | int | None = None,
+    call_index: int = 0,
     save_action_logprobs: bool,
     vc_mode: str,
     prompt_prefix: str,
@@ -552,27 +617,100 @@ def _c2_step_core(
 ) -> StepReturn:
     prompt = _build_prompt(observation, history, prompt_prefix)
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
-    # (first_line_action, raw_text, logprobs) per sample — TLE uses full completion; vote uses first line.
-    samples: list[tuple[str, str, Any]] = []
+    # Per sample: raw_first_line, action_exec, vote_key, raw_text, logprobs
+    samples: list[dict[str, Any]] = []
     total_tokens = 0
-    for _ in range(n_samples):
-        text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
-        first = _extract_first_line(text)
-        samples.append((first, text, logprobs))
-        total_tokens += len(logprobs) if logprobs else 0
-    actions = [s[0] for s in samples]
-    winner = _majority_vote(actions)
-    tle = None
-    win_logprobs: list[dict[str, Any]] | None = None
-    for first, raw_text, logprobs in samples:
-        if first == winner:
-            tle = token_entropy.extract_tle_from_response(raw_text, logprobs) if logprobs else None
-            win_logprobs = logprobs
+    n = max(1, int(n_samples))
+    # Optional backend optimization: vLLM can generate N samples in one call.
+    if hasattr(model, "generate_many") and callable(getattr(model, "generate_many")):
+        outs = model.generate_many(prompt, n=n, logprobs=True, **gen_kw)
+        for i, (text, logprobs) in enumerate(outs):
+            first_raw = _extract_first_line(text)
+            action_exec = _normalize_action_for_execution(first_raw)
+            vote_key = _normalize_vote_key(first_raw)
+            samples.append(
+                {
+                    "kind": "sample",
+                    "sample_index": int(i),
+                    "prompt": prompt,
+                    "response": text,
+                    "raw_first_line": first_raw,
+                    "action_exec": action_exec,
+                    "vote_key": vote_key,
+                    "logprobs": logprobs,
+                    "tokens_generated": int(len(logprobs) if logprobs else 0),
+                }
+            )
+            total_tokens += len(logprobs) if logprobs else 0
+    else:
+        for i in range(n):
+            text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
+            first_raw = _extract_first_line(text)
+            action_exec = _normalize_action_for_execution(first_raw)
+            vote_key = _normalize_vote_key(first_raw)
+            samples.append(
+                {
+                    "kind": "sample",
+                    "sample_index": int(i),
+                    "prompt": prompt,
+                    "response": text,
+                    "raw_first_line": first_raw,
+                    "action_exec": action_exec,
+                    "vote_key": vote_key,
+                    "logprobs": logprobs,
+                    "tokens_generated": int(len(logprobs) if logprobs else 0),
+                }
+            )
+            total_tokens += len(logprobs) if logprobs else 0
+
+    vote_keys = [str(s.get("vote_key") or "") for s in samples]
+    rng = _seeded_rng(tie_break_seed, call_index=int(call_index))
+    winning_key, tie_broken, vote_counts = _majority_vote(vote_keys, rng=rng)
+    max_count = max(vote_counts.values()) if vote_counts else 0
+    vote_agreement = (float(max_count) / float(n)) if n > 0 else 0.0
+    unique_actions = len({k for k in vote_keys if k})
+
+    winner_index: int | None = None
+    for s in samples:
+        if str(s.get("vote_key") or "") == winning_key:
+            winner_index = int(s.get("sample_index") or 0)
             break
-    if tle is None and samples:
-        _first, raw_text, logprobs = samples[0]
-        tle = token_entropy.extract_tle_from_response(raw_text, logprobs) if logprobs else None
-        win_logprobs = logprobs
+    if winner_index is None and samples:
+        winner_index = int(samples[0].get("sample_index") or 0)
+
+    # Per-sample metrics (secondary; primary TLE is the winner's).
+    for s in samples:
+        lp = s.get("logprobs")
+        raw_text = str(s.get("response") or "")
+        s["tle"] = token_entropy.extract_tle_from_response(raw_text, lp) if lp else None
+        if lp and isinstance(lp, list):
+            vals = [float(x.get("logprob")) for x in lp if isinstance(x, dict) and x.get("logprob") is not None]
+            s["mean_logprob"] = (sum(vals) / len(vals)) if vals else None
+        else:
+            s["mean_logprob"] = None
+
+    winner_action_exec = ""
+    winner_raw_first = ""
+    win_logprobs: list[dict[str, Any]] | None = None
+    winner_tle: dict[str, float] | None = None
+    winner_mean_logprob: float | None = None
+    for s in samples:
+        if str(s.get("vote_key") or "") == winning_key:
+            winner_action_exec = str(s.get("action_exec") or "")
+            winner_raw_first = str(s.get("raw_first_line") or "")
+            win_logprobs = s.get("logprobs")
+            winner_tle = s.get("tle")
+            mlp = s.get("mean_logprob")
+            winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
+            break
+    if not winner_action_exec and samples:
+        s0 = samples[0]
+        winner_action_exec = str(s0.get("action_exec") or "")
+        winner_raw_first = str(s0.get("raw_first_line") or "")
+        win_logprobs = s0.get("logprobs")
+        winner_tle = s0.get("tle")
+        mlp = s0.get("mean_logprob")
+        winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
 
     vc: float | None = None
     vc_detail: dict[str, Any] | None = None
@@ -580,12 +718,12 @@ def _c2_step_core(
     extra_calls = 0
     mode = (vc_mode or "inline").strip().lower()
     if mode == "inline":
-        for first, raw_text, _lp in samples:
-            if first == winner:
-                vc = verbalized_confidence.parse_confidence(raw_text)
+        for s in samples:
+            if str(s.get("vote_key") or "") == winning_key:
+                vc = verbalized_confidence.parse_confidence(str(s.get("response") or ""))
                 break
         if vc is None and samples:
-            vc = verbalized_confidence.parse_confidence(samples[0][1])
+            vc = verbalized_confidence.parse_confidence(str(samples[0].get("response") or ""))
     elif mode == "none":
         vc = None
     else:
@@ -595,10 +733,10 @@ def _c2_step_core(
             history=history,
             prompt_prefix=prompt_prefix,
             stage_tag="C2",
-            action_line=winner,
+            action_line=winner_action_exec,
             vc_followup_instruction=vc_followup_instruction,
-            c2_n_samples=n_samples,
-            c2_sample_first_lines=list(actions),
+            c2_n_samples=n,
+            c2_sample_first_lines=[str(s.get("raw_first_line") or "") for s in samples],
             followup_max_tokens=followup_max_tokens,
             followup_temperature=followup_temperature,
             request_logprobs=vc_followup_logprobs,
@@ -608,14 +746,61 @@ def _c2_step_core(
         )
 
     total_tokens += extra_tok
-    lm_calls = int(n_samples) + extra_calls
-    lp_saved = win_logprobs if save_action_logprobs else None
+    lm_calls = int(n) + extra_calls
+    if save_action_logprobs:
+        # For C2 we keep all samples' action logprobs so posthoc analysis can study agreement vs uncertainty.
+        lp_saved = [s.get("logprobs") if isinstance(s.get("logprobs"), list) else None for s in samples]
+    else:
+        lp_saved = None
     sample_blocks = [
-        f"=== sample {i + 1}/{n_samples} (first_line={first!r}) ===\n{raw_text}"
-        for i, (first, raw_text, _lp) in enumerate(samples)
+        f"=== sample {int(s.get('sample_index', 0)) + 1}/{n} (first_line={str(s.get('raw_first_line') or '')!r}) ===\n{str(s.get('response') or '')}"
+        for s in samples
     ]
     response_full = "\n\n".join(sample_blocks)
-    return (winner, tle, vc, total_tokens, lm_calls, lp_saved, vc_detail, prompt, response_full, None)
+    call_detail = {
+        "stage": "C2",
+        "method": "self_consistency_majority_vote",
+        "n_samples": int(n),
+        "winner_index": int(winner_index) if winner_index is not None else None,
+        "winning_vote_key": winning_key,
+        "tie_broken": bool(tie_broken),
+        "vote_counts": vote_counts,
+        "vote_agreement": float(vote_agreement),
+        "unique_actions": int(unique_actions),
+        "winner_raw_first_line": winner_raw_first,
+        "winner_mean_logprob": winner_mean_logprob,
+        "subcalls": [
+            {
+                "kind": "sample",
+                "sample_index": int(s.get("sample_index", 0)),
+                "prompt": s.get("prompt") or "",
+                "response": s.get("response") or "",
+                "raw_first_line": s.get("raw_first_line") or "",
+                "action_exec": s.get("action_exec") or "",
+                "action_normalized": s.get("vote_key") or "",
+                "tokens_generated": int(s.get("tokens_generated") or 0),
+                "tle": s.get("tle"),
+                "mean_logprob": s.get("mean_logprob"),
+                "is_winner": bool(
+                    winner_index is not None
+                    and int(s.get("sample_index") or 0) == int(winner_index)
+                ),
+            }
+            for s in samples
+        ],
+    }
+    return (
+        winner_action_exec,
+        winner_tle,
+        vc,
+        int(total_tokens),
+        int(lm_calls),
+        lp_saved,
+        vc_detail,
+        prompt,
+        response_full,
+        call_detail,
+    )
 
 
 def c0_step(
@@ -678,7 +863,7 @@ def c2_step(
     model: Any,
     n_samples: int = 3,
 ) -> tuple[str, dict[str, float] | None, float | None, int, int]:
-    """C2: Best-of-N samples + majority vote."""
+    """C2: Self-consistency sampling (N samples + majority vote)."""
     r = _c2_step_core(
         observation,
         history,
@@ -706,6 +891,8 @@ def get_step_fn(
     *,
     save_logprob_distributions: bool = False,
     save_vc_distributions: bool = False,
+    c2_n_samples: int = 3,
+    c2_tie_break_seed: str | int | None = None,
     vc_mode: str = "inline",
     prompt_prefix: str = "",
     vc_followup_instruction: str | None = None,
@@ -757,12 +944,20 @@ def get_step_fn(
 
     if stage == "C2":
 
+        c2_call_index = 0
+
         def _w2(obs: str, hist: list[str], m: Any):
+            nonlocal c2_call_index
+            idx = c2_call_index
+            c2_call_index += 1
             return fn(
                 obs,
                 hist,
                 m,
+                n_samples=int(c2_n_samples),
                 save_action_logprobs=save_logprob_distributions,
+                tie_break_seed=c2_tie_break_seed,
+                call_index=int(idx),
                 vc_mode=vc_mode,
                 prompt_prefix=prompt_prefix,
                 vc_followup_instruction=vc_instr,

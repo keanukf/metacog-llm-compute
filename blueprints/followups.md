@@ -7,7 +7,7 @@ sondern sollten vor Phase 1/2 (größere Runs, längere Episoden, Kosten) separa
 
 Aktueller Zustand:
 - In `configs/pilot.yaml` ist für TextWorld `history_max_obs_chars: 0` und `history_current_obs_max_chars: 0` gesetzt (Truncation aus).
-- Das ist für Debugging lokal sinnvoll, aber bei Phase 1/2 (mehr Steps, C2 Best-of-N) kann die Prompt-Länge schnell explodieren.
+- Das ist für Debugging lokal sinnvoll, aber bei Phase 1/2 (mehr Steps, C2 Self-Consistency / Majority-Vote Sampling) kann die Prompt-Länge schnell explodieren.
 
 Empfehlung:
 - Ein **Safety-Limit** implementieren, das unabhängig von Experiment-Parametern greift (z.B. harte Obergrenze in Tokens/Chars), plus Logging, wenn die Kappe greift.

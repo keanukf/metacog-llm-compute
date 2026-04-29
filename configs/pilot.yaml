@@ -65,6 +65,10 @@ c1:
   # verify_instruction: |
   #   (Override the default criteria-based verify instruction)
 
+# Compute stage C2 (Self-Consistency / majority vote).
+c2:
+  n_samples: 3
+
 # Domain prompting / action-generation settings (environment-specific; not signal extraction).
 domain_prompts:
   textworld:
@@ -81,7 +85,7 @@ domain_prompts:
       - Examples:
         - If you see: "You are in a small room. Exits: north." you can reply: go north
         - If you see: "You see a key here." you can reply: take key
-    action_max_tokens: 48
+    action_max_tokens: 256
     # Avoid stopping on the leading newline many chat/instruct models emit.
     action_stop: ["\n\n"]
     action_temperature: 0.3
@@ -106,7 +110,7 @@ domain_prompts:
       not explain your reasoning.
       Example:
       OBSERVATION says "Valid moves: A->B, A->C" → reply "A->C"
-    action_max_tokens: 32
+    action_max_tokens: 256
     action_stop: ["\n"]
     action_temperature: 0.3
     # Keep full action/observation history for Hanoi; the episodes are short (<= 20 steps)
