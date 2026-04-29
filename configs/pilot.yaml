@@ -54,6 +54,17 @@ tracing:
   langfuse_enabled: true
   # langfuse_host: "https://cloud.langfuse.com"   # EU: https://eu.cloud.langfuse.com
 
+# Compute stage C1 (CoT + verify) — explicitly parameterized for reproducibility.
+# verify_temperature defaults to 0.0 to make the verify distribution (and thus TLE) stable.
+c1:
+  cot_temperature: 0.5
+  # cot_max_tokens: 256
+  verify_temperature: 0.0
+  # verify_max_tokens: 48
+  # verify_stop: ["\n"]
+  # verify_instruction: |
+  #   (Override the default criteria-based verify instruction)
+
 # Domain prompting / action-generation settings (environment-specific; not signal extraction).
 domain_prompts:
   textworld:

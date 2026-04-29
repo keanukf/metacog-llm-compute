@@ -99,7 +99,9 @@ class _C1TwoCallModel:
         self.calls += 1
         if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
             return "70", [{"logprob": -0.1}] * 2 if logprobs else None
-        if "Self-check" in (prompt or ""):
+        if "--- Verify ---" in (prompt or ""):
+            # Verify should be deterministic by default (stabilizes TLE distribution).
+            assert float(kwargs.get("temperature", 0.0)) == 0.0
             return "go north", [{"logprob": -0.3}] * 4 if logprobs else None
         return "Consider the map.\nACTION: go north", [{"logprob": -0.5}] * 8 if logprobs else None
 
@@ -124,7 +126,7 @@ def test_c1_vc_followup_includes_chain_of_thought():
             if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
                 self.vc_prompt = prompt
                 return "55", [{"logprob": -0.1}] * 2 if logprobs else None
-            if "Self-check" in (prompt or ""):
+            if "--- Verify ---" in (prompt or ""):
                 return "go east", [{"logprob": -0.2}] * 3 if logprobs else None
             return "MarkerReasoningUnique42.\nACTION: go east", [{"logprob": -0.15}] * 10 if logprobs else None
 
@@ -143,7 +145,7 @@ def test_c1_two_lm_calls_vc_none():
 
         def generate(self, prompt: str, logprobs: bool = False, **kwargs):
             self.calls += 1
-            if "Self-check" in (prompt or ""):
+            if "--- Verify ---" in (prompt or ""):
                 return "take key", [{"logprob": -0.2}] * 3 if logprobs else None
             return "Plan.\nACTION: take key", [{"logprob": -0.4}] * 8 if logprobs else None
 

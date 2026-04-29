@@ -11,7 +11,7 @@ from src.utils.logging_utils import write_step_trace_line
 
 def test_normalize_step_result_nine_tuple():
     r = ("go south", {"mean_entropy": 0.1}, 50.0, 3, 2, None, None, "prompt text", "full\nresponse")
-    a, tle, vc, tok, calls, lp, vd, p, resp = _normalize_step_result(r)
+    a, tle, vc, tok, calls, lp, vd, p, resp, cd = _normalize_step_result(r)
     assert a == "go south"
     assert tle == {"mean_entropy": 0.1}
     assert vc == 50.0
@@ -19,6 +19,7 @@ def test_normalize_step_result_nine_tuple():
     assert calls == 2
     assert p == "prompt text"
     assert resp == "full\nresponse"
+    assert cd is None
 
 
 def test_write_step_trace_line_jsonl(tmp_path: Path) -> None:
@@ -269,6 +270,7 @@ def test_null_trace_hook_accepts_new_kwargs() -> None:
         metadata={"x": 1},
         vc_prompt="vp",
         vc_output="vo",
+        subcalls=[{"kind": "cot", "prompt": "x", "response": "y"}],
     )
     h.episode_end(output={"ok": True}, final_tags=["done"])
 

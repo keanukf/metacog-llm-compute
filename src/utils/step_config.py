@@ -59,6 +59,7 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
     """
     vc = config.get("vc") or {}
     inf = config.get("inference") or {}
+    c1 = config.get("c1") or {}
     mode = str(vc.get("mode", "inline")).strip() or "inline"
 
     domain_prompts = config.get("domain_prompts") or {}
@@ -209,6 +210,24 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
     else:
         followup_max_context_chars = int(fmc_raw)
 
+    # C1-specific knobs. Defaults are chosen to preserve historical behavior where possible.
+    # - verify_temperature defaults to 0.0 (methodologically important; stabilizes TLE distribution)
+    # - cot_temperature defaults to None (fallback inside compute_stages retains legacy 0.5 / action_temperature behavior)
+    c1_cot_temperature = c1.get("cot_temperature")
+    c1_cot_max_tokens = c1.get("cot_max_tokens")
+    c1_verify_temperature_raw = c1.get("verify_temperature", 0.0)
+    c1_verify_max_tokens = c1.get("verify_max_tokens")
+    c1_verify_stop_raw = c1.get("verify_stop")
+    c1_verify_instruction_raw = c1.get("verify_instruction")
+
+    c1_verify_stop: list[str] | None = None
+    if c1_verify_stop_raw is None or c1_verify_stop_raw is False:
+        c1_verify_stop = None
+    elif isinstance(c1_verify_stop_raw, (list, tuple)):
+        c1_verify_stop = [str(x) for x in c1_verify_stop_raw] if c1_verify_stop_raw else None
+    elif c1_verify_stop_raw is not None:
+        c1_verify_stop = [str(c1_verify_stop_raw)]
+
     return {
         "vc_mode": mode,
         "prompt_prefix": prompt_prefix,
@@ -221,6 +240,17 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         "followup_cot_max_chars": int(vc.get("followup_cot_max_chars", 12000)),
         "vc_raw_completion_max_chars": int(vc.get("vc_raw_completion_max_chars", 8000)),
         "vc_followup_instruction": vc_followup_instruction,
+        # C1 stage controls
+        "c1_cot_temperature": float(c1_cot_temperature) if c1_cot_temperature is not None else None,
+        "c1_cot_max_tokens": int(c1_cot_max_tokens) if c1_cot_max_tokens is not None else None,
+        "c1_verify_temperature": float(c1_verify_temperature_raw),
+        "c1_verify_max_tokens": int(c1_verify_max_tokens) if c1_verify_max_tokens is not None else None,
+        "c1_verify_stop": c1_verify_stop,
+        "c1_verify_instruction": (
+            str(c1_verify_instruction_raw).strip()
+            if c1_verify_instruction_raw is not None and str(c1_verify_instruction_raw).strip()
+            else None
+        ),
         # History / memory controls (consumed by base_agent.run_episode / run_adaptive_episode).
         # These live under domain_prompts.<domain> so they're experiment-controlled and visible in YAML.
         "history_keep_last_pairs": int(dom_cfg.get("history_keep_last_pairs", 4)) if isinstance(dom_cfg, dict) else 4,
