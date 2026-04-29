@@ -23,21 +23,50 @@ DEFAULT_VC_FOLLOWUP_INSTRUCTION = (
 
 
 def _build_prompt(observation: str, history: list[str], prompt_prefix: str) -> str:
-    obs = (observation or "").strip()
+    """
+    Build the action-generation prompt from:
+    - domain prefix (instructions)
+    - compact history (reset + last N action/obs pairs)
+    - current observation
+
+    Important: do NOT strip leading whitespace from observations. TextWorld observations often
+    contain ASCII art / fixed-width formatting where leading spaces carry structure. We only
+    rstrip() to normalize trailing newlines for stable duplication checks.
+    """
+
+    def _rstrip(s: str) -> str:
+        return (s or "").rstrip()
+
+    def _history_last_observation(history_line: str) -> str | None:
+        # History stores entries like "OBSERVATION: <text>" (see base_agent.py).
+        line = history_line or ""
+        if line.startswith("OBSERVATION:"):
+            rest = line.split(":", 1)[1]
+            if rest.startswith(" "):
+                rest = rest[1:]
+            return _rstrip(rest)
+        return None
+
+    obs_now = _rstrip(observation or "")
+    include_current_obs = True
     if history:
-        last = (history[-1] or "").strip()
-        # If the caller already stored the current observation in history (common when history
-        # stores ACTION/OBSERVATION pairs), avoid duplicating it.
-        if last == obs or last == f"OBSERVATION: {obs}":
-            body = "\n".join(history)
-        else:
-            body = "\n".join(history + [observation])
-    else:
-        body = observation
+        last_line = history[-1] or ""
+        last_obs = _history_last_observation(last_line)
+        # If the caller already stored the *current* observation in history (true for step 0 reset),
+        # don't append it again (TextWorld reset text can be very large).
+        if last_obs is not None and last_obs == obs_now:
+            include_current_obs = False
+
     pfx = (prompt_prefix or "").strip()
+
+    parts: list[str] = []
     if pfx:
-        return f"{pfx}\n\n{body}"
-    return body
+        parts.append(pfx)
+    if history:
+        parts.append("=== HISTORY ===\n" + "\n".join(history))
+    if include_current_obs and (observation is not None):
+        parts.append("=== CURRENT OBSERVATION ===\n" + (observation or ""))
+    return "\n\n".join(parts).rstrip()
 
 
 def _extract_first_line(text: str) -> str:
