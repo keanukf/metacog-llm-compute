@@ -118,6 +118,48 @@ def test_run_episode_history_includes_prior_action(tmp_path: Path) -> None:
     assert "OBSERVATION: after act_one_line" in joined
 
 
+def test_step0_prompt_does_not_duplicate_reset_obs_with_leading_spaces(tmp_path: Path) -> None:
+    """
+    Regression test for TextWorld-like observations (ASCII art / fixed-width) where leading spaces
+    are meaningful. The step-0 reset observation is seeded into history; the prompt builder must
+    not append the same observation again as "current observation".
+    """
+
+    class _Env:
+        def __init__(self) -> None:
+            self.done = False
+            self.task_success = False
+            self.step_results: list[dict] = []
+
+        def reset(self) -> str:
+            self.done = False
+            return "   AAA\nBBB"
+
+        def step(self, action: str) -> str:
+            self.step_results.append({"step_index": 0, "correctness": "legal", "action_parsed": action})
+            self.done = True
+            return "after"
+
+    class _Model:
+        def generate(self, prompt, logprobs=False, **kwargs):
+            return "noop", ([{"logprob": -0.1}] if logprobs else None)
+
+    step_fn = get_step_fn("C0", vc_mode="none", prompt_prefix="PFX")
+    run_episode(
+        _Env(),
+        _Model(),
+        "C0",
+        step_fn=step_fn,
+        max_steps=2,
+        save_step_traces=True,
+        episode_id="ep_spaces",
+        trace_output_dir=str(tmp_path),
+    )
+    row0 = json.loads((tmp_path / "trace_ep_spaces.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    prompt = row0["prompt_full"]
+    assert prompt.count("   AAA\nBBB") == 1
+
+
 class _NEnv:
     """Deterministic env with programmable observations; terminates after len(obs_seq)-1 steps."""
 
