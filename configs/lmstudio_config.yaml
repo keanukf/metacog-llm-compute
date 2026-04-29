@@ -16,17 +16,17 @@ inference:
   lmstudio_top_logprobs: 5
 
 # Local-only nudge for small transition models: keep it about format, not about solving.
-domain_prompts:
-  tower_of_hanoi:
-    prefix: >
-      You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty
-      peg or on a larger-numbered disk. Each turn you must choose exactly one move from the line
-      starting with "Valid moves:" in the task text—do not output any other peg pair. Respond with
-      ONLY your move as X->Y using peg letters A, B, or C (e.g. A->C). Do not use disk numbers. Do
-      not explain your reasoning.
+#domain_prompts:
+#  tower_of_hanoi:
+#    prefix: >
+#      You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty
+#      peg or on a larger-numbered disk. Each turn you must choose exactly one move from the line
+#      starting with "Valid moves:" in the task text—do not output any other peg pair. Respond with
+#      ONLY your move as X->Y using peg letters A, B, or C (e.g. A->C). Do not use disk numbers. Do
+#      not explain your reasoning.
 
-      Example (format only): If the valid moves line lists "A->B, A->C", reply with exactly one of
-      them like: A->C
+#      Example (format only): If the valid moves line lists "A->B, A->C", reply with exactly one of
+#      them like: A->C
 
 pilot:
   instances: 1 # 5 is default, 2 is for the pilot
