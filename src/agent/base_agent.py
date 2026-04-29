@@ -4,6 +4,7 @@ No framework (no LangChain/LlamaIndex). Each compute stage is a clear function.
 """
 from __future__ import annotations
 
+import contextlib
 import random
 import time
 import warnings
@@ -297,44 +298,91 @@ def run_episode(
             )
             history_snapshot = list(history)
             step_start_dt = datetime.now(timezone.utc).isoformat()
-            t0 = time.perf_counter()
-            history_for_prompt = _compact_history_for_prompt(history, keep_last_pairs=history_keep_last_pairs)
-            if pin_recipe and pinned_recipe:
-                history_for_prompt = [history_for_prompt[0], f"PINNED RECIPE:\n{pinned_recipe}", *history_for_prompt[1:]]
-            raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
-            step_wall_time_s = time.perf_counter() - t0
-            step_end_dt = datetime.now(timezone.utc).isoformat()
-            action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full = (
-                _normalize_step_result(raw)
-            )
-            tle_per_step.append(tle)
-            vc_per_step.append(vc)
-            if save_logprob_distributions:
-                logprob_raw_per_step.append(log_raw)
-            vc_detail_per_step.append(vc_det)
-            total_tokens_generated += tokens_used
-            total_lm_calls += lm_calls_this_step
-            row: dict[str, Any] = {
-                "step_index": steps,
-                "compute_stage": compute_stage,
-                "action": action,
-                "tokens_generated": int(tokens_used),
-                "lm_calls_this_step": int(lm_calls_this_step),
-                "step_wall_time_s": float(step_wall_time_s),
-                "tle": tle,
-                "vc": vc,
-                "correctness": None,
-                "observation_length_chars": len(step_obs or ""),
-            }
-            if vc_det:
-                row["vc_prompt"] = vc_det.get("vc_prompt")
-                row["vc_raw_text"] = vc_det.get("vc_raw_text")
-                row["vc_pattern_matched"] = vc_det.get("vc_pattern_matched")
-                row["vc_tokens_used"] = vc_det.get("vc_tokens_used")
-                if save_vc_distributions and vc_det.get("vc_logprobs") is not None:
-                    row["vc_logprobs"] = vc_det.get("vc_logprobs")
-            steps_detail.append(row)
-            obs = env.step(action)
+
+            step_cm = contextlib.nullcontext(None)
+            if trace_hook is not None and hasattr(trace_hook, "start_step_observation"):
+                try:
+                    step_cm = trace_hook.start_step_observation(
+                        step_index=steps,
+                        stage=compute_stage,
+                        observation=step_obs,
+                        metadata={"compute_stage": compute_stage, "model": trace_model_name or ""},
+                    )
+                except Exception:
+                    step_cm = contextlib.nullcontext(None)
+
+            with step_cm as step_span:
+                t0 = time.perf_counter()
+                history_for_prompt = _compact_history_for_prompt(history, keep_last_pairs=history_keep_last_pairs)
+                if pin_recipe and pinned_recipe:
+                    history_for_prompt = [
+                        history_for_prompt[0],
+                        f"PINNED RECIPE:\n{pinned_recipe}",
+                        *history_for_prompt[1:],
+                    ]
+                raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
+                step_wall_time_s = time.perf_counter() - t0
+                action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full = (
+                    _normalize_step_result(raw)
+                )
+
+                tle_per_step.append(tle)
+                vc_per_step.append(vc)
+                if save_logprob_distributions:
+                    logprob_raw_per_step.append(log_raw)
+                vc_detail_per_step.append(vc_det)
+                total_tokens_generated += tokens_used
+                total_lm_calls += lm_calls_this_step
+
+                # Emit Langfuse children while the step span is active (keeps hierarchy stable).
+                lf_meta_base: dict[str, Any] = {
+                    "tle": tle,
+                    "vc": vc,
+                    "tokens_generated": int(tokens_used),
+                    "lm_calls": int(lm_calls_this_step),
+                    "step_wall_time_s": float(step_wall_time_s),
+                    "step_start_time_utc": step_start_dt,
+                }
+                if trace_hook is not None and step_span is not None and hasattr(trace_hook, "log_step_children"):
+                    try:
+                        trace_hook.log_step_children(
+                            step_span=step_span,
+                            step_index=steps,
+                            stage=compute_stage,
+                            action=action,
+                            prompt=prompt_full or "",
+                            action_output=response_full or "",
+                            vc_prompt=(vc_det or {}).get("vc_prompt") if vc_det else None,
+                            vc_output=(vc_det or {}).get("vc_raw_text") if vc_det else None,
+                            model_name=trace_model_name,
+                            metadata=lf_meta_base,
+                        )
+                    except Exception:
+                        pass
+
+                row: dict[str, Any] = {
+                    "step_index": steps,
+                    "compute_stage": compute_stage,
+                    "action": action,
+                    "tokens_generated": int(tokens_used),
+                    "lm_calls_this_step": int(lm_calls_this_step),
+                    "step_wall_time_s": float(step_wall_time_s),
+                    "tle": tle,
+                    "vc": vc,
+                    "correctness": None,
+                    "observation_length_chars": len(step_obs or ""),
+                }
+                if vc_det:
+                    row["vc_prompt"] = vc_det.get("vc_prompt")
+                    row["vc_raw_text"] = vc_det.get("vc_raw_text")
+                    row["vc_pattern_matched"] = vc_det.get("vc_pattern_matched")
+                    row["vc_tokens_used"] = vc_det.get("vc_tokens_used")
+                    if save_vc_distributions and vc_det.get("vc_logprobs") is not None:
+                        row["vc_logprobs"] = vc_det.get("vc_logprobs")
+                steps_detail.append(row)
+
+                # Environment transition is part of the full-step duration (per user choice).
+                obs = env.step(action)
             if pin_recipe and pinned_recipe is None:
                 rb = _extract_recipe_block(obs)
                 if rb:
@@ -372,11 +420,10 @@ def run_episode(
                     "correctness": correctness_after,
                     "tokens_generated": int(tokens_used),
                     "lm_calls": int(lm_calls_this_step),
-                    "step_start_time_utc": step_start_dt,
-                    "step_end_time_utc": step_end_dt,
                     "step_wall_time_s": float(step_wall_time_s),
                 }
-                if hasattr(trace_hook, "log_step"):
+                # If we did not create a step-span context, fall back to legacy step logging.
+                if step_span is None and hasattr(trace_hook, "log_step"):
                     try:
                         trace_hook.log_step(
                             step_index=steps,
@@ -399,7 +446,7 @@ def run_episode(
                             model_name=trace_model_name,
                             metadata=lf_meta,
                         )
-                else:
+                elif step_span is None:
                     trace_hook.log_action_generation(
                         step_index=steps,
                         compute_stage=compute_stage,
