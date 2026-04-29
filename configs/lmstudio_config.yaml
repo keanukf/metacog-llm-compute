@@ -30,7 +30,14 @@ domain_prompts:
 
 pilot:
   instances: 1 # 5 is default, 2 is for the pilot
-  compute_stages: 3   # C0, C1, C2
+  # Compute stages selection:
+  # - Back-compat: 1/2/3 means run first N stages (C0/C1/C2)
+  # - Explicit: "C0" or ["C0","C2"]
+  # - Per-domain: compute_stages_by_domain overrides global compute_stages
+  compute_stages: C0   # e.g. C0 | C0,C2 | 1 | 2 | 3
+  # compute_stages_by_domain:
+  #   textworld: C0
+  #   tower_of_hanoi: C0
   runs_per_instance: 1
 
 test1_inference:
