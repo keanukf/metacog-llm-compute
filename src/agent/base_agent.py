@@ -296,12 +296,14 @@ def run_episode(
                 head_ratio=history_obs_head_ratio,
             )
             history_snapshot = list(history)
+            step_start_dt = datetime.now(timezone.utc).isoformat()
             t0 = time.perf_counter()
             history_for_prompt = _compact_history_for_prompt(history, keep_last_pairs=history_keep_last_pairs)
             if pin_recipe and pinned_recipe:
                 history_for_prompt = [history_for_prompt[0], f"PINNED RECIPE:\n{pinned_recipe}", *history_for_prompt[1:]]
             raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
             step_wall_time_s = time.perf_counter() - t0
+            step_end_dt = datetime.now(timezone.utc).isoformat()
             action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full = (
                 _normalize_step_result(raw)
             )
@@ -370,6 +372,9 @@ def run_episode(
                     "correctness": correctness_after,
                     "tokens_generated": int(tokens_used),
                     "lm_calls": int(lm_calls_this_step),
+                    "step_start_time_utc": step_start_dt,
+                    "step_end_time_utc": step_end_dt,
+                    "step_wall_time_s": float(step_wall_time_s),
                 }
                 if hasattr(trace_hook, "log_step"):
                     try:
