@@ -127,3 +127,52 @@ def extract_tle_from_response(
     if logprobs is None:
         return None
     return compute_tle(logprobs)
+
+
+def extract_action_tle_from_response(
+    text: str,
+    logprobs: list[dict[str, Any]] | list[float] | None,
+) -> dict[str, float] | None:
+    """
+    Extract TLE anchored to the executed action tokens only (first non-empty output line).
+
+    If token text is present in each record (``{"token": ...}``), we slice the logprob records
+    up to and including the first newline *after* the first non-empty line begins.
+
+    If token text is unavailable:
+    - single-line completions: fall back to full-completion TLE (equivalent)
+    - multi-line completions: return None (do not silently mix reasoning tokens into action TLE)
+    """
+    if logprobs is None:
+        return None
+    if not logprobs:
+        return None
+
+    # If we don't have token strings, we can only be safe for single-line outputs.
+    has_token_text = isinstance(logprobs, list) and all(
+        isinstance(x, dict) and isinstance(x.get("token"), str) for x in logprobs
+    )
+    out_text = (text or "").lstrip()
+    is_multiline = "\n" in out_text
+    if not has_token_text:
+        if is_multiline:
+            return None
+        return compute_tle(logprobs)
+
+    # Find the first non-empty line start and slice until its terminating newline (or end).
+    started = False
+    sliced: list[dict[str, Any]] = []
+    for rec in logprobs:  # type: ignore[assignment]
+        tok = rec.get("token", "")
+        if not started:
+            # Skip leading whitespace/newlines until we hit real content.
+            if tok.strip() == "":
+                continue
+            started = True
+        sliced.append(rec)
+        if started and ("\n" in tok):
+            break
+
+    if not sliced:
+        return None
+    return compute_tle(sliced)

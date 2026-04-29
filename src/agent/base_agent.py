@@ -47,7 +47,7 @@ def _truncate_for_history(text: str, *, max_chars: int = 1000, head_ratio: float
     return f"{t[:head]}\n…[snip]…\n{t[-tail:]}"
 
 
-def _compact_history_for_prompt(history: list[str], *, keep_last_pairs: int = 4) -> list[str]:
+def _compact_history_for_prompt(history: list[str], *, keep_last_pairs: int | None = None) -> list[str]:
     """
     Return a compact history view for prompting.
 
@@ -56,11 +56,14 @@ def _compact_history_for_prompt(history: list[str], *, keep_last_pairs: int = 4)
       - then repeating pairs: ("ACTION: ...", "OBSERVATION: ...")
 
     We always keep the first entry and the last N ACTION/OBSERVATION pairs (never a half-pair).
+    If ``keep_last_pairs`` is None, no truncation is applied.
     """
     if not history:
         return []
+    if keep_last_pairs is None:
+        return list(history)
     if keep_last_pairs <= 0:
-        return history[:1]
+        return list(history)
     if len(history) <= 1:
         return list(history)
 
@@ -209,9 +212,9 @@ def run_episode(
     trace_output_dir: str | Path | None = None,
     trace_model_name: str | None = None,
     trace_hook: Any | None = None,
-    history_keep_last_pairs: int = 4,
-    history_max_obs_chars: int = 1000,
-    history_current_obs_max_chars: int = 1000,
+    history_keep_last_pairs: int | None = None,
+    history_max_obs_chars: int = 0,
+    history_current_obs_max_chars: int = 0,
     history_obs_head_ratio: float = 0.15,
     pin_recipe: bool = False,
     trace_session_id: str | None = None,
@@ -618,9 +621,9 @@ def run_adaptive_episode(
     c1_verify_instruction: str | None = None,
     c2_n_samples: int = 3,
     c2_tie_break_seed: str | int | None = None,
-    history_keep_last_pairs: int = 4,
-    history_max_obs_chars: int = 1000,
-    history_current_obs_max_chars: int = 1000,
+    history_keep_last_pairs: int | None = None,
+    history_max_obs_chars: int = 0,
+    history_current_obs_max_chars: int = 0,
     history_obs_head_ratio: float = 0.15,
     pin_recipe: bool = False,
     trace_session_id: str | None = None,

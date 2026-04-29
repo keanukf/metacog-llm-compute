@@ -58,7 +58,7 @@ tracing:
 # verify_temperature defaults to 0.0 to make the verify distribution (and thus TLE) stable.
 c1:
   cot_temperature: 0.5
-  cot_max_tokens: 256
+  cot_max_tokens: 512
   verify_temperature: 0.0
   # verify_max_tokens: 48
   # verify_stop: ["\n"]
@@ -80,8 +80,19 @@ domain_prompts:
 
       Rules for your output:
       - Output exactly ONE imperative command on a single line. No reasoning, no quotes, no narration.
-      - If a line "Valid commands this turn:" appears, pick one of those commands verbatim when possible.
       - If an action produces no visible change, try a different action instead of repeating it.
+      
+      Command templates (valid forms; do NOT assume an explicit list of allowed commands will be provided):
+      - go [north|south|east|west|up|down]
+      - take [object]
+      - drop [object]
+      - examine [object]
+      - open [container]
+      - close [container]
+      - put [object] in [container]
+      - cook [object] with [tool]
+      - inventory
+      - look
       - Examples:
         - If you see: "You are in a small room. Exits: north." you can reply: go north
         - If you see: "You see a key here." you can reply: take key
@@ -101,21 +112,24 @@ domain_prompts:
     history_obs_head_ratio: 0.15
     # Once a recipe is discovered, keep it pinned in context for the remainder of the episode.
     pin_recipe: true
+    # Default off: do not list admissible commands in the observation (methodological control).
+    include_admissible_commands: false
   tower_of_hanoi:
     prefix: >
       You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty
-      peg or on a larger-numbered disk. Each turn you must choose exactly one move from the line
-      starting with "Valid moves:" in the task text—do not output any other peg pair. Respond with
-      ONLY your move as X->Y using peg letters A, B, or C (e.g. A->C). Do not use disk numbers. Do
-      not explain your reasoning.
-      Example:
-      OBSERVATION says "Valid moves: A->B, A->C" → reply "A->C"
+      peg or on a larger-numbered disk.
+
+      Output format:
+      - Output exactly ONE move as [source_peg]->[target_peg] using only A, B, or C (e.g. A->C).
+      - No disk numbers. No explanation. Single line only.
     action_max_tokens: 256
     action_stop: ["\n"]
     action_temperature: 0.3
     # Keep full action/observation history for Hanoi; the episodes are short (<= 20 steps)
     # and analysis/debugging often needs complete trajectories.
     history_keep_last_pairs: 1000000
+    # Default off: do not list legal moves in the observation (methodological control).
+    include_valid_moves: false
 
 vc:
   mode: followup

@@ -9,6 +9,7 @@ import pytest
 from src.signals.token_entropy import (
     compute_tle,
     entropy_shannon_from_top_logprobs,
+    extract_action_tle_from_response,
     extract_tle_from_response,
 )
 
@@ -86,3 +87,32 @@ def test_compute_tle_with_top_logprobs_per_token():
     out = compute_tle(logprobs)
     assert out["mean_entropy"] > 0.01
     assert out["max_entropy"] >= out["mean_entropy"]
+
+
+def test_extract_action_tle_slices_first_line_tokens_only():
+    # First line: "go north\n"; second line: "reasoning"
+    lp = [
+        {"token": "go", "logprob": -0.1},
+        {"token": " ", "logprob": -0.1},
+        {"token": "north", "logprob": -0.1},
+        {"token": "\n", "logprob": -0.1},
+        {"token": "reasoning", "logprob": -3.0},
+    ]
+    full = extract_tle_from_response("go north\nreasoning", lp)
+    sliced = extract_action_tle_from_response("go north\nreasoning", lp)
+    assert full is not None and sliced is not None
+    # Sliced should not include the low-prob reasoning token, so mean entropy differs.
+    assert sliced["mean_entropy"] != full["mean_entropy"]
+
+
+def test_extract_action_tle_returns_none_when_multiline_without_tokens():
+    # Without token strings we refuse to mix reasoning tokens into action TLE.
+    lp = [{"logprob": -0.2}] * 5
+    assert extract_action_tle_from_response("go north\nreasoning", lp) is None
+
+
+def test_extract_action_tle_falls_back_for_single_line_without_tokens():
+    lp = [{"logprob": -0.2}] * 5
+    a = extract_action_tle_from_response("go north", lp)
+    b = extract_tle_from_response("go north", lp)
+    assert a == b

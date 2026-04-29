@@ -42,6 +42,12 @@ def test_env_reset_returns_observation():
     obs = env.reset()
     assert isinstance(obs, str)
     assert "Peg A" in obs
+    assert "Valid moves:" not in obs
+
+
+def test_env_reset_can_include_valid_moves_opt_in():
+    env = TowerOfHanoiEnv(task=_task(), max_steps=20, include_valid_moves=True)
+    obs = env.reset()
     assert "Valid moves:" in obs
 
 

@@ -37,7 +37,11 @@ def _normalize_logprobs(raw: Any) -> list[dict[str, Any]] | None:
         if isinstance(x, dict):
             lp = x.get("logprob", x.get("logprob_value"))
             if lp is not None:
-                out.append({"logprob": float(lp)})
+                rec: dict[str, Any] = {"logprob": float(lp)}
+                tok = x.get("token")
+                if isinstance(tok, str) and tok:
+                    rec["token"] = tok
+                out.append(rec)
                 continue
 
             # vLLM: dict[int, Logprob] (or dict[str, Logprob]) for this generated position.
@@ -47,15 +51,34 @@ def _normalize_logprobs(raw: Any) -> list[dict[str, Any]] | None:
                 continue
             v0 = vals[0]
             if hasattr(v0, "logprob"):
-                out.append({"logprob": float(getattr(v0, "logprob"))})
+                rec2: dict[str, Any] = {"logprob": float(getattr(v0, "logprob"))}
+                # Best-effort: some vLLM Logprob objects expose decoded_token / token.
+                for attr in ("decoded_token", "token"):
+                    if hasattr(v0, attr):
+                        tv = getattr(v0, attr)
+                        if isinstance(tv, str) and tv:
+                            rec2["token"] = tv
+                            break
+                out.append(rec2)
                 continue
             if isinstance(v0, dict):
                 lp2 = v0.get("logprob", v0.get("logprob_value"))
                 if lp2 is not None:
-                    out.append({"logprob": float(lp2)})
+                    rec3: dict[str, Any] = {"logprob": float(lp2)}
+                    tok2 = v0.get("token")
+                    if isinstance(tok2, str) and tok2:
+                        rec3["token"] = tok2
+                    out.append(rec3)
                     continue
         elif hasattr(x, "logprob"):
-            out.append({"logprob": float(x.logprob)})
+            rec4: dict[str, Any] = {"logprob": float(x.logprob)}
+            for attr in ("decoded_token", "token"):
+                if hasattr(x, attr):
+                    tv = getattr(x, attr)
+                    if isinstance(tv, str) and tv:
+                        rec4["token"] = tv
+                        break
+            out.append(rec4)
         elif isinstance(x, (int, float)):
             out.append({"logprob": float(x)})
     return out if out else None
@@ -596,7 +619,11 @@ class HFWrapper(ModelWrapper):
                     logits = s[0].float()
                     log_probs = torch.log_softmax(logits, dim=-1)
                     tok_id = out_ids[i].item()
-                    lp_list.append({"logprob": log_probs[tok_id].item()})
+                    tok_str = self._tokenizer.decode([tok_id], skip_special_tokens=True)
+                    rec: dict[str, Any] = {"logprob": log_probs[tok_id].item()}
+                    if isinstance(tok_str, str) and tok_str:
+                        rec["token"] = tok_str
+                    lp_list.append(rec)
                 lp_out = lp_list if lp_list else None
             else:
                 lp_out = None
