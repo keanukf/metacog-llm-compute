@@ -58,7 +58,7 @@ domain_prompts:
     action_max_tokens: 48
     action_stop: ["\n"]
     action_temperature: 0.0
-    history_keep_last_pairs: 4
+    history_keep_last_pairs: 1000000
 
 vc:
   mode: followup

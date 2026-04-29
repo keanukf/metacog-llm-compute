@@ -98,7 +98,9 @@ domain_prompts:
     action_max_tokens: 32
     action_stop: ["\n"]
     action_temperature: 0.3
-    history_keep_last_pairs: 4
+    # Keep full action/observation history for Hanoi; the episodes are short (<= 20 steps)
+    # and analysis/debugging often needs complete trajectories.
+    history_keep_last_pairs: 1000000
 
 vc:
   mode: followup
