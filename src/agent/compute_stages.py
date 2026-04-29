@@ -7,8 +7,8 @@ from typing import Any
 
 from src.signals import token_entropy, verbalized_confidence
 
-# (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None, prompt_full, response_full)
-StepReturn = tuple[str, dict[str, float] | None, float | None, int, int, Any, Any, str, str]
+# (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None, prompt_full, response_full, call_detail|None)
+StepReturn = tuple[str, dict[str, float] | None, float | None, int, int, Any, Any, str, str, Any]
 
 # Present in every VC follow-up prompt — tests and mocks can detect the second call without coupling to wording details.
 VC_FOLLOWUP_PROMPT_MARKER = "=== YOUR OUTPUT TO JUDGE ==="
@@ -19,6 +19,15 @@ DEFAULT_VC_FOLLOWUP_INSTRUCTION = (
     "Respond with only a single integer between 0 and 100,\n"
     "where 0 means certainly wrong and 100 means certainly correct.\n\n"
     "Confidence:"
+)
+
+DEFAULT_C1_VERIFY_INSTRUCTION = (
+    "You are doing a verification pass over a draft command.\n"
+    "Check the following criteria against the task context above:\n"
+    "1) Availability: The command must be feasible in the current state; if the observation lists valid commands/moves, prefer one of those.\n"
+    "2) Goal-advancement: Prefer commands that make progress toward the stated goal; avoid repeating no-op actions.\n"
+    "3) Better-alternative check: If a strictly better available command exists (more progress / fixes an error), output that instead.\n\n"
+    "Output exactly ONE imperative command on a single line (no ACTION: prefix, no quotes, no explanation).\n"
 )
 
 
@@ -383,7 +392,7 @@ def _c0_step_core(
     lm_calls += extra_calls
 
     lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
-    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, prompt, text)
+    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, prompt, text, None)
 
 
 def _c1_step_core(
@@ -404,6 +413,12 @@ def _c1_step_core(
     followup_max_context_chars: int | None,
     followup_cot_max_chars: int,
     vc_raw_completion_max_chars: int,
+    c1_cot_temperature: float | None,
+    c1_cot_max_tokens: int | None,
+    c1_verify_temperature: float,
+    c1_verify_max_tokens: int | None,
+    c1_verify_stop: list[str] | None,
+    c1_verify_instruction: str | None,
 ) -> StepReturn:
     """
     C1: two LM calls — (1) short chain-of-thought with a draft ``ACTION:`` line,
@@ -417,25 +432,31 @@ def _c1_step_core(
     )
     cot_prompt = f"{base_prompt}{cot_instruction}"
     act_tok = int(action_max_tokens) if action_max_tokens is not None else 32
-    cot_max_tokens = max(128, act_tok * 2)
+    cot_max_tokens = int(c1_cot_max_tokens) if c1_cot_max_tokens is not None else max(128, act_tok * 2)
+    if cot_max_tokens <= 0:
+        cot_max_tokens = max(128, act_tok * 2)
+    cot_temp = c1_cot_temperature
+    if cot_temp is None:
+        cot_temp = float(action_temperature) if action_temperature is not None else 0.5
     cot_kw: dict[str, Any] = {
         "max_tokens": cot_max_tokens,
-        "temperature": float(action_temperature) if action_temperature is not None else 0.5,
+        "temperature": float(cot_temp),
     }
     cot_text, cot_lp = model.generate(cot_prompt, logprobs=True, **cot_kw)
     draft = _extract_draft_action_from_cot(cot_text or "")
     if not draft:
         draft = "(no draft parsed)"
 
+    verify_instr = (c1_verify_instruction or "").strip() or DEFAULT_C1_VERIFY_INSTRUCTION
     verify_instruction = (
-        "\n\n--- Self-check ---\n"
-        f"Your draft command was: {draft}\n"
-        "Re-read the game/task text above. Output exactly one imperative command on a single line "
-        "(no ACTION: prefix, no quotes, no explanation). If the draft is still correct, repeat it verbatim; "
-        "otherwise output your revised command only."
+        "\n\n--- Verify ---\n"
+        f"Draft command: {draft}\n\n"
+        f"{verify_instr.strip()}"
     )
     verify_prompt = f"{base_prompt}{verify_instruction}"
-    gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
+    verify_max_tokens = c1_verify_max_tokens if c1_verify_max_tokens is not None else action_max_tokens
+    verify_stop = c1_verify_stop if c1_verify_stop is not None else action_stop
+    gen_kw = _action_generate_kwargs(verify_max_tokens, float(c1_verify_temperature), verify_stop)
     final_text, logprobs = model.generate(verify_prompt, logprobs=True, **gen_kw)
     tle = token_entropy.extract_tle_from_response(final_text, logprobs) if logprobs else None
     tokens_used = len(logprobs) if logprobs else 0
@@ -471,7 +492,29 @@ def _c1_step_core(
 
     lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
     response_full = f"=== C1 CoT ===\n{cot_text}\n\n=== C1 verify ===\n{final_text}"
-    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, verify_prompt, response_full)
+    call_detail = {
+        "stage": "C1",
+        "subcalls": [
+            {
+                "kind": "cot",
+                "prompt": cot_prompt,
+                "response": cot_text,
+                "tokens_generated": int(len(cot_lp) if cot_lp else 0),
+                "temperature": float(cot_temp),
+                "max_tokens": int(cot_max_tokens),
+            },
+            {
+                "kind": "verify",
+                "prompt": verify_prompt,
+                "response": final_text,
+                "tokens_generated": int(len(logprobs) if logprobs else 0),
+                "temperature": float(c1_verify_temperature),
+                "max_tokens": int(verify_max_tokens) if verify_max_tokens is not None else None,
+                "stop": list(verify_stop) if isinstance(verify_stop, list) else None,
+            },
+        ],
+    }
+    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, verify_prompt, response_full, call_detail)
 
 
 def _majority_vote(actions: list[str]) -> str:
@@ -572,7 +615,7 @@ def _c2_step_core(
         for i, (first, raw_text, _lp) in enumerate(samples)
     ]
     response_full = "\n\n".join(sample_blocks)
-    return (winner, tle, vc, total_tokens, lm_calls, lp_saved, vc_detail, prompt, response_full)
+    return (winner, tle, vc, total_tokens, lm_calls, lp_saved, vc_detail, prompt, response_full, None)
 
 
 def c0_step(
@@ -674,6 +717,12 @@ def get_step_fn(
     followup_max_context_chars: int | None = None,
     followup_cot_max_chars: int = 12000,
     vc_raw_completion_max_chars: int = 8000,
+    c1_cot_temperature: float | None = None,
+    c1_cot_max_tokens: int | None = None,
+    c1_verify_temperature: float = 0.0,
+    c1_verify_max_tokens: int | None = None,
+    c1_verify_stop: list[str] | None = None,
+    c1_verify_instruction: str | None = None,
 ):
     """
     Return the step function for stage 'C0', 'C1', or 'C2'.
@@ -731,6 +780,31 @@ def get_step_fn(
         return _w2
 
     def _w(obs: str, hist: list[str], m: Any):
+        if stage == "C1":
+            return fn(
+                obs,
+                hist,
+                m,
+                save_action_logprobs=save_logprob_distributions,
+                vc_mode=vc_mode,
+                prompt_prefix=prompt_prefix,
+                vc_followup_instruction=vc_instr,
+                action_max_tokens=action_max_tokens,
+                action_temperature=action_temperature,
+                action_stop=action_stop,
+                followup_max_tokens=followup_max_tokens,
+                followup_temperature=followup_temperature,
+                vc_followup_logprobs=vc_followup_logprobs,
+                followup_max_context_chars=followup_max_context_chars,
+                followup_cot_max_chars=followup_cot_max_chars,
+                vc_raw_completion_max_chars=vc_raw_completion_max_chars,
+                c1_cot_temperature=c1_cot_temperature,
+                c1_cot_max_tokens=c1_cot_max_tokens,
+                c1_verify_temperature=c1_verify_temperature,
+                c1_verify_max_tokens=c1_verify_max_tokens,
+                c1_verify_stop=c1_verify_stop,
+                c1_verify_instruction=c1_verify_instruction,
+            )
         return fn(
             obs,
             hist,

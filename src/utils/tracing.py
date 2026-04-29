@@ -77,6 +77,7 @@ class TraceHook(Protocol):
         strategy: str | None = None,
         vc_prompt: str | None = None,
         vc_output: str | None = None,
+        subcalls: list[dict[str, Any]] | None = None,
     ) -> None:
         """Create action + VC observations as children of an already-active step span."""
         ...
@@ -95,6 +96,7 @@ class TraceHook(Protocol):
         strategy: str | None = None,
         vc_prompt: str | None = None,
         vc_output: str | None = None,
+        subcalls: list[dict[str, Any]] | None = None,
     ) -> None: ...
 
 
@@ -146,6 +148,7 @@ class NullTraceHook:
         strategy: str | None = None,
         vc_prompt: str | None = None,
         vc_output: str | None = None,
+        subcalls: list[dict[str, Any]] | None = None,
     ) -> None:
         return None
 
@@ -173,6 +176,7 @@ class NullTraceHook:
         strategy: str | None = None,
         vc_prompt: str | None = None,
         vc_output: str | None = None,
+        subcalls: list[dict[str, Any]] | None = None,
     ) -> None:
         return None
 
@@ -493,32 +497,75 @@ class LangfuseTraceHook:
         strategy: str | None = None,
         vc_prompt: str | None = None,
         vc_output: str | None = None,
+        subcalls: list[dict[str, Any]] | None = None,
     ) -> None:
         if not (self._otel_api and step_span is not None):
             return
         try:
-            action_meta = dict(metadata or {})
-            action_meta["stage"] = stage
-            action_meta["action"] = action
-            if strategy:
-                action_meta["strategy"] = strategy
-            if self._session_id:
-                action_meta["session_id"] = self._session_id
-            if self._episode_tags:
-                action_meta["trace_tags"] = list(self._episode_tags)
+            # If C1 provides subcalls, log them explicitly (cot + verify) instead of one merged action generation.
+            did_subcalls = False
+            if stage == "C1" and isinstance(subcalls, list) and subcalls:
+                for sc in subcalls:
+                    if not isinstance(sc, dict):
+                        continue
+                    kind = str(sc.get("kind") or "").strip().lower()
+                    if kind not in {"cot", "verify"}:
+                        continue
+                    sc_meta = dict(metadata or {})
+                    sc_meta["stage"] = stage
+                    sc_meta["kind"] = kind
+                    sc_meta["lm_call_index"] = 1 if kind == "cot" else 2
+                    sc_meta["counts_toward_compute"] = True
+                    if isinstance(sc.get("tokens_generated"), int):
+                        sc_meta["tokens_generated"] = int(sc.get("tokens_generated"))
+                    if isinstance(sc.get("temperature"), (int, float)):
+                        sc_meta["temperature"] = float(sc.get("temperature"))
+                    if strategy:
+                        sc_meta["strategy"] = strategy
+                    if self._session_id:
+                        sc_meta["session_id"] = self._session_id
+                    if self._episode_tags:
+                        sc_meta["trace_tags"] = list(self._episode_tags)
+                    gen = step_span.start_observation(
+                        name=f"{kind}_{step_index}_{stage}",
+                        as_type="generation",
+                        model=model_name or "unknown",
+                        input=str(sc.get("prompt") or ""),
+                        metadata=sc_meta,
+                    )
+                    try:
+                        gen.update(output=str(sc.get("response") or ""))
+                    except Exception:
+                        pass
+                    try:
+                        gen.end()
+                    except Exception:
+                        pass
+                did_subcalls = True
 
-            # Keep action + VC as children of step (hierarchy stable).
-            action_gen = step_span.start_observation(
-                name=f"action_{step_index}_{stage}",
-                as_type="generation",
-                model=model_name or "unknown",
-                input=prompt,
-                metadata=action_meta,
-            )
-            try:
-                action_gen.update(output=action_output)
-            except Exception:
-                pass
+            if not did_subcalls:
+                action_meta = dict(metadata or {})
+                action_meta["stage"] = stage
+                action_meta["action"] = action
+                if strategy:
+                    action_meta["strategy"] = strategy
+                if self._session_id:
+                    action_meta["session_id"] = self._session_id
+                if self._episode_tags:
+                    action_meta["trace_tags"] = list(self._episode_tags)
+
+                # Keep action + VC as children of step (hierarchy stable).
+                action_gen = step_span.start_observation(
+                    name=f"action_{step_index}_{stage}",
+                    as_type="generation",
+                    model=model_name or "unknown",
+                    input=prompt,
+                    metadata=action_meta,
+                )
+                try:
+                    action_gen.update(output=action_output)
+                except Exception:
+                    pass
 
             if vc_prompt and vc_output:
                 vc_meta = dict(metadata or {})
@@ -537,10 +584,11 @@ class LangfuseTraceHook:
                 ) as vc_gen:
                     vc_gen.update(output=vc_output)
 
-            try:
-                action_gen.end()
-            except Exception:
-                pass
+            if not did_subcalls:
+                try:
+                    action_gen.end()
+                except Exception:
+                    pass
         except Exception as e:
             warnings.warn(f"Langfuse log_step_children failed (step_{step_index}): {e!s}")
 
@@ -558,6 +606,7 @@ class LangfuseTraceHook:
         strategy: str | None = None,
         vc_prompt: str | None = None,
         vc_output: str | None = None,
+        subcalls: list[dict[str, Any]] | None = None,
     ) -> None:
         if self._trace_id is None and self._root_span is None:
             return
@@ -580,26 +629,65 @@ class LangfuseTraceHook:
                     input=observation,
                     metadata=step_meta,
                 ) as step_span:
-                    action_meta = dict(metadata or {})
-                    action_meta["stage"] = stage
-                    if self._session_id:
-                        action_meta["session_id"] = self._session_id
-                    if self._episode_tags:
-                        action_meta["trace_tags"] = list(self._episode_tags)
+                    did_subcalls = False
+                    if stage == "C1" and isinstance(subcalls, list) and subcalls:
+                        for sc in subcalls:
+                            if not isinstance(sc, dict):
+                                continue
+                            kind = str(sc.get("kind") or "").strip().lower()
+                            if kind not in {"cot", "verify"}:
+                                continue
+                            sc_meta = dict(metadata or {})
+                            sc_meta["stage"] = stage
+                            sc_meta["kind"] = kind
+                            sc_meta["lm_call_index"] = 1 if kind == "cot" else 2
+                            sc_meta["counts_toward_compute"] = True
+                            if isinstance(sc.get("tokens_generated"), int):
+                                sc_meta["tokens_generated"] = int(sc.get("tokens_generated"))
+                            if isinstance(sc.get("temperature"), (int, float)):
+                                sc_meta["temperature"] = float(sc.get("temperature"))
+                            if self._session_id:
+                                sc_meta["session_id"] = self._session_id
+                            if self._episode_tags:
+                                sc_meta["trace_tags"] = list(self._episode_tags)
+                            gen = step_span.start_observation(
+                                name=f"{kind}_{step_index}_{stage}",
+                                as_type="generation",
+                                model=model_name or "unknown",
+                                input=str(sc.get("prompt") or ""),
+                                metadata=sc_meta,
+                            )
+                            try:
+                                gen.update(output=str(sc.get("response") or ""))
+                            except Exception:
+                                pass
+                            try:
+                                gen.end()
+                            except Exception:
+                                pass
+                        did_subcalls = True
 
-                    # Manual observation so we can extend its duration to include VC follow-up
-                    # (Langfuse UI otherwise shows near-0s).
-                    action_gen = step_span.start_observation(
-                        name=f"action_{step_index}_{stage}",
-                        as_type="generation",
-                        model=model_name or "unknown",
-                        input=prompt,
-                        metadata=action_meta,
-                    )
-                    try:
-                        action_gen.update(output=action_output)
-                    except Exception:
-                        pass
+                    if not did_subcalls:
+                        action_meta = dict(metadata or {})
+                        action_meta["stage"] = stage
+                        if self._session_id:
+                            action_meta["session_id"] = self._session_id
+                        if self._episode_tags:
+                            action_meta["trace_tags"] = list(self._episode_tags)
+
+                        # Manual observation so we can extend its duration to include VC follow-up
+                        # (Langfuse UI otherwise shows near-0s).
+                        action_gen = step_span.start_observation(
+                            name=f"action_{step_index}_{stage}",
+                            as_type="generation",
+                            model=model_name or "unknown",
+                            input=prompt,
+                            metadata=action_meta,
+                        )
+                        try:
+                            action_gen.update(output=action_output)
+                        except Exception:
+                            pass
 
                     # VC follow-up stays a sibling under step_span (hierarchy unchanged).
                     if vc_prompt and vc_output:
@@ -619,11 +707,12 @@ class LangfuseTraceHook:
                         ) as vc_gen:
                             vc_gen.update(output=vc_output)
 
-                    # End action generation last to give it a non-zero duration.
-                    try:
-                        action_gen.end()
-                    except Exception:
-                        pass
+                    if not did_subcalls:
+                        # End action generation last to give it a non-zero duration.
+                        try:
+                            action_gen.end()
+                        except Exception:
+                            pass
 
                 return
 
@@ -650,27 +739,64 @@ class LangfuseTraceHook:
                 metadata=step_meta,
                 **step_kw,
             )
-            # Propagate caller metadata (e.g. TLE/VC/correctness) to the action generation
-            # so it is visible where people typically inspect model outputs in Langfuse.
-            action_meta = dict(metadata or {})
-            action_meta["stage"] = stage
-            if self._session_id:
-                action_meta["session_id"] = self._session_id
-            if (not self._supports_observation_tags) and self._episode_tags:
-                action_meta["trace_tags"] = list(self._episode_tags)
-            action_gen = self._start_generation_child(
-                parent_span=step_span,
-                ctx=ctx,
-                name=f"action_{step_index}_{stage}",
-                model=model_name or "unknown",
-                input_text=prompt,
-                output_text=action_output,
-                metadata=action_meta,
-                tags=list(self._episode_tags) if self._episode_tags else None,
-                start_time=None,
-                end_time=None,
-            )
-            self._end_observation(action_gen, end_time=None)
+            did_subcalls = False
+            if stage == "C1" and isinstance(subcalls, list) and subcalls:
+                for sc in subcalls:
+                    if not isinstance(sc, dict):
+                        continue
+                    kind = str(sc.get("kind") or "").strip().lower()
+                    if kind not in {"cot", "verify"}:
+                        continue
+                    sc_meta = dict(metadata or {})
+                    sc_meta["stage"] = stage
+                    sc_meta["kind"] = kind
+                    sc_meta["lm_call_index"] = 1 if kind == "cot" else 2
+                    sc_meta["counts_toward_compute"] = True
+                    if isinstance(sc.get("tokens_generated"), int):
+                        sc_meta["tokens_generated"] = int(sc.get("tokens_generated"))
+                    if isinstance(sc.get("temperature"), (int, float)):
+                        sc_meta["temperature"] = float(sc.get("temperature"))
+                    if self._session_id:
+                        sc_meta["session_id"] = self._session_id
+                    if (not self._supports_observation_tags) and self._episode_tags:
+                        sc_meta["trace_tags"] = list(self._episode_tags)
+                    gen = self._start_generation_child(
+                        parent_span=step_span,
+                        ctx=ctx,
+                        name=f"{kind}_{step_index}_{stage}",
+                        model=model_name or "unknown",
+                        input_text=str(sc.get("prompt") or ""),
+                        output_text=str(sc.get("response") or ""),
+                        metadata=sc_meta,
+                        tags=list(self._episode_tags) if self._episode_tags else None,
+                        start_time=None,
+                        end_time=None,
+                    )
+                    self._end_observation(gen, end_time=None)
+                did_subcalls = True
+
+            if not did_subcalls:
+                # Propagate caller metadata (e.g. TLE/VC/correctness) to the action generation
+                # so it is visible where people typically inspect model outputs in Langfuse.
+                action_meta = dict(metadata or {})
+                action_meta["stage"] = stage
+                if self._session_id:
+                    action_meta["session_id"] = self._session_id
+                if (not self._supports_observation_tags) and self._episode_tags:
+                    action_meta["trace_tags"] = list(self._episode_tags)
+                action_gen = self._start_generation_child(
+                    parent_span=step_span,
+                    ctx=ctx,
+                    name=f"action_{step_index}_{stage}",
+                    model=model_name or "unknown",
+                    input_text=prompt,
+                    output_text=action_output,
+                    metadata=action_meta,
+                    tags=list(self._episode_tags) if self._episode_tags else None,
+                    start_time=None,
+                    end_time=None,
+                )
+                self._end_observation(action_gen, end_time=None)
             if vc_prompt and vc_output:
                 vc_meta = dict(metadata or {})
                 vc_meta["stage"] = stage

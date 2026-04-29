@@ -105,28 +105,34 @@ def _normalize_step_result(
     dict[str, Any] | None,
     str | None,
     str | None,
+    dict[str, Any] | None,
 ]:
     """
     Unpack step result as (action, tle, vc, tokens_used, lm_calls_this_step, logprobs_raw,
-    vc_detail, prompt_full, response_full).
+    vc_detail, prompt_full, response_full, call_detail).
 
     Backward compatibility:
     - 3-tuple -> tokens_used=0, lm_calls_this_step=1, logprobs_raw=None, vc_detail=None,
-      prompt_full=None, response_full=None
+      prompt_full=None, response_full=None, call_detail=None
     - 4-tuple -> lm_calls_this_step=1
     - 6-tuple -> legacy: last element is raw per-token logprob list (optional save)
     - 7-tuple -> (..., action_logprobs, vc_detail dict from follow-up)
     - 9-tuple -> (..., prompt_full, response_full) for step tracing / observability
+    - 10-tuple -> (..., prompt_full, response_full, call_detail) with structured subcall logging
     """
     raw_lp: list[dict[str, Any]] | None = None
     vc_detail: dict[str, Any] | None = None
     prompt_full: str | None = None
     response_full: str | None = None
+    call_detail: dict[str, Any] | None = None
     n = len(result)
     if n >= 9:
         p7, p8 = result[7], result[8]
         prompt_full = p7 if isinstance(p7, str) else None
         response_full = p8 if isinstance(p8, str) else None
+    if n >= 10:
+        p9 = result[9]
+        call_detail = p9 if isinstance(p9, dict) else None
     if n >= 7:
         raw_lp = result[5]  # type: ignore[assignment]
         vc_detail = result[6]  # type: ignore[assignment]
@@ -149,6 +155,7 @@ def _normalize_step_result(
             vc_detail,
             prompt_full,
             response_full,
+            call_detail,
         )
     if len(result) >= 4:
         return (
@@ -161,8 +168,9 @@ def _normalize_step_result(
             vc_detail,
             prompt_full,
             response_full,
+            call_detail,
         )
-    return result[0], result[1], result[2], 0, 1, raw_lp, vc_detail, prompt_full, response_full
+    return result[0], result[1], result[2], 0, 1, raw_lp, vc_detail, prompt_full, response_full, call_detail
 
 
 def _copy_step_results(env: Any) -> list[dict[str, Any]] | None:
@@ -322,7 +330,7 @@ def run_episode(
                     ]
                 raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
                 step_wall_time_s = time.perf_counter() - t0
-                action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full = (
+                action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full, call_detail = (
                     _normalize_step_result(raw)
                 )
 
@@ -345,6 +353,9 @@ def run_episode(
                 }
                 if trace_hook is not None and step_span is not None and hasattr(trace_hook, "log_step_children"):
                     try:
+                        subcalls = None
+                        if isinstance(call_detail, dict) and isinstance(call_detail.get("subcalls"), list):
+                            subcalls = call_detail.get("subcalls")
                         trace_hook.log_step_children(
                             step_span=step_span,
                             step_index=steps,
@@ -356,6 +367,7 @@ def run_episode(
                             vc_output=(vc_det or {}).get("vc_raw_text") if vc_det else None,
                             model_name=trace_model_name,
                             metadata=lf_meta_base,
+                            subcalls=subcalls,
                         )
                     except Exception:
                         pass
@@ -398,6 +410,7 @@ def run_episode(
                     "compute_stage": compute_stage,
                     "prompt_full": prompt_full or "",
                     "response_full": response_full or "",
+                    "call_detail": call_detail or None,
                     "action_parsed": action,
                     "observation_before": step_obs,
                     "observation_after": obs,
@@ -409,6 +422,19 @@ def run_episode(
                     "lm_calls": int(lm_calls_this_step),
                     "tokens_generated": int(tokens_used),
                 }
+                if isinstance(call_detail, dict):
+                    subcalls = call_detail.get("subcalls")
+                    if isinstance(subcalls, list):
+                        for sc in subcalls:
+                            if not isinstance(sc, dict):
+                                continue
+                            kind = str(sc.get("kind") or "").strip().lower()
+                            if kind == "cot":
+                                trace_rec["cot_prompt"] = sc.get("prompt") or ""
+                                trace_rec["cot_response"] = sc.get("response") or ""
+                            elif kind == "verify":
+                                trace_rec["verify_prompt"] = sc.get("prompt") or ""
+                                trace_rec["verify_response"] = sc.get("response") or ""
                 if vc_det:
                     trace_rec["vc_followup_prompt"] = vc_det.get("vc_prompt")
                     trace_rec["vc_followup_response"] = vc_det.get("vc_raw_text")
@@ -425,6 +451,9 @@ def run_episode(
                 # If we did not create a step-span context, fall back to legacy step logging.
                 if step_span is None and hasattr(trace_hook, "log_step"):
                     try:
+                        subcalls = None
+                        if isinstance(call_detail, dict) and isinstance(call_detail.get("subcalls"), list):
+                            subcalls = call_detail.get("subcalls")
                         trace_hook.log_step(
                             step_index=steps,
                             stage=compute_stage,
@@ -436,6 +465,7 @@ def run_episode(
                             vc_output=(vc_det or {}).get("vc_raw_text") if vc_det else None,
                             model_name=trace_model_name,
                             metadata=lf_meta,
+                            subcalls=subcalls,
                         )
                     except Exception:
                         trace_hook.log_action_generation(
@@ -672,7 +702,7 @@ def run_adaptive_episode(
                 history_for_prompt = [history_for_prompt[0], f"PINNED RECIPE:\n{pinned_recipe}", *history_for_prompt[1:]]
             raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
             step_wall_time_s = time.perf_counter() - t0
-            action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full = (
+            action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full, call_detail = (
                 _normalize_step_result(raw)
             )
             tle_per_step.append(tle)
@@ -719,6 +749,7 @@ def run_adaptive_episode(
                     "strategy": strategy,
                     "prompt_full": prompt_full or "",
                     "response_full": response_full or "",
+                    "call_detail": call_detail or None,
                     "action_parsed": action,
                     "observation_before": step_obs,
                     "observation_after": obs,
@@ -730,6 +761,19 @@ def run_adaptive_episode(
                     "lm_calls": int(lm_calls_this_step),
                     "tokens_generated": int(tokens_used),
                 }
+                if isinstance(call_detail, dict):
+                    subcalls = call_detail.get("subcalls")
+                    if isinstance(subcalls, list):
+                        for sc in subcalls:
+                            if not isinstance(sc, dict):
+                                continue
+                            kind = str(sc.get("kind") or "").strip().lower()
+                            if kind == "cot":
+                                trace_rec_a["cot_prompt"] = sc.get("prompt") or ""
+                                trace_rec_a["cot_response"] = sc.get("response") or ""
+                            elif kind == "verify":
+                                trace_rec_a["verify_prompt"] = sc.get("prompt") or ""
+                                trace_rec_a["verify_response"] = sc.get("response") or ""
                 if vc_det:
                     trace_rec_a["vc_followup_prompt"] = vc_det.get("vc_prompt")
                     trace_rec_a["vc_followup_response"] = vc_det.get("vc_raw_text")
@@ -745,6 +789,9 @@ def run_adaptive_episode(
                 }
                 if hasattr(trace_hook, "log_step"):
                     try:
+                        subcalls = None
+                        if isinstance(call_detail, dict) and isinstance(call_detail.get("subcalls"), list):
+                            subcalls = call_detail.get("subcalls")
                         trace_hook.log_step(
                             step_index=steps,
                             stage=stage,
@@ -757,6 +804,7 @@ def run_adaptive_episode(
                             vc_output=(vc_det or {}).get("vc_raw_text") if vc_det else None,
                             model_name=trace_model_name,
                             metadata=lf_meta_a,
+                            subcalls=subcalls,
                         )
                     except Exception:
                         trace_hook.log_action_generation(

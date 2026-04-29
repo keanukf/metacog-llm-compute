@@ -19,6 +19,8 @@ def test_tower_of_hanoi_gets_default_prefix_and_action_cap():
     assert k["followup_cot_max_chars"] == 12000
     assert k["vc_raw_completion_max_chars"] == 8000
     assert k["vc_followup_instruction"] == DEFAULT_VC_FOLLOWUP_INSTRUCTION
+    assert k["c1_verify_temperature"] == 0.0
+    assert k["c1_cot_temperature"] is None
 
 
 def test_vc_followup_instruction_from_yaml():
@@ -85,3 +87,26 @@ def test_textworld_disable_action_stop():
     }
     k = resolve_step_fn_kwargs(cfg, "textworld")
     assert k["action_stop"] is None
+
+
+def test_c1_verify_knobs_from_yaml() -> None:
+    cfg = {
+        "inference": {"max_tokens": 128, "temperature": 0.2},
+        "vc": {"mode": "inline"},
+        "domain_prompts": {"tower_of_hanoi": {"prefix": "x"}},
+        "c1": {
+            "cot_temperature": 0.7,
+            "cot_max_tokens": 222,
+            "verify_temperature": 0.0,
+            "verify_max_tokens": 33,
+            "verify_stop": ["\n\n"],
+            "verify_instruction": "Check availability only.\nOutput one line.",
+        },
+    }
+    k = resolve_step_fn_kwargs(cfg, "tower_of_hanoi")
+    assert k["c1_cot_temperature"] == 0.7
+    assert k["c1_cot_max_tokens"] == 222
+    assert k["c1_verify_temperature"] == 0.0
+    assert k["c1_verify_max_tokens"] == 33
+    assert k["c1_verify_stop"] == ["\n\n"]
+    assert "availability" in (k["c1_verify_instruction"] or "").lower()
