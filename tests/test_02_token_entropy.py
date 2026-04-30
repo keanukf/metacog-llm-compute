@@ -116,3 +116,22 @@ def test_extract_action_tle_falls_back_for_single_line_without_tokens():
     a = extract_action_tle_from_response("go north", lp)
     b = extract_tle_from_response("go north", lp)
     assert a == b
+
+
+def test_extract_action_tle_slices_first_line_after_think_close():
+    lp = [
+        {"token": "<think>", "logprob": -1.0},
+        {"token": "\n", "logprob": -1.0},
+        {"token": "x", "logprob": -1.0},
+        {"token": "\n", "logprob": -1.0},
+        {"token": "</think>", "logprob": -1.0},
+        {"token": "\n", "logprob": -1.0},
+        {"token": "A", "logprob": -0.2},
+        {"token": "-", "logprob": -0.2},
+        {"token": ">", "logprob": -0.2},
+        {"token": "C", "logprob": -0.2},
+        {"token": "\n", "logprob": -0.2},
+        {"token": "extra", "logprob": -6.0},
+    ]
+    sliced = extract_action_tle_from_response("<think>\nx\n</think>\nA->C\nextra", lp)
+    assert sliced == compute_tle(lp[6:11])

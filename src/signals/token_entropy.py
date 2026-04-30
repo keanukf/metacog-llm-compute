@@ -134,7 +134,10 @@ def extract_action_tle_from_response(
     logprobs: list[dict[str, Any]] | list[float] | None,
 ) -> dict[str, float] | None:
     """
-    Extract TLE anchored to the executed action tokens only (first non-empty output line).
+    Extract TLE anchored to the executed action tokens only.
+
+    If the completion contains a Qwen-style reasoning block (<think>...</think>),
+    we treat the executed action as the first non-empty line **after** </think>.
 
     If token text is present in each record (``{"token": ...}``), we slice the logprob records
     up to and including the first newline *after* the first non-empty line begins.
@@ -148,12 +151,40 @@ def extract_action_tle_from_response(
     if not logprobs:
         return None
 
-    # If we don't have token strings, we can only be safe for single-line outputs.
     has_token_text = isinstance(logprobs, list) and all(
         isinstance(x, dict) and isinstance(x.get("token"), str) for x in logprobs
     )
     out_text = (text or "").lstrip()
+
+    think_close_idx = (text or "").lower().rfind("</think>")
+    if think_close_idx >= 0:
+        if not has_token_text:
+            return None
+        target_start = think_close_idx + len("</think>")
+        while target_start < len(text) and (text[target_start] in {"\n", "\r", " ", "\t"}):
+            target_start += 1
+        # Slice tokens starting at target_start until newline (or end).
+        cursor = 0
+        started = False
+        sliced: list[dict[str, Any]] = []
+        for rec in logprobs:  # type: ignore[assignment]
+            tok = rec.get("token", "")
+            start = cursor
+            end = start + len(tok)
+            cursor = end
+            if end <= target_start:
+                continue
+            if not started:
+                if tok.strip() == "":
+                    continue
+                started = True
+            sliced.append(rec)
+            if started and ("\n" in tok):
+                break
+        return compute_tle(sliced) if sliced else None
+
     is_multiline = "\n" in out_text
+    # If we don't have token strings, we can only be safe for single-line outputs.
     if not has_token_text:
         if is_multiline:
             return None
