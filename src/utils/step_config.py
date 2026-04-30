@@ -58,7 +58,7 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         - ``followup_max_context_chars`` (int | null, optional): emergency cap on the full VC follow-up prompt
         - ``followup_cot_max_chars`` (int, optional): C1 chain-of-thought budget inside VC follow-up (default 12000)
         - ``vc_raw_completion_max_chars`` (int, optional): C0 completion snippet budget in VC follow-up (default 8000)
-    - ``followup_instruction`` (str, optional): VC follow-up text under ``=== INSTRUCTION ===`` (default in code)
+    - ``followup_instruction`` (str, optional): VC follow-up text after ``<output_to_judge>`` (default in code)
 
     Backward compatibility:
     Older configs used ``vc.prompt_prefix`` / ``vc.action_max_tokens`` / ``vc.textworld_action_stop``

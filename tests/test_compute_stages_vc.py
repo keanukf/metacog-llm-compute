@@ -4,6 +4,7 @@ from __future__ import annotations
 from src.agent.compute_stages import (
     DEFAULT_VC_FOLLOWUP_INSTRUCTION,
     VC_FOLLOWUP_PROMPT_MARKER,
+    _build_prompt,
     _extract_first_line,
     get_step_fn,
 )
@@ -43,7 +44,7 @@ def test_c1_tle_comes_from_verify_call_and_is_action_only():
 
         def generate(self, prompt: str, logprobs: bool = False, **kwargs):
             self.calls += 1
-            if "--- Verify ---" in (prompt or ""):
+            if "<draft>" in (prompt or ""):
                 text = "take key\nbecause..."
                 if not logprobs:
                     return text, None
@@ -56,7 +57,7 @@ def test_c1_tle_comes_from_verify_call_and_is_action_only():
                 ]
                 return text, lp
             # CoT call (ignored for TLE)
-            return "Think.\nACTION: take key", ([{"logprob": -0.01}] * 50 if logprobs else None)
+            return "<think>\n- x\n</think>\ntake key", ([{"logprob": -0.01}] * 50 if logprobs else None)
 
     m = _C1Model()
     step = get_step_fn("C1", vc_mode="none")
@@ -104,7 +105,8 @@ def test_followup_vc_prompt_contains_task_context():
     step("current_obs", [], m)
     assert m.vc_prompt is not None
     assert "Scoped prefix line." in m.vc_prompt
-    assert "=== TASK CONTEXT ===" in m.vc_prompt
+    assert "<task_context>" in m.vc_prompt
+    assert "<output_to_judge>" in m.vc_prompt
     assert "current_obs" in m.vc_prompt
     assert DEFAULT_VC_FOLLOWUP_INSTRUCTION in m.vc_prompt
 
@@ -196,11 +198,11 @@ class _C1TwoCallModel:
         self.calls += 1
         if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
             return "70", [{"logprob": -0.1}] * 2 if logprobs else None
-        if "--- Verify ---" in (prompt or ""):
+        if "<draft>" in (prompt or ""):
             # Verify should be deterministic by default (stabilizes TLE distribution).
             assert float(kwargs.get("temperature", 0.0)) == 0.0
             return "go north", [{"logprob": -0.3}] * 4 if logprobs else None
-        return "Consider the map.\nACTION: go north", [{"logprob": -0.5}] * 8 if logprobs else None
+        return "<think>\nConsider the map.\n</think>\ngo north", [{"logprob": -0.5}] * 8 if logprobs else None
 
 
 def test_c1_two_lm_calls_with_followup_vc():
@@ -235,9 +237,9 @@ def test_c1_vc_followup_includes_chain_of_thought():
             if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
                 self.vc_prompt = prompt
                 return "55", [{"logprob": -0.1}] * 2 if logprobs else None
-            if "--- Verify ---" in (prompt or ""):
+            if "<draft>" in (prompt or ""):
                 return "go east", [{"logprob": -0.2}] * 3 if logprobs else None
-            return "MarkerReasoningUnique42.\nACTION: go east", [{"logprob": -0.15}] * 10 if logprobs else None
+            return "<think>\nMarkerReasoningUnique42.\n</think>\ngo east", [{"logprob": -0.15}] * 10 if logprobs else None
 
     m = _M()
     step = get_step_fn("C1", vc_mode="followup")
@@ -254,9 +256,9 @@ def test_c1_two_lm_calls_vc_none():
 
         def generate(self, prompt: str, logprobs: bool = False, **kwargs):
             self.calls += 1
-            if "--- Verify ---" in (prompt or ""):
+            if "<draft>" in (prompt or ""):
                 return "take key", [{"logprob": -0.2}] * 3 if logprobs else None
-            return "Plan.\nACTION: take key", [{"logprob": -0.4}] * 8 if logprobs else None
+            return "<think>\nPlan.\n</think>\ntake key", [{"logprob": -0.4}] * 8 if logprobs else None
 
     m = _NoVc()
     step = get_step_fn("C1", vc_mode="none", prompt_prefix="P.")
@@ -282,3 +284,15 @@ def test_c0_returns_first_line_as_action():
     action, *_rest = step("obs", [], m)
     assert action == "go south"
     assert m.calls == 2
+
+
+def test_action_prompt_uses_flat_xml_sections():
+    p = _build_prompt(
+        "current",
+        ["OBSERVATION: reset", "ACTION: A->C", "OBSERVATION: after"],
+        "Tower rules here",
+    )
+    assert "<task>" in p
+    assert "<history>" in p
+    assert "<state>" in p
+    assert "=== HISTORY ===" not in p

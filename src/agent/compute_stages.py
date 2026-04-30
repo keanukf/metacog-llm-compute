@@ -14,7 +14,7 @@ from src.signals import token_entropy, verbalized_confidence
 StepReturn = tuple[str, dict[str, float] | None, float | None, int, int, Any, Any, str, str, Any]
 
 # Present in every VC follow-up prompt — tests and mocks can detect the second call without coupling to wording details.
-VC_FOLLOWUP_PROMPT_MARKER = "=== YOUR OUTPUT TO JUDGE ==="
+VC_FOLLOWUP_PROMPT_MARKER = "<output_to_judge>"
 
 # Default when YAML omits ``vc.followup_instruction`` (overridable per experiment).
 DEFAULT_VC_FOLLOWUP_INSTRUCTION = (
@@ -35,6 +35,75 @@ DEFAULT_C1_VERIFY_INSTRUCTION = (
 )
 
 
+_THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
+
+
+def _xml_block(tag: str, content: str, *, attrs: str = "") -> str:
+    attr_text = f" {attrs}" if attrs else ""
+    return f"<{tag}{attr_text}>\n{content or ''}\n</{tag}>"
+
+
+def _unwrap_history_entry(entry: str, prefix: str) -> str | None:
+    line = entry or ""
+    if line.startswith(prefix):
+        rest = line.split(":", 1)[1]
+        if rest.startswith(" "):
+            rest = rest[1:]
+        return rest
+    return None
+
+
+def _history_to_xml(history: list[str]) -> str:
+    """
+    Render internal history lines (ACTION:/OBSERVATION:) to a flat XML schema.
+
+    Hierarchy: <history> -> <reset_observation>, <step>, and optional <pinned_recipe>.
+    """
+    if not history:
+        return _xml_block("history", "")
+
+    parts: list[str] = []
+    first_obs = _unwrap_history_entry(history[0], "OBSERVATION:")
+    if first_obs is not None:
+        parts.append(_xml_block("reset_observation", (first_obs or "").rstrip()))
+
+    idx = 1
+    step_index = 1
+    while idx < len(history):
+        entry = history[idx] or ""
+
+        if entry.startswith("PINNED RECIPE:"):
+            recipe = _unwrap_history_entry(entry, "PINNED RECIPE:")
+            if recipe is None:
+                recipe = entry.split(":", 1)[1].lstrip() if ":" in entry else entry
+            parts.append(_xml_block("pinned_recipe", (recipe or "").rstrip()))
+            idx += 1
+            continue
+
+        act = _unwrap_history_entry(entry, "ACTION:")
+        obs = _unwrap_history_entry(history[idx + 1], "OBSERVATION:") if (idx + 1) < len(history) else None
+        if act is not None and obs is not None:
+            step_body = "\n".join(
+                [
+                    f"<action>{act.rstrip()}</action>",
+                    f"<observation>{obs.rstrip()}</observation>",
+                ]
+            )
+            parts.append(_xml_block("step", step_body, attrs=f'index=\"{step_index}\"'))
+            step_index += 1
+            idx += 2
+            continue
+
+        parts.append(_xml_block("history_item", entry.rstrip()))
+        idx += 1
+
+    return _xml_block("history", "\n\n".join(parts))
+
+
+def _strip_think_blocks(text: str) -> str:
+    return _THINK_BLOCK_RE.sub("", text or "")
+
+
 def _build_prompt(observation: str, history: list[str], prompt_prefix: str) -> str:
     """
     Build the action-generation prompt from:
@@ -50,21 +119,12 @@ def _build_prompt(observation: str, history: list[str], prompt_prefix: str) -> s
     def _rstrip(s: str) -> str:
         return (s or "").rstrip()
 
-    def _history_last_observation(history_line: str) -> str | None:
-        # History stores entries like "OBSERVATION: <text>" (see base_agent.py).
-        line = history_line or ""
-        if line.startswith("OBSERVATION:"):
-            rest = line.split(":", 1)[1]
-            if rest.startswith(" "):
-                rest = rest[1:]
-            return _rstrip(rest)
-        return None
-
     obs_now = _rstrip(observation or "")
     include_current_obs = True
     if history:
         last_line = history[-1] or ""
-        last_obs = _history_last_observation(last_line)
+        last_obs_raw = _unwrap_history_entry(last_line, "OBSERVATION:")
+        last_obs = _rstrip(last_obs_raw) if last_obs_raw is not None else None
         # If the caller already stored the *current* observation in history (true for step 0 reset),
         # don't append it again (TextWorld reset text can be very large).
         if last_obs is not None and last_obs == obs_now:
@@ -74,11 +134,11 @@ def _build_prompt(observation: str, history: list[str], prompt_prefix: str) -> s
 
     parts: list[str] = []
     if pfx:
-        parts.append(pfx)
+        parts.append(_xml_block("task", pfx))
     if history:
-        parts.append("=== HISTORY ===\n" + "\n".join(history))
+        parts.append(_history_to_xml(history))
     if include_current_obs and (observation is not None):
-        parts.append("=== CURRENT OBSERVATION ===\n" + (observation or ""))
+        parts.append(_xml_block("state", observation or ""))
     return "\n\n".join(parts).rstrip()
 
 
@@ -92,7 +152,7 @@ def _extract_first_line(text: str) -> str:
 
 
 def _normalize_action_line(text: str) -> str:
-    line = _extract_first_line(text)
+    line = _extract_first_line(_strip_think_blocks(text or ""))
     if line.upper().startswith("ACTION:"):
         return line.split(":", 1)[1].strip()
     return line
@@ -109,7 +169,7 @@ def _normalize_vote_key(action_line: str) -> str:
     but we do collapse common surface-form variation so self-consistency is not
     artificially deflated.
     """
-    s = (action_line or "").strip()
+    s = _strip_think_blocks(action_line or "").strip()
     if not s:
         return ""
     if s.upper().startswith("ACTION:"):
@@ -126,7 +186,7 @@ def _normalize_action_for_execution(action_line: str) -> str:
     Must be consistent with vote keys while being conservative (do NOT casefold),
     so domains like Tower of Hanoi keep their expected surface form (e.g. "A->C").
     """
-    s = (action_line or "").strip()
+    s = _strip_think_blocks(action_line or "").strip()
     if not s:
         return ""
     if s.upper().startswith("ACTION:"):
@@ -149,8 +209,20 @@ def _seeded_rng(seed_base: str | int | None, *, call_index: int) -> random.Rando
 
 
 def _extract_draft_action_from_cot(cot_text: str) -> str:
-    """Prefer an explicit ``ACTION:`` line from the CoT output; else first non-empty line."""
-    for line in (cot_text or "").splitlines():
+    """
+    Extract draft command from CoT output.
+
+    Preferred format (Qwen3-native): <think>...</think> then a single-line command.
+    Fallback: legacy ACTION: line or first non-empty line.
+    """
+    t = cot_text or ""
+    close = t.lower().rfind("</think>")
+    if close >= 0:
+        after = t[close + len("</think>") :]
+        draft = _extract_first_line(after)
+        if draft:
+            return draft
+    for line in (t or "").splitlines():
         ls = line.strip()
         if ls.upper().startswith("ACTION:"):
             return ls.split(":", 1)[1].strip()
@@ -270,11 +342,8 @@ def _build_vc_followup_prompt(
     )
     instr = (instruction or "").strip() or DEFAULT_VC_FOLLOWUP_INSTRUCTION
     full = (
-        "=== TASK CONTEXT ===\n"
-        f"{task_context}\n\n"
-        f"{VC_FOLLOWUP_PROMPT_MARKER}\n"
-        f"{judged}\n\n"
-        "=== INSTRUCTION ===\n"
+        f"{_xml_block('task_context', task_context)}\n\n"
+        f"{_xml_block('output_to_judge', judged)}\n\n"
         f"{instr}"
     )
     if followup_max_context_chars is not None and followup_max_context_chars > 0:
@@ -418,7 +487,7 @@ def _c0_step_core(
     tokens_used = len(logprobs) if logprobs else 0
     lm_calls = 1
 
-    action = _extract_first_line(text)
+    action = _normalize_action_line(text)
 
     vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
         model,
@@ -475,14 +544,14 @@ def _c1_step_core(
     c1_verify_instruction: str | None,
 ) -> StepReturn:
     """
-    C1: two LM calls — (1) short chain-of-thought with a draft ``ACTION:`` line,
-    (2) self-verify pass that outputs the final single-line imperative with logprobs (TLE).
+    C1: two LM calls — (1) chain-of-thought inside <think>...</think> followed by a draft command,
+    (2) verify pass that outputs the final single-line command with logprobs (TLE).
     """
     base_prompt = _build_prompt(observation, history, prompt_prefix)
     cot_instruction = (
-        "\n\nThink step by step (brief bullets or short sentences are fine). "
-        "Then output exactly one line starting with ACTION: followed by your proposed "
-        "single imperative command for this turn."
+        "\n\n"
+        "Before answering, briefly reason inside <think>...</think> tags.\n"
+        "After </think>, output exactly one final command on a single line."
     )
     cot_prompt = f"{base_prompt}{cot_instruction}"
     act_tok = int(action_max_tokens) if action_max_tokens is not None else 32
@@ -503,8 +572,10 @@ def _c1_step_core(
 
     verify_instr = (c1_verify_instruction or "").strip() or DEFAULT_C1_VERIFY_INSTRUCTION
     verify_instruction = (
-        "\n\n--- Verify ---\n"
-        f"Draft command: {draft}\n\n"
+        "\n\n"
+        f"<draft>{draft}</draft>\n\n"
+        "Verify the draft above against the rules in <task>. If it is correct, output it again. "
+        "Otherwise output a corrected single command. Output exactly one command on a single line.\n\n"
         f"{verify_instr.strip()}"
     )
     verify_prompt = f"{base_prompt}{verify_instruction}"
