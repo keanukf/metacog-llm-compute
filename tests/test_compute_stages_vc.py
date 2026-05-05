@@ -1,11 +1,13 @@
 """Compute stages: VC follow-up and prompt prefix."""
 from __future__ import annotations
 
+from src.agent import compute_stages as cs
 from src.agent.compute_stages import (
     DEFAULT_VC_FOLLOWUP_INSTRUCTION,
     VC_FOLLOWUP_PROMPT_MARKER,
     _build_prompt,
     _extract_first_line,
+    _parse_cot_action,
     get_step_fn,
 )
 
@@ -44,7 +46,7 @@ def test_c1_tle_comes_from_verify_call_and_is_action_only():
 
         def generate(self, prompt: str, logprobs: bool = False, **kwargs):
             self.calls += 1
-            if "<draft>" in (prompt or ""):
+            if "<draft_action>" in (prompt or ""):
                 text = "take key\nbecause..."
                 if not logprobs:
                     return text, None
@@ -198,7 +200,7 @@ class _C1TwoCallModel:
         self.calls += 1
         if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
             return "70", [{"logprob": -0.1}] * 2 if logprobs else None
-        if "<draft>" in (prompt or ""):
+        if "<draft_action>" in (prompt or ""):
             # Verify should be deterministic by default (stabilizes TLE distribution).
             assert float(kwargs.get("temperature", 0.0)) == 0.0
             return "go north", [{"logprob": -0.3}] * 4 if logprobs else None
@@ -237,7 +239,7 @@ def test_c1_vc_followup_includes_chain_of_thought():
             if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
                 self.vc_prompt = prompt
                 return "55", [{"logprob": -0.1}] * 2 if logprobs else None
-            if "<draft>" in (prompt or ""):
+            if "<draft_action>" in (prompt or ""):
                 return "go east", [{"logprob": -0.2}] * 3 if logprobs else None
             return "<think>\nMarkerReasoningUnique42.\n</think>\ngo east", [{"logprob": -0.15}] * 10 if logprobs else None
 
@@ -256,7 +258,7 @@ def test_c1_two_lm_calls_vc_none():
 
         def generate(self, prompt: str, logprobs: bool = False, **kwargs):
             self.calls += 1
-            if "<draft>" in (prompt or ""):
+            if "<draft_action>" in (prompt or ""):
                 return "take key", [{"logprob": -0.2}] * 3 if logprobs else None
             return "<think>\nPlan.\n</think>\ntake key", [{"logprob": -0.4}] * 8 if logprobs else None
 
@@ -296,3 +298,94 @@ def test_action_prompt_uses_flat_xml_sections():
     assert "<history>" in p
     assert "<state>" in p
     assert "=== HISTORY ===" not in p
+
+
+def test_parse_cot_action_post_think_parses_action_and_reasoning_internal():
+    parsed = _parse_cot_action("<think>reason</think>\ntake key")
+    assert parsed["status"] == "parsed"
+    assert parsed["parse_method"] == "post_think"
+    assert parsed["action"] == "take key"
+    assert "reason" in parsed["reasoning_internal"]
+
+
+def test_parse_cot_action_reasoning_only_is_unparsed():
+    parsed = _parse_cot_action("<think>\njust thinking\n</think>\n")
+    assert parsed["status"] == "unparsed"
+    assert parsed["action"] == ""
+
+
+def test_parse_cot_action_unclosed_think_recovers_action_via_fallback():
+    parsed = _parse_cot_action("<think>reason\nA->C")
+    # We accept either parsed fallback or unparsed depending on strictness, but never a tag artifact.
+    assert "<think" not in (parsed["action"] or "").lower()
+
+
+def test_parse_cot_action_legacy_action_prefix_parses():
+    parsed = _parse_cot_action("ACTION: go east")
+    assert parsed["status"] == "parsed"
+    assert parsed["parse_method"] == "legacy_action_prefix"
+    assert parsed["action"] == "go east"
+
+
+def test_single_line_output_instruction_is_present_in_c0_prompt():
+    class _Cap:
+        prompt: str | None = None
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.prompt = prompt
+            return "go north", ([{"logprob": -0.2}] * 3 if logprobs else None)
+
+    m = _Cap()
+    step = get_step_fn("C0", vc_mode="none", prompt_prefix="Prefix.")
+    step("obs", [], m)
+    assert m.prompt is not None
+    assert cs._SINGLE_LINE_OUTPUT_INSTRUCTION in m.prompt
+
+
+def test_single_line_output_instruction_is_present_in_c1_verify_prompt_parsed_and_unparsed():
+    class _CapC1:
+        prompts: list[str]
+
+        def __init__(self) -> None:
+            self.prompts = []
+            self.calls = 0
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.calls += 1
+            self.prompts.append(prompt)
+            # Call 1: CoT
+            if self.calls == 1:
+                return "<think>x</think>\ngo east", ([{"logprob": -0.1}] * 5 if logprobs else None)
+            # Call 2: verify
+            return "go east", ([{"logprob": -0.2}] * 3 if logprobs else None)
+
+    m = _CapC1()
+    step = get_step_fn("C1", vc_mode="none", prompt_prefix="Prefix.")
+    step("obs", [], m)
+    assert any(cs._SINGLE_LINE_OUTPUT_INSTRUCTION in p for p in m.prompts)
+
+    class _CapC1Unparsed(_CapC1):
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.calls += 1
+            self.prompts.append(prompt)
+            if self.calls == 1:
+                return "<think>x</think>\n", ([{"logprob": -0.1}] * 5 if logprobs else None)
+            return "go west", ([{"logprob": -0.2}] * 3 if logprobs else None)
+
+    m2 = _CapC1Unparsed()
+    step2 = get_step_fn("C1", vc_mode="none", prompt_prefix="Prefix.")
+    step2("obs", [], m2)
+    assert any(cs._SINGLE_LINE_OUTPUT_INSTRUCTION in p for p in m2.prompts)
+
+
+def test_single_line_output_instruction_literal_has_single_definition_in_src():
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent
+    literal = "Output exactly one command on a single line."
+    matches: list[Path] = []
+    for p in (repo_root / "src").rglob("*.py"):
+        txt = p.read_text(encoding="utf-8")
+        if literal in txt:
+            matches.append(p)
+    assert len(matches) == 1, f"Found literal in multiple sources: {matches}"

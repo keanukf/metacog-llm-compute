@@ -24,18 +24,134 @@ DEFAULT_VC_FOLLOWUP_INSTRUCTION = (
     "Confidence:"
 )
 
+_SINGLE_LINE_OUTPUT_INSTRUCTION: str = (
+    "Output exactly one command on a single line. No reasoning, no tags, no preamble."
+)
+
+# Shared generation instruction body (reused to keep C0/C1 parity stable over time).
+_C0_GENERATION_INSTRUCTION: str = "Generate one command directly from <task>, <history>, and <state>."
+
 DEFAULT_C1_VERIFY_INSTRUCTION = (
-    "You are doing a verification pass over a draft command.\n"
-    "Check the following criteria against the task context above:\n"
-    "1) Format: Output exactly ONE imperative command on a single line (no quotes, no explanation, no ACTION: prefix).\n"
-    "2) Plausibility: The command must be feasible in the current state (e.g., referenced objects/pegs exist).\n"
-    "3) Goal-advancement: Prefer commands that make progress toward the stated goal; avoid repeating no-op actions.\n"
-    "4) Consistency: Avoid trivial oscillation unless the observation/state has changed in a way that warrants it.\n\n"
-    "Output exactly ONE imperative command on a single line (no ACTION: prefix, no quotes, no explanation).\n"
+    "You are doing a verification pass over a draft_action.\n"
+    "Use <task>, <history>, and <state> as the only source of truth.\n\n"
+    'If <draft_status> is "parsed":\n'
+    "- Check draft_action against the task constraints and current state.\n"
+    "- If it is valid and useful, output it again unchanged.\n"
+    "- If it is invalid, output a corrected single command.\n\n"
+    'If <draft_status> is "unparsed":\n'
+    "- Ignore draft_action.\n"
+    f"- {_C0_GENERATION_INSTRUCTION}\n\n"
+    f"{_SINGLE_LINE_OUTPUT_INSTRUCTION}\n"
 )
 
 
 _THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
+_THINK_CAPTURE_RE = re.compile(r"<think>([\s\S]*?)</think>", re.IGNORECASE)
+
+
+def _looks_like_tag_artifact(line: str) -> bool:
+    s = (line or "").strip()
+    if not s:
+        return True
+    sl = s.casefold()
+    if sl.startswith("<") and sl.endswith(">") and " " not in s:
+        return True
+    if "<think" in sl or "</think" in sl:
+        return True
+    if "<draft" in sl or "</draft" in sl:
+        return True
+    if "<task" in sl or "<history" in sl or "<state" in sl:
+        return True
+    return False
+
+
+def _parse_cot_action(cot_text: str) -> dict[str, str]:
+    """
+    Structured parse result for C1 CoT outputs.
+
+    Returns:
+      {
+        "action": str,                # "" if unparsed
+        "status": "parsed" | "unparsed",
+        "parse_method": "post_think" | "legacy_action_prefix" | "first_line_fallback" | "none",
+        "reasoning_internal": str,    # last complete <think>...</think> inner content (trace-only)
+        "raw": str,
+      }
+    """
+    raw = cot_text or ""
+    t = raw
+
+    reasoning_internal = ""
+    matches = list(_THINK_CAPTURE_RE.finditer(t))
+    if matches:
+        reasoning_internal = (matches[-1].group(1) or "").strip()
+
+    # 1) Preferred: first plausible line after the final </think>
+    close = t.casefold().rfind("</think>")
+    if close >= 0:
+        after = t[close + len("</think>") :]
+        for line in (after or "").splitlines():
+            s = (line or "").strip()
+            if not s:
+                continue
+            if _looks_like_tag_artifact(s):
+                continue
+            if re.match(r"(?i)^(reasoning|thoughts|analysis|plan)\s*:", s):
+                continue
+            action = _normalize_action_line(s)
+            if action and not _looks_like_tag_artifact(action):
+                return {
+                    "action": action,
+                    "status": "parsed",
+                    "parse_method": "post_think",
+                    "reasoning_internal": reasoning_internal,
+                    "raw": raw,
+                }
+
+    # 2) Legacy: ACTION: prefix
+    for line in (t or "").splitlines():
+        ls = (line or "").strip()
+        if ls.upper().startswith("ACTION:"):
+            action = ls.split(":", 1)[1].strip()
+            action = _normalize_action_line(action)
+            if action and not _looks_like_tag_artifact(action):
+                return {
+                    "action": action,
+                    "status": "parsed",
+                    "parse_method": "legacy_action_prefix",
+                    "reasoning_internal": reasoning_internal,
+                    "raw": raw,
+                }
+
+    # 3) Best-effort fallback: remove any complete <think>...</think> blocks, then strip think tags
+    # (even if incomplete) and take the first plausible remaining line.
+    cleaned = _strip_think_blocks(t)
+    cleaned = re.sub(r"</?\s*think\s*>", "", cleaned, flags=re.IGNORECASE)
+    for line in (cleaned or "").splitlines():
+        s = (line or "").strip()
+        if not s:
+            continue
+        if _looks_like_tag_artifact(s):
+            continue
+        if re.match(r"(?i)^(reasoning|thoughts|analysis|plan)\s*:", s):
+            continue
+        action = _normalize_action_line(s)
+        if action and not _looks_like_tag_artifact(action):
+            return {
+                "action": action,
+                "status": "parsed",
+                "parse_method": "first_line_fallback",
+                "reasoning_internal": reasoning_internal,
+                "raw": raw,
+            }
+
+    return {
+        "action": "",
+        "status": "unparsed",
+        "parse_method": "none",
+        "reasoning_internal": reasoning_internal,
+        "raw": raw,
+    }
 
 
 def _xml_block(tag: str, content: str, *, attrs: str = "") -> str:
@@ -215,18 +331,8 @@ def _extract_draft_action_from_cot(cot_text: str) -> str:
     Preferred format (Qwen3-native): <think>...</think> then a single-line command.
     Fallback: legacy ACTION: line or first non-empty line.
     """
-    t = cot_text or ""
-    close = t.lower().rfind("</think>")
-    if close >= 0:
-        after = t[close + len("</think>") :]
-        draft = _extract_first_line(after)
-        if draft:
-            return draft
-    for line in (t or "").splitlines():
-        ls = line.strip()
-        if ls.upper().startswith("ACTION:"):
-            return ls.split(":", 1)[1].strip()
-    return _normalize_action_line(cot_text)
+    parsed = _parse_cot_action(cot_text or "")
+    return str(parsed.get("action") or "")
 
 
 def _action_generate_kwargs(
@@ -480,7 +586,7 @@ def _c0_step_core(
     followup_cot_max_chars: int,
     vc_raw_completion_max_chars: int,
 ) -> StepReturn:
-    prompt = _build_prompt(observation, history, prompt_prefix)
+    prompt = f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
     text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
     tle = token_entropy.extract_action_tle_from_response(text, logprobs) if logprobs else None
@@ -566,16 +672,19 @@ def _c1_step_core(
         "temperature": float(cot_temp),
     }
     cot_text, cot_lp = model.generate(cot_prompt, logprobs=True, **cot_kw)
-    draft = _extract_draft_action_from_cot(cot_text or "")
-    if not draft:
-        draft = "(no draft parsed)"
+    parsed = _parse_cot_action(cot_text or "")
+    draft_action = str(parsed.get("action") or "")
+    draft_status = str(parsed.get("status") or "unparsed")
+    parse_method = str(parsed.get("parse_method") or "none")
+    draft_reasoning_raw = str(parsed.get("reasoning_internal") or "")
+    draft = draft_action if draft_action else "(no draft parsed)"
 
     verify_instr = (c1_verify_instruction or "").strip() or DEFAULT_C1_VERIFY_INSTRUCTION
     verify_instruction = (
         "\n\n"
-        f"<draft>{draft}</draft>\n\n"
-        "Verify the draft above against the rules in <task>. If it is correct, output it again. "
-        "Otherwise output a corrected single command. Output exactly one command on a single line.\n\n"
+        f"<draft_action>{draft_action}</draft_action>\n"
+        f"<draft_status>{draft_status}</draft_status>\n\n"
+        "Verify draft_action against the rules in <task> using <history> and <state> as the source of truth.\n\n"
         f"{verify_instr.strip()}"
     )
     verify_prompt = f"{base_prompt}{verify_instruction}"
@@ -619,6 +728,10 @@ def _c1_step_core(
     response_full = f"=== C1 CoT ===\n{cot_text}\n\n=== C1 verify ===\n{final_text}"
     call_detail = {
         "stage": "C1",
+        "draft_action": draft_action,
+        "draft_status": draft_status,
+        "parse_method": parse_method,
+        "draft_reasoning_raw": draft_reasoning_raw,
         "subcalls": [
             {
                 "kind": "cot",
@@ -687,7 +800,7 @@ def _c2_step_core(
     followup_cot_max_chars: int,
     vc_raw_completion_max_chars: int,
 ) -> StepReturn:
-    prompt = _build_prompt(observation, history, prompt_prefix)
+    prompt = f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
     # Per sample: raw_first_line, action_exec, vote_key, raw_text, logprobs
     samples: list[dict[str, Any]] = []
