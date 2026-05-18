@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from src.agent.allocator import allocate
 from src.agent.compute_stages import get_step_fn
+from src.agent.episode_runner import build_initial_history
 from src.agent.history_utils import compact_history_for_prompt, truncate_for_history
 from src.agent.step_results import normalize_step_result
 from src.agent.trace_integration import log_step_with_fallback
@@ -130,9 +131,11 @@ def run_episode(
     # Keep reset() output in history: many envs (e.g. TextWorld) do not repeat the full scene
     # on every step, only the latest feedback + state. Without this, step ≥1 prompts lose the
     # opening game text.
-    history: list[str] = [
-        f"OBSERVATION: {_truncate_for_history(obs, max_chars=history_max_obs_chars, head_ratio=history_obs_head_ratio)}"
-    ]
+    history = build_initial_history(
+        obs,
+        history_max_obs_chars=history_max_obs_chars,
+        history_obs_head_ratio=history_obs_head_ratio,
+    )
     pinned_recipe: str | None = None
     steps = 0
     total_lm_calls = 0
@@ -548,9 +551,11 @@ def run_adaptive_episode(
 
     obs = env.reset()
     # Same as run_episode: retain full opening observation for growing prompts.
-    history: list[str] = [
-        f"OBSERVATION: {_truncate_for_history(obs, max_chars=history_max_obs_chars, head_ratio=history_obs_head_ratio)}"
-    ]
+    history = build_initial_history(
+        obs,
+        history_max_obs_chars=history_max_obs_chars,
+        history_obs_head_ratio=history_obs_head_ratio,
+    )
     pinned_recipe: str | None = None
     steps = 0
     total_lm_calls = 0
