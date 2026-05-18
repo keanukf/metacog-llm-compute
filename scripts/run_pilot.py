@@ -28,6 +28,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.utils.dotenv_loader import load_dotenv_if_present
+from src.utils.errors import BackendError
 
 _DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 
@@ -198,7 +199,7 @@ def _assert_real_model_or_raise(pilot_mode: str, real_model: Any | None, err: st
         return
     if real_model is None:
         detail = f" ({err})" if err else ""
-        raise RuntimeError(
+        raise BackendError(
             f"pilot_mode={pilot_mode} requested, but real model wrapper could not be created{detail}. "
             "Aborting to avoid accidentally running a mock pilot."
         )
