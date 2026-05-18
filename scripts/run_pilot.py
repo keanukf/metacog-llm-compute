@@ -32,29 +32,17 @@ from src.utils.dotenv_loader import load_dotenv_if_present
 _DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 
 from src.utils.experiment_env import make_experiment_env, resolve_textworld_game_path
-from src.utils.logging_utils import write_logprob_distribution_artifacts, write_vc_distribution_artifacts
 from src.utils.step_config import resolve_step_fn_kwargs
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
 from src.utils.run_progress import format_run_elapsed, log, log_step_line
 from src.agent.compute_stages import VC_FOLLOWUP_PROMPT_MARKER
-
-
-def _logprob_export_settings(config: dict) -> tuple[bool, str, str]:
-    lg = config.get("logging") or {}
-    return (
-        bool(lg.get("save_logprob_distributions", False)),
-        str(lg.get("logprob_export_format", "json")).lower(),
-        str(lg.get("logprob_subdir", "logprobs")),
-    )
-
-
-def _vc_export_settings(config: dict) -> tuple[bool, str, str]:
-    lg = config.get("logging") or {}
-    return (
-        bool(lg.get("save_vc_distributions", False)),
-        str(lg.get("vc_export_format", "json")).lower(),
-        str(lg.get("vc_subdir", "vc")),
-    )
+from src.pilot.artifacts import (
+    load_episode_jsons as _load_episode_jsons,
+    load_json_optional as _load_json_optional,
+    maybe_write_logprob_artifacts as _maybe_write_logprob_artifacts,
+    maybe_write_vc_artifacts as _maybe_write_vc_artifacts,
+    save_json as _save_json,
+)
 
 
 def _step_trace_settings(config: dict) -> tuple[bool, Any]:
@@ -65,42 +53,6 @@ def _step_trace_settings(config: dict) -> tuple[bool, Any]:
 
     hook = optional_trace_hook_from_config(config, dotenv_info=_DOTENV_INFO)
     return save, hook
-
-
-def _maybe_write_logprob_artifacts(
-    config: dict,
-    episode_id: str,
-    result: dict[str, Any],
-    output_dir: Path,
-) -> None:
-    save, fmt, sub = _logprob_export_settings(config)
-    if not save:
-        return
-    raw = result.get("logprob_raw_per_step")
-    if not raw:
-        return
-    for p in write_logprob_distribution_artifacts(
-        episode_id, raw, output_dir, export_format=fmt, logprob_subdir=sub
-    ):
-        log(f"Wrote {p}")
-
-
-def _maybe_write_vc_artifacts(
-    config: dict,
-    episode_id: str,
-    result: dict[str, Any],
-    output_dir: Path,
-) -> None:
-    save, fmt, sub = _vc_export_settings(config)
-    if not save:
-        return
-    raw = result.get("vc_detail_per_step")
-    if not raw:
-        return
-    for p in write_vc_distribution_artifacts(
-        episode_id, raw, output_dir, export_format=fmt, vc_subdir=sub
-    ):
-        log(f"Wrote {p}")
 
 # Canonical order for --only (subset runs in this order).
 PILOT_STEPS_ORDER = (
@@ -121,43 +73,9 @@ def load_config(config_path: str | Path) -> dict:
     return load_yaml_path(Path(config_path))
 
 
-def _save_json(output_dir: Path, filename_stem: str, data: dict[str, Any]) -> Path:
-    """
-    Save a single JSON artifact to output_dir with a predictable filename.
-    This is used for per-test outputs (not per-episode outputs).
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{filename_stem}.json"
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-    log(f"Wrote {path}")
-    return path
-
-
 def _only_steps_in_order(selected: frozenset[str]) -> list[str]:
     """Deduplicate and order user --only choices by PILOT_STEPS_ORDER."""
     return [s for s in PILOT_STEPS_ORDER if s in selected]
-
-
-def _load_json_optional(path: Path) -> dict[str, Any] | None:
-    if not path.is_file():
-        return None
-    with open(path) as f:
-        data = json.load(f)
-    return data if isinstance(data, dict) else None
-
-
-def _load_episode_jsons(output_dir: Path, pattern: str) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for p in sorted(output_dir.glob(pattern)):
-        try:
-            with open(p) as f:
-                ep = json.load(f)
-            if isinstance(ep, dict):
-                out.append(ep)
-        except Exception:
-            continue
-    return out
 
 
 def _prepare_feasibility_inputs(
