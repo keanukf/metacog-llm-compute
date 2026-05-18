@@ -16,7 +16,11 @@ from typing import Any, Callable
 
 from src.agent.allocator import allocate
 from src.agent.compute_stages import get_step_fn
+from src.agent.step_results import normalize_step_result
 from src.utils.logging_utils import write_step_trace_line
+
+# Backward compatibility for existing tests/imports during modularization.
+_normalize_step_result = normalize_step_result
 
 # Compute stage step: (observation, history, model) -> (action, tle_or_none, vc_or_none, tokens_used, lm_calls_this_step)
 # Backward compat: step may return 3- or 4-tuple; defaults fill in missing values.
@@ -97,97 +101,6 @@ def _extract_recipe_block(text: str) -> str | None:
     if idx >= 0:
         return text[idx:].strip()
     return None
-
-
-def _normalize_step_result(
-    result: tuple,
-) -> tuple[
-    str,
-    dict | None,
-    float | None,
-    int,
-    int,
-    list[dict[str, Any]] | None,
-    dict[str, Any] | None,
-    str | None,
-    str | None,
-    dict[str, Any] | None,
-]:
-    """
-    Unpack step result as (action, tle, vc, tokens_used, lm_calls_this_step, logprobs_raw,
-    vc_detail, prompt_full, response_full, call_detail).
-
-    Backward compatibility:
-    - 3-tuple -> tokens_used=0, lm_calls_this_step=1, logprobs_raw=None, vc_detail=None,
-      prompt_full=None, response_full=None, call_detail=None
-    - 4-tuple -> lm_calls_this_step=1
-    - 6-tuple -> legacy: last element is raw per-token logprob list (optional save)
-    - 7-tuple -> (..., action_logprobs, vc_detail dict from follow-up)
-    - 9-tuple -> (..., prompt_full, response_full) for step tracing / observability
-    - 10-tuple -> (..., prompt_full, response_full, call_detail) with structured subcall logging
-    """
-    raw_lp: list[dict[str, Any]] | None = None
-    vc_detail: dict[str, Any] | None = None
-    prompt_full: str | None = None
-    response_full: str | None = None
-    call_detail: dict[str, Any] | None = None
-    n = len(result)
-    if n >= 9:
-        p7, p8 = result[7], result[8]
-        prompt_full = p7 if isinstance(p7, str) else None
-        response_full = p8 if isinstance(p8, str) else None
-    if n >= 10:
-        p9 = result[9]
-        call_detail = p9 if isinstance(p9, dict) else None
-    if n >= 7:
-        raw_lp = result[5]  # type: ignore[assignment]
-        vc_detail = result[6]  # type: ignore[assignment]
-    elif n == 6:
-        sixth = result[5]
-        if isinstance(sixth, dict) and (
-            "vc_prompt" in sixth or "vc_raw_text" in sixth or "vc_value" in sixth
-        ):
-            vc_detail = sixth
-        else:
-            raw_lp = sixth  # type: ignore[assignment]
-    if n >= 5:
-        return (
-            result[0],
-            result[1],
-            result[2],
-            int(result[3]),
-            int(result[4]),
-            raw_lp,
-            vc_detail,
-            prompt_full,
-            response_full,
-            call_detail,
-        )
-    if len(result) >= 4:
-        return (
-            result[0],
-            result[1],
-            result[2],
-            int(result[3]),
-            1,
-            raw_lp,
-            vc_detail,
-            prompt_full,
-            response_full,
-            call_detail,
-        )
-    return (
-        result[0],
-        result[1],
-        result[2],
-        0,
-        1,
-        raw_lp,
-        vc_detail,
-        prompt_full,
-        response_full,
-        call_detail,
-    )
 
 
 def _copy_step_results(env: Any) -> list[dict[str, Any]] | None:
@@ -357,18 +270,9 @@ def run_episode(
                     ]
                 raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
                 step_wall_time_s = time.perf_counter() - t0
-                (
-                    action,
-                    tle,
-                    vc,
-                    tokens_used,
-                    lm_calls_this_step,
-                    log_raw,
-                    vc_det,
-                    prompt_full,
-                    response_full,
-                    call_detail,
-                ) = _normalize_step_result(raw)
+                action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full, call_detail = (
+                    normalize_step_result(raw)
+                )
 
                 tle_per_step.append(tle)
                 vc_per_step.append(vc)
@@ -786,18 +690,9 @@ def run_adaptive_episode(
                 ]
             raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
             step_wall_time_s = time.perf_counter() - t0
-            (
-                action,
-                tle,
-                vc,
-                tokens_used,
-                lm_calls_this_step,
-                log_raw,
-                vc_det,
-                prompt_full,
-                response_full,
-                call_detail,
-            ) = _normalize_step_result(raw)
+            action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full, call_detail = (
+                normalize_step_result(raw)
+            )
             tle_per_step.append(tle)
             vc_per_step.append(vc)
             if save_logprob_distributions:
