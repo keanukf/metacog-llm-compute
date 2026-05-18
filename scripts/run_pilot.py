@@ -1189,7 +1189,7 @@ def _run_pilot_from_args(args: argparse.Namespace) -> None:
     log(f"Pilot done — wall {format_run_elapsed(time.perf_counter() - t_pilot0)} total")
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run pilot study (Tests 1-6). mock | hf (HF+MPS) | cuda | lmstudio (OpenAI API)."
     )
@@ -1238,8 +1238,15 @@ def main() -> None:
         metavar="ID",
         help="Override model.name after config (and LM Studio YAML merge). Used by run_pilot_models.py.",
     )
-    args = parser.parse_args()
-    run_pilot_main(args, _run_pilot_from_args)
+    return parser
+
+
+def _parse_args() -> argparse.Namespace:
+    return _build_parser().parse_args()
+
+
+def main() -> None:
+    run_pilot_main(_parse_args(), _run_pilot_from_args)
 
 
 if __name__ == "__main__":
