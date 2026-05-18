@@ -37,8 +37,6 @@ from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, loa
 from src.utils.run_progress import format_run_elapsed, log, log_step_line
 from src.agent.compute_stages import VC_FOLLOWUP_PROMPT_MARKER
 from src.pilot.artifacts import (
-    load_episode_jsons as _load_episode_jsons,
-    load_json_optional as _load_json_optional,
     maybe_write_logprob_artifacts as _maybe_write_logprob_artifacts,
     maybe_write_vc_artifacts as _maybe_write_vc_artifacts,
     save_json as _save_json,
@@ -48,6 +46,7 @@ from src.pilot.steps import (
     prepare_feasibility_inputs as _prepare_feasibility_inputs,
     run_mock_inference_speed_benchmark as _run_mock_inference_speed_benchmark,
 )
+from src.pilot.orchestrator import run_pilot_main
 
 
 def _step_trace_settings(config: dict) -> tuple[bool, Any]:
@@ -1061,56 +1060,7 @@ def _resolve_pilot_mode(args) -> str:
     return mode
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run pilot study (Tests 1-6). mock | hf (HF+MPS) | cuda | lmstudio (OpenAI API)."
-    )
-    parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
-    parser.add_argument(
-        "--lmstudio-config",
-        default=None,
-        metavar="PATH",
-        help="When --pilot-mode lmstudio: optional YAML deep-merged on top of --config "
-        "(default: configs/lmstudio_config.yaml; env LMSTUDIO_CONFIG_PATH). "
-        "Use enabled: false in that file to keep base pilot.yaml only.",
-    )
-    parser.add_argument("--output-dir", default="data/results", help="Base output directory")
-    parser.add_argument(
-        "--no-timestamp-run",
-        action="store_true",
-        help="Write directly under --output-dir instead of creating a timestamped subfolder (run_*_UTC).",
-    )
-    parser.add_argument(
-        "--pilot-mode",
-        type=parse_pilot_mode_arg,
-        default="mock",
-        help="mock | hf (HuggingFace+MPS) | m1 (deprecated=hf) | cuda | lmstudio (LM Studio server).",
-    )
-    parser.add_argument(
-        "--real",
-        action="store_true",
-        help="Use real model; auto-detect hf vs cuda if --pilot-mode is mock",
-    )
-    parser.add_argument(
-        "--only",
-        nargs="+",
-        metavar="STEP",
-        choices=list(PILOT_STEPS_ORDER),
-        default=None,
-        help=(
-            "Run only these pilot steps (canonical order). "
-            "Steps: sanity, test1, test2, test3, test4, test5, feasibility. "
-            "Example: --only test2. For feasibility, prior results in output_dir are merged "
-            "(pilot_test*.json, ep_textworld_*.json, pilot_test5_toh.json)."
-        ),
-    )
-    parser.add_argument(
-        "--model-name",
-        default=None,
-        metavar="ID",
-        help="Override model.name after config (and LM Studio YAML merge). Used by run_pilot_models.py.",
-    )
-    args = parser.parse_args()
+def _run_pilot_from_args(args: argparse.Namespace) -> None:
     t_pilot0 = time.perf_counter()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     base_output = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
@@ -1231,9 +1181,65 @@ def main() -> None:
             wall_clock_total_s=(time.perf_counter() - t_pilot0),
         )
         _save_json(output_dir, "pilot_feasibility", feasibility)
-        log(f"Feasibility done — go={feasibility.get('go')} passed={feasibility.get('passed')}/{feasibility.get('total')}")
+        log(
+            f"Feasibility done — go={feasibility.get('go')} "
+            f"passed={feasibility.get('passed')}/{feasibility.get('total')}"
+        )
 
     log(f"Pilot done — wall {format_run_elapsed(time.perf_counter() - t_pilot0)} total")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run pilot study (Tests 1-6). mock | hf (HF+MPS) | cuda | lmstudio (OpenAI API)."
+    )
+    parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
+    parser.add_argument(
+        "--lmstudio-config",
+        default=None,
+        metavar="PATH",
+        help="When --pilot-mode lmstudio: optional YAML deep-merged on top of --config "
+        "(default: configs/lmstudio_config.yaml; env LMSTUDIO_CONFIG_PATH). "
+        "Use enabled: false in that file to keep base pilot.yaml only.",
+    )
+    parser.add_argument("--output-dir", default="data/results", help="Base output directory")
+    parser.add_argument(
+        "--no-timestamp-run",
+        action="store_true",
+        help="Write directly under --output-dir instead of creating a timestamped subfolder (run_*_UTC).",
+    )
+    parser.add_argument(
+        "--pilot-mode",
+        type=parse_pilot_mode_arg,
+        default="mock",
+        help="mock | hf (HuggingFace+MPS) | m1 (deprecated=hf) | cuda | lmstudio (LM Studio server).",
+    )
+    parser.add_argument(
+        "--real",
+        action="store_true",
+        help="Use real model; auto-detect hf vs cuda if --pilot-mode is mock",
+    )
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="STEP",
+        choices=list(PILOT_STEPS_ORDER),
+        default=None,
+        help=(
+            "Run only these pilot steps (canonical order). "
+            "Steps: sanity, test1, test2, test3, test4, test5, feasibility. "
+            "Example: --only test2. For feasibility, prior results in output_dir are merged "
+            "(pilot_test*.json, ep_textworld_*.json, pilot_test5_toh.json)."
+        ),
+    )
+    parser.add_argument(
+        "--model-name",
+        default=None,
+        metavar="ID",
+        help="Override model.name after config (and LM Studio YAML merge). Used by run_pilot_models.py.",
+    )
+    args = parser.parse_args()
+    run_pilot_main(args, _run_pilot_from_args)
 
 
 if __name__ == "__main__":
