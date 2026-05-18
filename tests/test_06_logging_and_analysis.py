@@ -40,7 +40,9 @@ def test_log_episode_round_trip(sample_episode_data, temp_results_dir):
     assert path.exists()
     with open(path) as f:
         loaded = json.load(f)
-    assert loaded == sample_episode_data
+    expected = dict(sample_episode_data)
+    expected.setdefault("schema_version", "episode.v1")
+    assert loaded == expected
 
 
 def test_compute_ece_returns_number():
