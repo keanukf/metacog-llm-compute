@@ -73,6 +73,60 @@ def test_c1_tle_comes_from_verify_call_and_is_action_only():
     assert tle["mean_entropy"] == compute_tle([{"logprob": -0.2}] * 4)["mean_entropy"]
 
 
+def test_thinking_flags_c1_cot_only():
+    class _M:
+        def __init__(self) -> None:
+            self.seen: list[bool | None] = []
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            # Track per-call thinking flag.
+            self.seen.append(kwargs.get("enable_thinking"))
+            # 1) CoT call (no <draft_action> marker)
+            if "<draft_action>" not in (prompt or ""):
+                return "<think>plan</think>\ngo east", ([{"logprob": -0.1}] * 5 if logprobs else None)
+            # 2) Verify call
+            return "go east", ([{"logprob": -0.2}] * 3 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn("C1", vc_mode="none")
+    step("obs", [], m)
+    assert m.seen[:2] == [True, False]
+
+
+def test_thinking_flags_c0_forced_off():
+    class _M:
+        seen: list[bool | None]
+
+        def __init__(self) -> None:
+            self.seen = []
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.seen.append(kwargs.get("enable_thinking"))
+            return "go north", ([{"logprob": -0.2}] * 3 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn("C0", vc_mode="none")
+    step("obs", [], m)
+    assert m.seen == [False]
+
+
+def test_thinking_flags_c2_forced_off_in_samples():
+    class _M:
+        seen: list[bool | None]
+
+        def __init__(self) -> None:
+            self.seen = []
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.seen.append(kwargs.get("enable_thinking"))
+            return "Go north.", ([{"logprob": -0.1}] * 2 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn("C2", vc_mode="none", c2_n_samples=3, c2_tie_break_seed="seed")
+    step("obs", [], m)
+    assert m.seen == [False, False, False]
+
+
 class _CountingModel:
     def __init__(self) -> None:
         self.calls = 0

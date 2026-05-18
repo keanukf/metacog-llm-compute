@@ -7,7 +7,7 @@
 enabled: true
 
 model:
-  name: "lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit"
+  name: "qwen/qwen3-8b"
   dtype: int4
 
 inference:
@@ -55,7 +55,7 @@ test4_textworld:
 tower_of_hanoi:
   pilot_episodes: 1
   pilot_num_disks: 3
-  pilot_max_steps: 20
+  pilot_max_steps: 10
   # Conservative local diversification to avoid 10× identical starts.
   num_disks_range: [3, 3]
   partial_start_range: [0, 1]

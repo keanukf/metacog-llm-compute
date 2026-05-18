@@ -588,6 +588,8 @@ def _c0_step_core(
 ) -> StepReturn:
     prompt = f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
+    # Force thinking OFF for baseline action calls (C0). Only the C1-CoT subcall uses thinking.
+    gen_kw["enable_thinking"] = False
     text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
     tle = token_entropy.extract_action_tle_from_response(text, logprobs) if logprobs else None
     tokens_used = len(logprobs) if logprobs else 0
@@ -670,6 +672,8 @@ def _c1_step_core(
     cot_kw: dict[str, Any] = {
         "max_tokens": cot_max_tokens,
         "temperature": float(cot_temp),
+        # C1-CoT is the only place where we enable model-native thinking.
+        "enable_thinking": True,
     }
     cot_text, cot_lp = model.generate(cot_prompt, logprobs=True, **cot_kw)
     parsed = _parse_cot_action(cot_text or "")
@@ -691,6 +695,8 @@ def _c1_step_core(
     verify_max_tokens = c1_verify_max_tokens if c1_verify_max_tokens is not None else action_max_tokens
     verify_stop = c1_verify_stop if c1_verify_stop is not None else action_stop
     gen_kw = _action_generate_kwargs(verify_max_tokens, float(c1_verify_temperature), verify_stop)
+    # Verify must be single-line action; force thinking OFF.
+    gen_kw["enable_thinking"] = False
     final_text, logprobs = model.generate(verify_prompt, logprobs=True, **gen_kw)
     tle = token_entropy.extract_action_tle_from_response(final_text, logprobs) if logprobs else None
     tokens_used = len(logprobs) if logprobs else 0
@@ -802,6 +808,8 @@ def _c2_step_core(
 ) -> StepReturn:
     prompt = f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
+    # Force thinking OFF for self-consistency sampling; only C1-CoT uses thinking.
+    gen_kw["enable_thinking"] = False
     # Per sample: raw_first_line, action_exec, vote_key, raw_text, logprobs
     samples: list[dict[str, Any]] = []
     total_tokens = 0
