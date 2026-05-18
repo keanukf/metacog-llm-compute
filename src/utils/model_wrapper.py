@@ -185,6 +185,7 @@ def _lmstudio_post_v1_responses(
     max_tokens: int,
     temperature: float,
     top_logprobs: int,
+    enable_thinking: bool | None = None,
 ) -> dict[str, Any] | None:
     """POST JSON to {base}/responses. Returns parsed dict or None on failure."""
     api = normalize_openai_base_url(base_url).rstrip("/")
@@ -198,6 +199,8 @@ def _lmstudio_post_v1_responses(
         "temperature": float(temperature),
         "max_output_tokens": int(max_tokens),
     }
+    if enable_thinking is not None:
+        body["enable_thinking"] = bool(enable_thinking)
     payload = json.dumps(body).encode("utf-8")
     req = Request(
         url,
@@ -690,11 +693,16 @@ class LMStudioWrapper(ModelWrapper):
     ) -> tuple[str, list[dict[str, Any]] | None]:
         import os
 
+        enable_thinking = kwargs.pop("enable_thinking", None)
         extra = {
             k: v
             for k, v in kwargs.items()
             if k not in ("prompt", "logprobs", "max_tokens", "temperature", "enable_thinking")
         }
+
+        thinking_kw: dict[str, Any] = {}
+        if isinstance(enable_thinking, bool):
+            thinking_kw["enable_thinking"] = bool(enable_thinking)
 
         if logprobs:
             key = self._api_key or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
@@ -706,6 +714,7 @@ class LMStudioWrapper(ModelWrapper):
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_logprobs=self._top_logprobs,
+                **thinking_kw,
             )
             if data is not None:
                 text, lp_list = parse_lmstudio_responses_json(data)
