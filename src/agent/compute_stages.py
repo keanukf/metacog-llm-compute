@@ -9,6 +9,7 @@ import random
 import re
 from typing import Any
 
+from src.agent import cot_parser
 from src.agent import compute_prompt_utils
 from src.signals import token_entropy, verbalized_confidence
 
@@ -156,6 +157,10 @@ def _parse_cot_action(cot_text: str) -> dict[str, str]:
         "reasoning_internal": reasoning_internal,
         "raw": raw,
     }
+
+
+# Use dedicated parser module while keeping local symbol for compatibility.
+_parse_cot_action = cot_parser.parse_cot_action
 
 
 def _xml_block(tag: str, content: str, *, attrs: str = "") -> str:
