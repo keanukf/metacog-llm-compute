@@ -18,6 +18,7 @@ from src.agent.allocator import allocate
 from src.agent.compute_stages import get_step_fn
 from src.agent.history_utils import compact_history_for_prompt, truncate_for_history
 from src.agent.step_results import normalize_step_result
+from src.agent.trace_integration import log_step_with_fallback
 from src.utils.logging_utils import write_step_trace_line
 
 # Backward compatibility for existing tests/imports during modularization.
@@ -346,43 +347,22 @@ def run_episode(
                     "step_wall_time_s": float(step_wall_time_s),
                 }
                 # If we did not create a step-span context, fall back to legacy step logging.
-                if step_span is None and hasattr(trace_hook, "log_step"):
-                    try:
-                        subcalls = None
-                        if isinstance(call_detail, dict) and isinstance(
-                            call_detail.get("subcalls"), list
-                        ):
-                            subcalls = call_detail.get("subcalls")
-                        trace_hook.log_step(
-                            step_index=steps,
-                            stage=compute_stage,
-                            observation=step_obs,
-                            action=action,
-                            prompt=prompt_full or "",
-                            action_output=response_full or "",
-                            vc_prompt=(vc_det or {}).get("vc_prompt") if vc_det else None,
-                            vc_output=(vc_det or {}).get("vc_raw_text") if vc_det else None,
-                            model_name=trace_model_name,
-                            metadata=lf_meta,
-                            subcalls=subcalls,
-                        )
-                    except Exception:
-                        trace_hook.log_action_generation(
-                            step_index=steps,
-                            compute_stage=compute_stage,
-                            prompt=prompt_full or "",
-                            output=response_full or "",
-                            model_name=trace_model_name,
-                            metadata=lf_meta,
-                        )
-                elif step_span is None:
-                    trace_hook.log_action_generation(
+                if step_span is None:
+                    subcalls = None
+                    if isinstance(call_detail, dict) and isinstance(call_detail.get("subcalls"), list):
+                        subcalls = call_detail.get("subcalls")
+                    log_step_with_fallback(
+                        trace_hook=trace_hook,
                         step_index=steps,
-                        compute_stage=compute_stage,
-                        prompt=prompt_full or "",
-                        output=response_full or "",
-                        model_name=trace_model_name,
+                        stage=compute_stage,
+                        observation=step_obs,
+                        action=action,
+                        prompt_full=prompt_full,
+                        response_full=response_full,
+                        vc_det=vc_det,
+                        trace_model_name=trace_model_name,
                         metadata=lf_meta,
+                        subcalls=subcalls,
                     )
             # Maintain growing context as ACTION/OBSERVATION pairs.
             # This allows later prompts/traces to reconstruct the full interaction history.
@@ -726,45 +706,23 @@ def run_adaptive_episode(
                     "tokens_generated": int(tokens_used),
                     "lm_calls": int(lm_calls_this_step),
                 }
-                if hasattr(trace_hook, "log_step"):
-                    try:
-                        subcalls = None
-                        if isinstance(call_detail, dict) and isinstance(
-                            call_detail.get("subcalls"), list
-                        ):
-                            subcalls = call_detail.get("subcalls")
-                        trace_hook.log_step(
-                            step_index=steps,
-                            stage=stage,
-                            strategy=strategy,
-                            observation=step_obs,
-                            action=action,
-                            prompt=prompt_full or "",
-                            action_output=response_full or "",
-                            vc_prompt=(vc_det or {}).get("vc_prompt") if vc_det else None,
-                            vc_output=(vc_det or {}).get("vc_raw_text") if vc_det else None,
-                            model_name=trace_model_name,
-                            metadata=lf_meta_a,
-                            subcalls=subcalls,
-                        )
-                    except Exception:
-                        trace_hook.log_action_generation(
-                            step_index=steps,
-                            compute_stage=stage,
-                            prompt=prompt_full or "",
-                            output=response_full or "",
-                            model_name=trace_model_name,
-                            metadata=lf_meta_a,
-                        )
-                else:
-                    trace_hook.log_action_generation(
-                        step_index=steps,
-                        compute_stage=stage,
-                        prompt=prompt_full or "",
-                        output=response_full or "",
-                        model_name=trace_model_name,
-                        metadata=lf_meta_a,
-                    )
+                subcalls = None
+                if isinstance(call_detail, dict) and isinstance(call_detail.get("subcalls"), list):
+                    subcalls = call_detail.get("subcalls")
+                log_step_with_fallback(
+                    trace_hook=trace_hook,
+                    step_index=steps,
+                    stage=stage,
+                    strategy=strategy,
+                    observation=step_obs,
+                    action=action,
+                    prompt_full=prompt_full,
+                    response_full=response_full,
+                    vc_det=vc_det,
+                    trace_model_name=trace_model_name,
+                    metadata=lf_meta_a,
+                    subcalls=subcalls,
+                )
             # Maintain growing context as ACTION/OBSERVATION pairs.
             history.append(f"ACTION: {action}")
             history.append(
