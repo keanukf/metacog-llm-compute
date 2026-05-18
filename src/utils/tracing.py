@@ -6,6 +6,7 @@ Configure via ``tracing`` YAML block and/or environment variables:
 
 Requires ``langfuse`` (see optional dependency group ``tracing`` in pyproject.toml).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -206,7 +207,9 @@ class LangfuseTraceHook:
             self._supports_parent_observation_id = "parent_observation_id" in sig.parameters
             # Langfuse SDKs differ: some accept tags directly on observations, others don't.
             self._supports_observation_tags = "tags" in sig.parameters
-            self._supports_observation_times = ("start_time" in sig.parameters) or ("end_time" in sig.parameters)
+            self._supports_observation_times = ("start_time" in sig.parameters) or (
+                "end_time" in sig.parameters
+            )
         except Exception:
             self._supports_parent_observation_id = False
             self._supports_observation_tags = False
@@ -219,7 +222,9 @@ class LangfuseTraceHook:
         self._otel_has_start_span = callable(getattr(self._client, "start_span", None)) or callable(
             getattr(self._client, "start_observation", None)
         )
-        self._otel_api = bool(self._otel_has_start_as_current_observation) and bool(self._otel_has_start_span)
+        self._otel_api = bool(self._otel_has_start_as_current_observation) and bool(
+            self._otel_has_start_span
+        )
 
     @staticmethod
     def _extract_dt(meta: dict[str, Any] | None, key: str) -> Any | None:

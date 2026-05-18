@@ -1,6 +1,7 @@
 """
 Resolve VC / prompt settings for ``get_step_fn`` from experiment YAML.
 """
+
 from __future__ import annotations
 
 import warnings
@@ -208,7 +209,9 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
 
     fi_raw = vc.get("followup_instruction")
     vc_followup_instruction = (
-        str(fi_raw).strip() if fi_raw is not None and str(fi_raw).strip() else DEFAULT_VC_FOLLOWUP_INSTRUCTION
+        str(fi_raw).strip()
+        if fi_raw is not None and str(fi_raw).strip()
+        else DEFAULT_VC_FOLLOWUP_INSTRUCTION
     )
 
     fmc_raw = vc.get("followup_max_context_chars")
@@ -274,7 +277,9 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         "c1_cot_temperature": float(c1_cot_temperature) if c1_cot_temperature is not None else None,
         "c1_cot_max_tokens": int(c1_cot_max_tokens) if c1_cot_max_tokens is not None else None,
         "c1_verify_temperature": float(c1_verify_temperature_raw),
-        "c1_verify_max_tokens": int(c1_verify_max_tokens) if c1_verify_max_tokens is not None else None,
+        "c1_verify_max_tokens": int(c1_verify_max_tokens)
+        if c1_verify_max_tokens is not None
+        else None,
         "c1_verify_stop": c1_verify_stop,
         "c1_verify_instruction": (
             str(c1_verify_instruction_raw).strip()

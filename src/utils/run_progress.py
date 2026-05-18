@@ -1,6 +1,7 @@
 """
 Lightweight timestamped stdout logging for pilot and long experiment runs.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -113,6 +114,8 @@ def print_batch_progress(
         if r.get("domain") == domain and r.get(label_key) == stage_or_strategy
     ]
     if insts:
-        print(f"  cursor: domain={domain} | {label_key}={stage_or_strategy} | inst {min(insts)}–{max(insts)}")
+        print(
+            f"  cursor: domain={domain} | {label_key}={stage_or_strategy} | inst {min(insts)}–{max(insts)}"
+        )
     else:
         print(f"  cursor: domain={domain} | {label_key}={stage_or_strategy}")

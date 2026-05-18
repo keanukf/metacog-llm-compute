@@ -7,6 +7,7 @@ This module provides lightweight, dependency-minimal comparisons:
 
 Mixed-effects models can be added later; for now `run_mixed_effects` remains as a stub.
 """
+
 from __future__ import annotations
 
 import random
@@ -69,7 +70,11 @@ def bootstrap_diff_in_means_ci(
     diffs.sort()
     lo = diffs[int((alpha / 2) * n_boot)]
     hi = diffs[int((1 - alpha / 2) * n_boot) - 1]
-    return {"diff_mean": float((sum(a) / na) - (sum(b) / nb)), "ci_lo": float(lo), "ci_hi": float(hi)}
+    return {
+        "diff_mean": float((sum(a) / na) - (sum(b) / nb)),
+        "ci_lo": float(lo),
+        "ci_hi": float(hi),
+    }
 
 
 def permutation_test_diff_in_means(
@@ -135,17 +140,25 @@ def compare_strategies_phase2(
         for g, geps in sorted(groups.items()):
             if metric == "task_success":
                 vals = [1.0 if bool(e.get("task_success")) else 0.0 for e in geps]
-                dom_out["groups"][g] = {"mean_ci": bootstrap_mean_ci(vals, n_boot=n_boot, seed=seed)}
+                dom_out["groups"][g] = {
+                    "mean_ci": bootstrap_mean_ci(vals, n_boot=n_boot, seed=seed)
+                }
             elif metric == "normalized_compute_cost":
                 vals = [float(e.get("normalized_compute_cost") or 0.0) for e in geps]
-                dom_out["groups"][g] = {"mean_ci": bootstrap_mean_ci(vals, n_boot=n_boot, seed=seed)}
+                dom_out["groups"][g] = {
+                    "mean_ci": bootstrap_mean_ci(vals, n_boot=n_boot, seed=seed)
+                }
             elif metric == "efficiency":
                 succ = [1.0 if bool(e.get("task_success")) else 0.0 for e in geps]
                 costs = [float(e.get("normalized_compute_cost") or 0.0) for e in geps]
                 ms = (sum(succ) / len(succ)) if succ else 0.0
                 mc = (sum(costs) / len(costs)) if costs else 0.0
                 eff = (ms / mc) if mc > 0 else None
-                dom_out["groups"][g] = {"efficiency": float(eff) if eff is not None else None, "success_rate": ms, "mean_cost": mc}
+                dom_out["groups"][g] = {
+                    "efficiency": float(eff) if eff is not None else None,
+                    "success_rate": ms,
+                    "mean_cost": mc,
+                }
             else:
                 dom_out["groups"][g] = {"error": f"unknown metric: {metric}"}
 
@@ -154,7 +167,9 @@ def compare_strategies_phase2(
             if metric == "task_success":
                 base_vals = [1.0 if bool(e.get("task_success")) else 0.0 for e in groups[baseline]]
             else:
-                base_vals = [float(e.get("normalized_compute_cost") or 0.0) for e in groups[baseline]]
+                base_vals = [
+                    float(e.get("normalized_compute_cost") or 0.0) for e in groups[baseline]
+                ]
             for g, geps in sorted(groups.items()):
                 if g == baseline:
                     continue
@@ -163,7 +178,9 @@ def compare_strategies_phase2(
                 else:
                     vals = [float(e.get("normalized_compute_cost") or 0.0) for e in geps]
                 dom_out["diff_vs_baseline"][g] = {
-                    "bootstrap_diff_ci": bootstrap_diff_in_means_ci(vals, base_vals, n_boot=n_boot, seed=seed),
+                    "bootstrap_diff_ci": bootstrap_diff_in_means_ci(
+                        vals, base_vals, n_boot=n_boot, seed=seed
+                    ),
                     "perm_test": permutation_test_diff_in_means(vals, base_vals, seed=seed),
                 }
 

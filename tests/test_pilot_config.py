@@ -1,4 +1,5 @@
 """Tests for pilot YAML merge (LM Studio override)."""
+
 from __future__ import annotations
 
 from pathlib import Path

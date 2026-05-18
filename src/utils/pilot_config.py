@@ -5,6 +5,7 @@ When ``--pilot-mode lmstudio``, if ``configs/lmstudio_config.yaml`` exists (or
 ``--lmstudio-config`` / ``LMSTUDIO_CONFIG_PATH``) and is active, it is deep-merged
 into the base pilot config so you can keep hardware-specific settings in one place.
 """
+
 from __future__ import annotations
 
 import os

@@ -39,4 +39,3 @@ def test_resolve_compute_stages_unknown_raises() -> None:
     cfg = {"pilot": {"compute_stages": ["C9"]}}
     with pytest.raises(ValueError):
         resolve_compute_stages_for_domain(cfg, domain="textworld")
-

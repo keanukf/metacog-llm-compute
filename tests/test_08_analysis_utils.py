@@ -30,8 +30,18 @@ def test_calibration_by_step_position_smoke():
         {
             "episode_id": "ep_x",
             "steps_detail": [
-                {"step_index": 0, "tle": {"mean_entropy": 0.2, "max_entropy": 0.3}, "vc": 90.0, "correctness": "legal"},
-                {"step_index": 1, "tle": {"mean_entropy": 0.9, "max_entropy": 1.0}, "vc": 10.0, "correctness": "illegal"},
+                {
+                    "step_index": 0,
+                    "tle": {"mean_entropy": 0.2, "max_entropy": 0.3},
+                    "vc": 90.0,
+                    "correctness": "legal",
+                },
+                {
+                    "step_index": 1,
+                    "tle": {"mean_entropy": 0.9, "max_entropy": 1.0},
+                    "vc": 10.0,
+                    "correctness": "illegal",
+                },
             ],
         }
     ]
@@ -46,8 +56,18 @@ def test_signal_discrimination_report_smoke():
         {
             "episode_id": "ep_x",
             "steps_detail": [
-                {"step_index": 0, "tle": {"mean_entropy": 0.2, "max_entropy": 0.3}, "vc": 90.0, "correctness": "legal"},
-                {"step_index": 1, "tle": {"mean_entropy": 0.9, "max_entropy": 1.0}, "vc": 10.0, "correctness": "illegal"},
+                {
+                    "step_index": 0,
+                    "tle": {"mean_entropy": 0.2, "max_entropy": 0.3},
+                    "vc": 90.0,
+                    "correctness": "legal",
+                },
+                {
+                    "step_index": 1,
+                    "tle": {"mean_entropy": 0.9, "max_entropy": 1.0},
+                    "vc": 10.0,
+                    "correctness": "illegal",
+                },
             ],
         }
     ]
@@ -76,7 +96,10 @@ def test_load_episodes_backward_compat_synthesizes_steps_detail(tmp_path):
         "run": 0,
         "task_success": True,
         "steps": 2,
-        "tle_per_step": [{"mean_entropy": 0.1, "max_entropy": 0.1}, {"mean_entropy": 0.2, "max_entropy": 0.2}],
+        "tle_per_step": [
+            {"mean_entropy": 0.1, "max_entropy": 0.1},
+            {"mean_entropy": 0.2, "max_entropy": 0.2},
+        ],
         "vc_per_step": [50.0, 60.0],
     }
     (tmp_path / "ep_legacy.json").write_text(json.dumps(ep), encoding="utf-8")
@@ -123,4 +146,3 @@ def test_load_steps_flattens(tmp_path):
         assert "episode_id" in df.columns
         assert "step_index" in df.columns
         assert "tle_mean_entropy" in df.columns
-

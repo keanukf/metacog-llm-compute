@@ -2,6 +2,7 @@
 Pilot Test 1 — Inferenzgeschwindigkeit.
 With a mock model, run 50 "prompts", compute tok/s and latency structure.
 """
+
 from __future__ import annotations
 
 import time
@@ -24,7 +25,12 @@ def _run_mock_benchmark(num_prompts: int, tokens_per_call: int = 200):
     return {
         "tokens_per_sec": tokens_per_sec,
         "latency_mean": sum(latencies) / len(latencies) if latencies else 0,
-        "latency_std": (sum((x - sum(latencies) / len(latencies)) ** 2 for x in latencies) / len(latencies)) ** 0.5 if latencies else 0,
+        "latency_std": (
+            sum((x - sum(latencies) / len(latencies)) ** 2 for x in latencies) / len(latencies)
+        )
+        ** 0.5
+        if latencies
+        else 0,
         "total_tokens": total_tokens,
         "num_prompts": num_prompts,
     }

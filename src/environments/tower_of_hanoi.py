@@ -1,6 +1,7 @@
 """
 Text-based Tower of Hanoi environment and reproducible instance generator.
 """
+
 from __future__ import annotations
 
 import random
@@ -190,7 +191,9 @@ class TowerOfHanoiEnv:
                 "action_raw": action,
                 "action_parsed": parsed,
                 "correctness": correctness,
-                "optimal_moves_remaining": len(_shortest_path_to_goal(state_after, self._num_disks)),
+                "optimal_moves_remaining": len(
+                    _shortest_path_to_goal(state_after, self._num_disks)
+                ),
                 "state_before": state_before,
                 "state_after": state_after,
             }
