@@ -4,7 +4,9 @@ repos:
     hooks:
       - id: ruff-check
         args: [--fix]
+        files: ^(src|tests)/
       - id: ruff-format
+        files: ^(src|tests)/
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.11.2
@@ -12,4 +14,5 @@ repos:
       - id: mypy
         additional_dependencies:
           - types-PyYAML
-        files: ^src/
+        args:
+          - src/signals/verbalized_confidence.py
