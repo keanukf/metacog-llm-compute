@@ -39,7 +39,9 @@ def _bootstrap_ci(
     return {"mean": float(sum(values) / n), "ci_lo": float(lo), "ci_hi": float(hi)}
 
 
-def stage_mix(steps_rows: Iterable[dict[str, Any]], *, stage_key: str = "compute_stage") -> dict[str, Any]:
+def stage_mix(
+    steps_rows: Iterable[dict[str, Any]], *, stage_key: str = "compute_stage"
+) -> dict[str, Any]:
     """
     Compute fraction of steps spent in each stage (C0/C1/C2) overall and by domain/strategy.
     """
@@ -74,7 +76,9 @@ def stage_mix(steps_rows: Iterable[dict[str, Any]], *, stage_key: str = "compute
     }
 
 
-def run_health(episodes_rows: Iterable[dict[str, Any]], steps_rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
+def run_health(
+    episodes_rows: Iterable[dict[str, Any]], steps_rows: Iterable[dict[str, Any]]
+) -> dict[str, Any]:
     """
     High-signal diagnostics for whether the run contains the information needed for analysis.
     """
@@ -124,7 +128,9 @@ def run_health(episodes_rows: Iterable[dict[str, Any]], steps_rows: Iterable[dic
     }
 
 
-def efficiency_summary(episodes_rows: Iterable[dict[str, Any]], *, group_key: str | None = None) -> list[dict[str, Any]]:
+def efficiency_summary(
+    episodes_rows: Iterable[dict[str, Any]], *, group_key: str | None = None
+) -> list[dict[str, Any]]:
     """
     Group episodes and summarize success_rate, mean costs, and efficiency = success_rate / mean_cost.
     """
@@ -155,7 +161,9 @@ def efficiency_summary(episodes_rows: Iterable[dict[str, Any]], *, group_key: st
                 "success_rate": float(success_rate),
                 "mean_normalized_compute_cost": float(mean_cost),
                 "efficiency": float(eff) if eff is not None else None,
-                "success_rate_ci": _bootstrap_ci([1.0 if bool(e.get("task_success")) else 0.0 for e in eps]),
+                "success_rate_ci": _bootstrap_ci(
+                    [1.0 if bool(e.get("task_success")) else 0.0 for e in eps]
+                ),
                 "cost_ci": _bootstrap_ci(costs) if any(costs) else None,
             }
         )
@@ -194,7 +202,11 @@ def regret_vs_baselines(
         costs = [float(e.get(cost_key) or 0.0) for e in eps]
         mean_cost = sum(costs) / n if n else 0.0
         eff = (success_rate / mean_cost) if mean_cost > 0 else 0.0
-        per[d][s] = {"success_rate": float(success_rate), "mean_cost": float(mean_cost), "efficiency": float(eff)}
+        per[d][s] = {
+            "success_rate": float(success_rate),
+            "mean_cost": float(mean_cost),
+            "efficiency": float(eff),
+        }
 
     out: dict[str, Any] = {}
     for d, strat_map in per.items():
@@ -211,4 +223,3 @@ def regret_vs_baselines(
             out_d["strategies"][s] = entry
         out[d] = out_d
     return out
-

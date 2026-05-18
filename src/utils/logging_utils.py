@@ -2,6 +2,7 @@
 Structured JSON logging for experiment episodes.
 One JSON file per episode; used for pilot_calibration and phase1/phase2 results.
 """
+
 from __future__ import annotations
 
 import csv
@@ -17,7 +18,9 @@ from pathlib import Path
 from typing import Any
 
 # Omitted from main episode JSON when ``compact=True`` — full detail lives in logprob / VC sidecars.
-_EPISODE_STORAGE_DETAIL_KEYS = frozenset({"steps_detail", "vc_detail_per_step", "logprob_raw_per_step"})
+_EPISODE_STORAGE_DETAIL_KEYS = frozenset(
+    {"steps_detail", "vc_detail_per_step", "logprob_raw_per_step"}
+)
 
 
 def compact_episode_for_storage(data: dict[str, Any]) -> dict[str, Any]:
@@ -201,7 +204,11 @@ def _synthesize_steps_detail(episode: dict[str, Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for i in range(steps):
         compute_stage = (
-            str(stage_list[i]) if i < len(stage_list) and stage_list[i] is not None else str(fixed_stage) if fixed_stage is not None else "C0"
+            str(stage_list[i])
+            if i < len(stage_list) and stage_list[i] is not None
+            else str(fixed_stage)
+            if fixed_stage is not None
+            else "C0"
         )
         tle = tle_list[i] if i < len(tle_list) else None
         vc = vc_list[i] if i < len(vc_list) else None
@@ -392,7 +399,11 @@ def write_logprob_distribution_artifacts(
                             continue
                         top = tok.get("top_logprobs")
                         if isinstance(top, list) and top:
-                            cands = [x for x in top if isinstance(x, dict) and x.get("logprob") is not None]
+                            cands = [
+                                x
+                                for x in top
+                                if isinstance(x, dict) and x.get("logprob") is not None
+                            ]
                             probs = softmax_probs_from_top_logprobs(top)
                             for rank, (cand, pr) in enumerate(zip(cands, probs)):
                                 w.writerow(
@@ -431,7 +442,11 @@ def write_logprob_distribution_artifacts(
                                 continue
                             top = tok.get("top_logprobs")
                             if isinstance(top, list) and top:
-                                cands = [x for x in top if isinstance(x, dict) and x.get("logprob") is not None]
+                                cands = [
+                                    x
+                                    for x in top
+                                    if isinstance(x, dict) and x.get("logprob") is not None
+                                ]
                                 probs = softmax_probs_from_top_logprobs(top)
                                 for rank, (cand, pr) in enumerate(zip(cands, probs)):
                                     w.writerow(
@@ -530,9 +545,7 @@ def write_vc_distribution_artifacts(
                     top = tok.get("top_logprobs")
                     if isinstance(top, list) and top:
                         cands = [
-                            x
-                            for x in top
-                            if isinstance(x, dict) and x.get("logprob") is not None
+                            x for x in top if isinstance(x, dict) and x.get("logprob") is not None
                         ]
                         probs = softmax_probs_from_top_logprobs(top)
                         for rank, (cand, pr) in enumerate(zip(cands, probs)):

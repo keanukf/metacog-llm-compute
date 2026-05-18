@@ -11,6 +11,7 @@ Per-step records in ``step_results`` mirror TowerOfHanoiEnv (``step_index``, ``a
 - legal: admissible/no parser error, score unchanged
 - illegal: parser error or unrecognized action
 """
+
 from __future__ import annotations
 
 import json
@@ -19,6 +20,7 @@ from typing import Any
 
 try:
     import textworld  # noqa: F401
+
     TEXTWORLD_AVAILABLE = True
 except ImportError:
     TEXTWORLD_AVAILABLE = False
@@ -179,17 +181,14 @@ class TextWorldEnv:
             wt = self.sidecar_metadata.get("walkthrough")
             if isinstance(wt, list):
                 self.walkthrough = [str(x) for x in wt]
-        self._use_real = (
-            TEXTWORLD_AVAILABLE
-            and game_file is not None
-            and Path(game_file).exists()
-        )
+        self._use_real = TEXTWORLD_AVAILABLE and game_file is not None and Path(game_file).exists()
         if self._use_real:
             self._init_gym_env()
 
     def _init_gym_env(self) -> None:
         try:
             import textworld.gym
+
             try:
                 from textworld import EnvInfos
 
@@ -277,9 +276,7 @@ class TextWorldEnv:
             if score_after is None:
                 score_after = score_before
             score_delta = (
-                None
-                if score_before is None or score_after is None
-                else score_after - score_before
+                None if score_before is None or score_after is None else score_after - score_before
             )
             admissible = pre_admissible
             use_admissible = admissible is not None

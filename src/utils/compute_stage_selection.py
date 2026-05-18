@@ -114,4 +114,3 @@ def resolve_compute_stages_for_domain(
 
     stages = _validate_and_order(_parse_stage_list(raw))
     return stages if stages else default_list
-

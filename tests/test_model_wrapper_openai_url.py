@@ -1,4 +1,5 @@
 """OpenAI client base URL normalization (LM Studio / OpenAI-compatible) and logprob parsing."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -12,7 +13,9 @@ from src.utils.model_wrapper import (
 
 def test_normalize_openai_base_url_appends_v1():
     assert normalize_openai_base_url("http://192.168.1.10:1234/") == "http://192.168.1.10:1234/v1"
-    assert normalize_openai_base_url("http://192.168.178.173:1234") == "http://192.168.178.173:1234/v1"
+    assert (
+        normalize_openai_base_url("http://192.168.178.173:1234") == "http://192.168.178.173:1234/v1"
+    )
 
 
 def test_normalize_openai_base_url_preserves_existing_v1():
@@ -85,7 +88,13 @@ def test_parse_lmstudio_responses_json_flat_output_text_block():
             {
                 "type": "output_text",
                 "text": "hi",
-                "logprobs": [{"token": "hi", "logprob": -0.5, "top_logprobs": [{"token": "hi", "logprob": -0.5}]}],
+                "logprobs": [
+                    {
+                        "token": "hi",
+                        "logprob": -0.5,
+                        "top_logprobs": [{"token": "hi", "logprob": -0.5}],
+                    }
+                ],
             }
         ]
     }

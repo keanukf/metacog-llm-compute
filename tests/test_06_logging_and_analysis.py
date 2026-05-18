@@ -3,6 +3,7 @@ Pilot Test 6 — Logging & Download.
 (1) Round-trip: write episode via logging_utils, read back, assert equality.
 (2) ECE: 15 synthetic data points -> compute_ece -> result in [0, 1].
 """
+
 from __future__ import annotations
 
 import json
@@ -27,7 +28,11 @@ def test_compact_episode_drops_verbose_keys():
         "tle_per_step": [{"mean_entropy": 0.1}],
     }
     c = compact_episode_for_storage(d)
-    assert "steps_detail" not in c and "vc_detail_per_step" not in c and "logprob_raw_per_step" not in c
+    assert (
+        "steps_detail" not in c
+        and "vc_detail_per_step" not in c
+        and "logprob_raw_per_step" not in c
+    )
     assert c["tle_per_step"] == [{"mean_entropy": 0.1}]
 
 

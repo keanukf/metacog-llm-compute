@@ -1,6 +1,7 @@
 """
 Rule-based allocator + baselines: Adaptive-TLE, Adaptive-VC, Always-C0, Always-C2, Random, EAGer-style.
 """
+
 from __future__ import annotations
 
 import random

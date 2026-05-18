@@ -26,7 +26,10 @@ def test_load_run_dataset_builds_steps_and_labels(tmp_path: Path):
         "run": 0,
         "task_success": True,
         "steps": 2,
-        "tle_per_step": [{"mean_entropy": 0.2, "max_entropy": 0.4}, {"mean_entropy": 0.9, "max_entropy": 1.0}],
+        "tle_per_step": [
+            {"mean_entropy": 0.2, "max_entropy": 0.4},
+            {"mean_entropy": 0.9, "max_entropy": 1.0},
+        ],
         "vc_per_step": [90.0, 10.0],
         "step_correctness": [
             {"step_index": 0, "correctness": "optimal"},
@@ -92,7 +95,10 @@ def test_analyze_run_script_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     out_dir = tmp_path / "analysis_out"
     argv = ["scripts/analyze_run.py", "--run-dir", str(run_dir), "--out-dir", str(out_dir)]
     monkeypatch.setattr("sys.argv", argv)
-    runpy.run_path(str(Path(__file__).resolve().parent.parent / "scripts" / "analyze_run.py"), run_name="__main__")
+    runpy.run_path(
+        str(Path(__file__).resolve().parent.parent / "scripts" / "analyze_run.py"),
+        run_name="__main__",
+    )
 
     assert (out_dir / "analysis_metrics.json").exists()
     assert (out_dir / "episodes.csv").exists()
@@ -130,4 +136,3 @@ def test_comparison_bootstrap_and_perm_smoke():
     p = permutation_test_diff_in_means(a, b, n_perm=200, seed=1)
     assert p is not None
     assert 0.0 <= p["p_value"] <= 1.0
-
