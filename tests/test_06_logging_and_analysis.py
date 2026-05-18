@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from src.analysis.calibration import compute_ece
 from src.utils.logging_utils import (
     compact_episode_for_storage,

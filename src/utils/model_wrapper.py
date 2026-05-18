@@ -336,10 +336,9 @@ class VLLMWrapper(ModelWrapper):
     def _ensure_loaded(self) -> None:
         if self._llm is not None:
             return
-        from vllm import LLM
-        from transformers import AutoTokenizer
-
         import torch
+        from transformers import AutoTokenizer
+        from vllm import LLM
 
         if not torch.cuda.is_available():
             raise RuntimeError("VLLMWrapper requires CUDA")
@@ -566,8 +565,8 @@ class HFWrapper(ModelWrapper):
     def _ensure_loaded(self) -> None:
         if self._model is not None:
             return
-        from transformers import AutoModelForCausalLM, AutoTokenizer
         import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_name, trust_remote_code=True)
         # On Apple Silicon, device_map="auto" often stays on CPU; use device_map="cpu" then .to("mps")

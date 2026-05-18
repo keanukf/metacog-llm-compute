@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import contextlib
 import random
+import re
 import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
-import re
 
 from src.agent.allocator import allocate
 from src.agent.compute_stages import get_step_fn

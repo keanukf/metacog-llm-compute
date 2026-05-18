@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 
 def _run_mock_benchmark(num_prompts: int, tokens_per_call: int = 200):
     """Simulate 50 prompts with fixed tokens and timings; return result dict."""

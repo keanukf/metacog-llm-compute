@@ -10,10 +10,10 @@ Requires ``langfuse`` (see optional dependency group ``tracing`` in pyproject.to
 from __future__ import annotations
 
 import contextlib
+import inspect
 import os
 import warnings
 from typing import Any, Protocol
-import inspect
 
 
 class TraceHook(Protocol):

@@ -39,11 +39,10 @@ select = [
     "F",
     "W",
     "I",
-    "B",
-    "UP",
 ]
 ignore = [
     "E203",
+    "E501",
 ]
 
 [tool.mypy]

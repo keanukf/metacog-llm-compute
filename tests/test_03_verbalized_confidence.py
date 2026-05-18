@@ -5,8 +5,6 @@ Unit tests for signals.verbalized_confidence: parse numeric 0-100 from strings.
 
 from __future__ import annotations
 
-import pytest
-
 from src.signals.verbalized_confidence import (
     extract_vc_from_followup,
     parse_confidence,

@@ -13,7 +13,7 @@ import pytest
 from src.agent.base_agent import run_episode
 from src.agent.compute_stages import get_step_fn
 from src.environments.textworld_env import TextWorldEnv
-from src.utils.logging_utils import EpisodeLogger, log_episode
+from src.utils.logging_utils import EpisodeLogger
 
 
 @pytest.fixture
@@ -68,7 +68,6 @@ def test_e2e_mini_pipeline_6_episodes(mock_model, temp_results_dir):
     logger = EpisodeLogger(temp_results_dir)
     instances = 2
     stages = ["C0", "C1", "C2"]
-    run = 1
     episode_ids = []
     for inst in range(instances):
         for stage in stages:

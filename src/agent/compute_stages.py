@@ -692,8 +692,6 @@ def _c1_step_core(
     draft_status = str(parsed.get("status") or "unparsed")
     parse_method = str(parsed.get("parse_method") or "none")
     draft_reasoning_raw = str(parsed.get("reasoning_internal") or "")
-    draft = draft_action if draft_action else "(no draft parsed)"
-
     verify_instr = (c1_verify_instruction or "").strip() or DEFAULT_C1_VERIFY_INSTRUCTION
     verify_instruction = (
         "\n\n"
@@ -914,14 +912,12 @@ def _c2_step_core(
 
     winner_action_exec = ""
     winner_raw_first = ""
-    win_logprobs: list[dict[str, Any]] | None = None
     winner_tle: dict[str, float] | None = None
     winner_mean_logprob: float | None = None
     for s in samples:
         if str(s.get("vote_key") or "") == winning_key:
             winner_action_exec = str(s.get("action_exec") or "")
             winner_raw_first = str(s.get("raw_first_line") or "")
-            win_logprobs = s.get("logprobs")
             winner_tle = s.get("tle")
             mlp = s.get("mean_logprob")
             winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
@@ -930,7 +926,6 @@ def _c2_step_core(
         s0 = samples[0]
         winner_action_exec = str(s0.get("action_exec") or "")
         winner_raw_first = str(s0.get("raw_first_line") or "")
-        win_logprobs = s0.get("logprobs")
         winner_tle = s0.get("tle")
         mlp = s0.get("mean_logprob")
         winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
