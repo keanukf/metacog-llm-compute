@@ -16,11 +16,14 @@ from typing import Any, Callable
 
 from src.agent.allocator import allocate
 from src.agent.compute_stages import get_step_fn
+from src.agent.history_utils import compact_history_for_prompt, truncate_for_history
 from src.agent.step_results import normalize_step_result
 from src.utils.logging_utils import write_step_trace_line
 
 # Backward compatibility for existing tests/imports during modularization.
 _normalize_step_result = normalize_step_result
+_truncate_for_history = truncate_for_history
+_compact_history_for_prompt = compact_history_for_prompt
 
 # Compute stage step: (observation, history, model) -> (action, tle_or_none, vc_or_none, tokens_used, lm_calls_this_step)
 # Backward compat: step may return 3- or 4-tuple; defaults fill in missing values.
@@ -30,62 +33,6 @@ StepFn = Callable[
     | tuple[str, dict | None, float | None, int]
     | tuple[str, dict | None, float | None, int, int],
 ]
-
-
-def _truncate_for_history(text: str, *, max_chars: int = 1000, head_ratio: float = 0.5) -> str:
-    """
-    Keep history compact to avoid blowing the model context window.
-
-    We preserve both the start (task framing) and the end (often contains valid commands / latest state).
-    """
-    t = text or ""
-    if max_chars <= 0 or len(t) <= max_chars:
-        return t
-    r = float(head_ratio)
-    if r <= 0.0:
-        head = 0
-    elif r >= 1.0:
-        head = max_chars
-    else:
-        head = int(max_chars * r)
-    tail = max_chars - head
-    return f"{t[:head]}\n…[snip]…\n{t[-tail:]}"
-
-
-def _compact_history_for_prompt(
-    history: list[str], *, keep_last_pairs: int | None = None
-) -> list[str]:
-    """
-    Return a compact history view for prompting.
-
-    History is stored as:
-      - first entry: "OBSERVATION: <reset text>"
-      - then repeating pairs: ("ACTION: ...", "OBSERVATION: ...")
-
-    We always keep the first entry and the last N ACTION/OBSERVATION pairs (never a half-pair).
-    If ``keep_last_pairs`` is None, no truncation is applied.
-    """
-    if not history:
-        return []
-    if keep_last_pairs is None:
-        return list(history)
-    if keep_last_pairs <= 0:
-        return list(history)
-    if len(history) <= 1:
-        return list(history)
-
-    rest = history[1:]
-    # If something went wrong and rest has odd length, keep as much as possible but prefer whole pairs.
-    if len(rest) % 2 != 0:
-        rest = rest[:-1]
-    pairs = [(rest[i], rest[i + 1]) for i in range(0, len(rest), 2)]
-    tail_pairs = pairs[-keep_last_pairs:] if keep_last_pairs > 0 else []
-    out: list[str] = [history[0]]
-    for a, o in tail_pairs:
-        out.append(a)
-        out.append(o)
-    return out
-
 
 _RECIPE_BLOCK_RE = re.compile(r"(Recipe\s*#\d+[\s\S]*?)\n\s*\n", re.IGNORECASE)
 
