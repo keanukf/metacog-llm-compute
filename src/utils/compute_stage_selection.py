@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-
 _VALID_STAGES: tuple[str, ...] = ("C0", "C1", "C2")
 
 

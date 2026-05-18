@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from src.utils.pilot_config import (
     deep_merge,
     load_pilot_config_with_lmstudio_override,

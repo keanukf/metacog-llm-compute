@@ -143,7 +143,7 @@ def compute_auroc(scores: Sequence[float], labels: Sequence[int]) -> float:
         AUROC in [0, 1]. Returns 0.5 if AUROC is undefined (no positives or no negatives).
     """
     xs = list(scores)
-    ys = [int(l) for l in labels]
+    ys = [int(label) for label in labels]
     if len(xs) != len(ys) or not xs:
         return 0.5
     n_pos = sum(1 for y in ys if y == 1)
@@ -180,7 +180,7 @@ def compute_auprc(scores: Sequence[float], labels: Sequence[int]) -> float:
     Returns the step-wise (right-continuous) PR AUC.
     """
     xs = list(scores)
-    ys = [int(l) for l in labels]
+    ys = [int(label) for label in labels]
     if len(xs) != len(ys) or not xs:
         return 0.0
     n_pos = sum(1 for y in ys if y == 1)

@@ -5,8 +5,6 @@ Unit tests for signals.token_entropy: synthetic logprobs, TLE differs for easy v
 
 from __future__ import annotations
 
-import pytest
-
 from src.signals.token_entropy import (
     compute_tle,
     entropy_shannon_from_top_logprobs,
