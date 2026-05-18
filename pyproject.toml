@@ -63,3 +63,11 @@ check_untyped_defs = true
 exclude = [
     "^tests/",
 ]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
