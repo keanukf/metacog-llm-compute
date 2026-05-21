@@ -44,7 +44,11 @@ def history_to_xml(history: list[str]) -> str:
             continue
 
         act = unwrap_history_entry(entry, "ACTION:")
-        obs = unwrap_history_entry(history[idx + 1], "OBSERVATION:") if (idx + 1) < len(history) else None
+        obs = (
+            unwrap_history_entry(history[idx + 1], "OBSERVATION:")
+            if (idx + 1) < len(history)
+            else None
+        )
         if act is not None and obs is not None:
             step_body = "\n".join(
                 [
