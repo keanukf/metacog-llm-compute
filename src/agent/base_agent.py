@@ -221,9 +221,18 @@ def run_episode(
                     ]
                 raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
                 step_wall_time_s = time.perf_counter() - t0
-                action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full, call_detail = (
-                    normalize_step_result(raw)
-                )
+                (
+                    action,
+                    tle,
+                    vc,
+                    tokens_used,
+                    lm_calls_this_step,
+                    log_raw,
+                    vc_det,
+                    prompt_full,
+                    response_full,
+                    call_detail,
+                ) = normalize_step_result(raw)
 
                 tle_per_step.append(tle)
                 vc_per_step.append(vc)
@@ -352,7 +361,9 @@ def run_episode(
                 # If we did not create a step-span context, fall back to legacy step logging.
                 if step_span is None:
                     subcalls = None
-                    if isinstance(call_detail, dict) and isinstance(call_detail.get("subcalls"), list):
+                    if isinstance(call_detail, dict) and isinstance(
+                        call_detail.get("subcalls"), list
+                    ):
                         subcalls = call_detail.get("subcalls")
                     log_step_with_fallback(
                         trace_hook=trace_hook,
@@ -622,9 +633,18 @@ def run_adaptive_episode(
                 ]
             raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
             step_wall_time_s = time.perf_counter() - t0
-            action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full, call_detail = (
-                normalize_step_result(raw)
-            )
+            (
+                action,
+                tle,
+                vc,
+                tokens_used,
+                lm_calls_this_step,
+                log_raw,
+                vc_det,
+                prompt_full,
+                response_full,
+                call_detail,
+            ) = normalize_step_result(raw)
             tle_per_step.append(tle)
             vc_per_step.append(vc)
             if save_logprob_distributions:

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 
 def truncate_for_history(text: str, *, max_chars: int = 1000, head_ratio: float = 0.5) -> str:
     """
