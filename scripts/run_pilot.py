@@ -32,29 +32,23 @@ from src.utils.dotenv_loader import load_dotenv_if_present
 _DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 
 from src.utils.experiment_env import make_experiment_env, resolve_textworld_game_path
-from src.utils.logging_utils import write_logprob_distribution_artifacts, write_vc_distribution_artifacts
 from src.utils.step_config import resolve_step_fn_kwargs
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
 from src.utils.run_progress import format_run_elapsed, log, log_step_line
 from src.agent.compute_stages import VC_FOLLOWUP_PROMPT_MARKER
-
-
-def _logprob_export_settings(config: dict) -> tuple[bool, str, str]:
-    lg = config.get("logging") or {}
-    return (
-        bool(lg.get("save_logprob_distributions", False)),
-        str(lg.get("logprob_export_format", "json")).lower(),
-        str(lg.get("logprob_subdir", "logprobs")),
-    )
-
-
-def _vc_export_settings(config: dict) -> tuple[bool, str, str]:
-    lg = config.get("logging") or {}
-    return (
-        bool(lg.get("save_vc_distributions", False)),
-        str(lg.get("vc_export_format", "json")).lower(),
-        str(lg.get("vc_subdir", "vc")),
-    )
+from src.pilot.artifacts import (
+    logprob_export_settings as _logprob_export_settings,
+    maybe_write_logprob_artifacts as _maybe_write_logprob_artifacts,
+    maybe_write_vc_artifacts as _maybe_write_vc_artifacts,
+    save_json as _save_json,
+    vc_export_settings as _vc_export_settings,
+)
+from src.pilot.steps import (
+    episode_vc_tle_rates as _episode_vc_tle_rates,
+    prepare_feasibility_inputs as _prepare_feasibility_inputs,
+    run_mock_inference_speed_benchmark as _run_mock_inference_speed_benchmark,
+)
+from src.pilot.orchestrator import run_pilot_main
 
 
 def _step_trace_settings(config: dict) -> tuple[bool, Any]:
@@ -65,42 +59,6 @@ def _step_trace_settings(config: dict) -> tuple[bool, Any]:
 
     hook = optional_trace_hook_from_config(config, dotenv_info=_DOTENV_INFO)
     return save, hook
-
-
-def _maybe_write_logprob_artifacts(
-    config: dict,
-    episode_id: str,
-    result: dict[str, Any],
-    output_dir: Path,
-) -> None:
-    save, fmt, sub = _logprob_export_settings(config)
-    if not save:
-        return
-    raw = result.get("logprob_raw_per_step")
-    if not raw:
-        return
-    for p in write_logprob_distribution_artifacts(
-        episode_id, raw, output_dir, export_format=fmt, logprob_subdir=sub
-    ):
-        log(f"Wrote {p}")
-
-
-def _maybe_write_vc_artifacts(
-    config: dict,
-    episode_id: str,
-    result: dict[str, Any],
-    output_dir: Path,
-) -> None:
-    save, fmt, sub = _vc_export_settings(config)
-    if not save:
-        return
-    raw = result.get("vc_detail_per_step")
-    if not raw:
-        return
-    for p in write_vc_distribution_artifacts(
-        episode_id, raw, output_dir, export_format=fmt, vc_subdir=sub
-    ):
-        log(f"Wrote {p}")
 
 # Canonical order for --only (subset runs in this order).
 PILOT_STEPS_ORDER = (
@@ -121,128 +79,9 @@ def load_config(config_path: str | Path) -> dict:
     return load_yaml_path(Path(config_path))
 
 
-def _save_json(output_dir: Path, filename_stem: str, data: dict[str, Any]) -> Path:
-    """
-    Save a single JSON artifact to output_dir with a predictable filename.
-    This is used for per-test outputs (not per-episode outputs).
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{filename_stem}.json"
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-    log(f"Wrote {path}")
-    return path
-
-
 def _only_steps_in_order(selected: frozenset[str]) -> list[str]:
     """Deduplicate and order user --only choices by PILOT_STEPS_ORDER."""
     return [s for s in PILOT_STEPS_ORDER if s in selected]
-
-
-def _load_json_optional(path: Path) -> dict[str, Any] | None:
-    if not path.is_file():
-        return None
-    with open(path) as f:
-        data = json.load(f)
-    return data if isinstance(data, dict) else None
-
-
-def _load_episode_jsons(output_dir: Path, pattern: str) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for p in sorted(output_dir.glob(pattern)):
-        try:
-            with open(p) as f:
-                ep = json.load(f)
-            if isinstance(ep, dict):
-                out.append(ep)
-        except Exception:
-            continue
-    return out
-
-
-def _prepare_feasibility_inputs(
-    output_dir: Path,
-    *,
-    test1: dict[str, Any],
-    test2: dict[str, Any],
-    test3: dict[str, Any],
-    episodes: list[dict[str, Any]],
-    toh: dict[str, Any],
-    sanity: dict[str, Any] | None,
-) -> tuple[
-    dict[str, Any],
-    dict[str, Any],
-    dict[str, Any],
-    list[dict[str, Any]],
-    dict[str, Any],
-    dict[str, Any] | None,
-    list[dict[str, Any]],
-]:
-    """
-    Merge in-session results with prior JSON artifacts on disk so --only test2 feasibility works.
-    Loads TextWorld and Tower of Hanoi episode JSONs for feasibility TLE/VC rates.
-    """
-    t1 = test1 or (_load_json_optional(output_dir / "pilot_test1_inference.json") or {})
-    t2 = test2 or (_load_json_optional(output_dir / "pilot_test2_tle.json") or {})
-    t3 = test3 or (_load_json_optional(output_dir / "pilot_test3_vc.json") or {})
-    eps = episodes if episodes else _load_episode_jsons(output_dir, "ep_textworld_*.json")
-    th = toh or (_load_json_optional(output_dir / "pilot_test5_toh.json") or {})
-    san = sanity if sanity is not None else _load_json_optional(output_dir / "pilot_sanity.json")
-    toh_eps = _load_episode_jsons(output_dir, "ep_tower_of_hanoi_*.json")
-    return t1, t2, t3, eps, th, san, toh_eps
-
-
-def _episode_vc_tle_rates(
-    textworld_episodes: list[dict[str, Any]],
-    toh_episodes: list[dict[str, Any]],
-) -> tuple[float | None, float | None]:
-    """
-    Fraction of env steps with non-null VC and non-null TLE across all pilot episodes.
-    Uses the same lists as written to ep_*.json (vc_per_step, tle_per_step).
-    """
-    all_eps = list(textworld_episodes) + list(toh_episodes)
-    total_vc_steps = 0
-    nonnull_vc_steps = 0
-    total_tle_steps = 0
-    nonnull_tle_steps = 0
-    for ep in all_eps:
-        for v in ep.get("vc_per_step") or []:
-            total_vc_steps += 1
-            if v is not None:
-                nonnull_vc_steps += 1
-        for t in ep.get("tle_per_step") or []:
-            total_tle_steps += 1
-            if t is not None:
-                nonnull_tle_steps += 1
-    vc_rate = (nonnull_vc_steps / total_vc_steps) if total_vc_steps else None
-    tle_rate = (nonnull_tle_steps / total_tle_steps) if total_tle_steps else None
-    return vc_rate, tle_rate
-
-
-def _run_mock_inference_speed_benchmark(num_prompts: int, tokens_per_call: int = 200) -> dict[str, Any]:
-    """
-    Simulate a batch of prompts with fixed tokens and timings; return result dict.
-    Kept here so the pilot runner doesn't import from the pytest suite.
-    """
-    latencies: list[float] = []
-    total_tokens = 0
-    for _ in range(int(num_prompts)):
-        t0 = time.perf_counter()
-        time.sleep(0.001)
-        total_tokens += int(tokens_per_call)
-        latencies.append(time.perf_counter() - t0)
-    elapsed = sum(latencies)
-    tokens_per_sec = total_tokens / elapsed if elapsed > 0 else 0.0
-    mean_lat = (sum(latencies) / len(latencies)) if latencies else 0.0
-    variance = (sum((x - mean_lat) ** 2 for x in latencies) / len(latencies)) if latencies else 0.0
-    std_lat = variance**0.5
-    return {
-        "tokens_per_sec": float(tokens_per_sec),
-        "latency_mean": float(mean_lat),
-        "latency_std": float(std_lat),
-        "total_tokens": int(total_tokens),
-        "num_prompts": int(num_prompts),
-    }
 
 
 def parse_pilot_mode_arg(value: str) -> str:
@@ -1223,56 +1062,7 @@ def _resolve_pilot_mode(args) -> str:
     return mode
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run pilot study (Tests 1-6). mock | hf (HF+MPS) | cuda | lmstudio (OpenAI API)."
-    )
-    parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
-    parser.add_argument(
-        "--lmstudio-config",
-        default=None,
-        metavar="PATH",
-        help="When --pilot-mode lmstudio: optional YAML deep-merged on top of --config "
-        "(default: configs/lmstudio_config.yaml; env LMSTUDIO_CONFIG_PATH). "
-        "Use enabled: false in that file to keep base pilot.yaml only.",
-    )
-    parser.add_argument("--output-dir", default="data/results", help="Base output directory")
-    parser.add_argument(
-        "--no-timestamp-run",
-        action="store_true",
-        help="Write directly under --output-dir instead of creating a timestamped subfolder (run_*_UTC).",
-    )
-    parser.add_argument(
-        "--pilot-mode",
-        type=parse_pilot_mode_arg,
-        default="mock",
-        help="mock | hf (HuggingFace+MPS) | m1 (deprecated=hf) | cuda | lmstudio (LM Studio server).",
-    )
-    parser.add_argument(
-        "--real",
-        action="store_true",
-        help="Use real model; auto-detect hf vs cuda if --pilot-mode is mock",
-    )
-    parser.add_argument(
-        "--only",
-        nargs="+",
-        metavar="STEP",
-        choices=list(PILOT_STEPS_ORDER),
-        default=None,
-        help=(
-            "Run only these pilot steps (canonical order). "
-            "Steps: sanity, test1, test2, test3, test4, test5, feasibility. "
-            "Example: --only test2. For feasibility, prior results in output_dir are merged "
-            "(pilot_test*.json, ep_textworld_*.json, pilot_test5_toh.json)."
-        ),
-    )
-    parser.add_argument(
-        "--model-name",
-        default=None,
-        metavar="ID",
-        help="Override model.name after config (and LM Studio YAML merge). Used by run_pilot_models.py.",
-    )
-    args = parser.parse_args()
+def _run_pilot_from_args(args: argparse.Namespace) -> None:
     t_pilot0 = time.perf_counter()
     config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
     base_output = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
@@ -1393,9 +1183,72 @@ def main() -> None:
             wall_clock_total_s=(time.perf_counter() - t_pilot0),
         )
         _save_json(output_dir, "pilot_feasibility", feasibility)
-        log(f"Feasibility done — go={feasibility.get('go')} passed={feasibility.get('passed')}/{feasibility.get('total')}")
+        log(
+            f"Feasibility done — go={feasibility.get('go')} "
+            f"passed={feasibility.get('passed')}/{feasibility.get('total')}"
+        )
 
     log(f"Pilot done — wall {format_run_elapsed(time.perf_counter() - t_pilot0)} total")
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run pilot study (Tests 1-6). mock | hf (HF+MPS) | cuda | lmstudio (OpenAI API)."
+    )
+    parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
+    parser.add_argument(
+        "--lmstudio-config",
+        default=None,
+        metavar="PATH",
+        help="When --pilot-mode lmstudio: optional YAML deep-merged on top of --config "
+        "(default: configs/lmstudio_config.yaml; env LMSTUDIO_CONFIG_PATH). "
+        "Use enabled: false in that file to keep base pilot.yaml only.",
+    )
+    parser.add_argument("--output-dir", default="data/results", help="Base output directory")
+    parser.add_argument(
+        "--no-timestamp-run",
+        action="store_true",
+        help="Write directly under --output-dir instead of creating a timestamped subfolder (run_*_UTC).",
+    )
+    parser.add_argument(
+        "--pilot-mode",
+        type=parse_pilot_mode_arg,
+        default="mock",
+        help="mock | hf (HuggingFace+MPS) | m1 (deprecated=hf) | cuda | lmstudio (LM Studio server).",
+    )
+    parser.add_argument(
+        "--real",
+        action="store_true",
+        help="Use real model; auto-detect hf vs cuda if --pilot-mode is mock",
+    )
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="STEP",
+        choices=list(PILOT_STEPS_ORDER),
+        default=None,
+        help=(
+            "Run only these pilot steps (canonical order). "
+            "Steps: sanity, test1, test2, test3, test4, test5, feasibility. "
+            "Example: --only test2. For feasibility, prior results in output_dir are merged "
+            "(pilot_test*.json, ep_textworld_*.json, pilot_test5_toh.json)."
+        ),
+    )
+    parser.add_argument(
+        "--model-name",
+        default=None,
+        metavar="ID",
+        help="Override model.name after config (and LM Studio YAML merge). Used by run_pilot_models.py.",
+    )
+    return parser
+
+
+def _parse_args() -> argparse.Namespace:
+    return _build_parser().parse_args()
+
+
+def main() -> None:
+    run_pilot_main(_parse_args(), _run_pilot_from_args)
 
 
 if __name__ == "__main__":
