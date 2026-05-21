@@ -285,7 +285,7 @@ class TextWorldEnv:
             use_admissible = admissible is not None
             if use_admissible:
                 try:
-                    use_admissible = len(admissible) > 0  # type: ignore[arg-type]
+                    use_admissible = len(admissible) > 0
                 except TypeError:
                     use_admissible = True
 

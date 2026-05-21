@@ -113,9 +113,10 @@ def print_batch_progress(
         for r in rolling
         if r.get("domain") == domain and r.get(label_key) == stage_or_strategy
     ]
-    if insts:
+    inst_nums = [int(x) for x in insts if isinstance(x, (int, float, str)) and str(x).strip() != ""]
+    if inst_nums:
         print(
-            f"  cursor: domain={domain} | {label_key}={stage_or_strategy} | inst {min(insts)}–{max(insts)}"
+            f"  cursor: domain={domain} | {label_key}={stage_or_strategy} | inst {min(inst_nums)}–{max(inst_nums)}"
         )
     else:
         print(f"  cursor: domain={domain} | {label_key}={stage_or_strategy}")

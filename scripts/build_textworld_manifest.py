@@ -2,6 +2,7 @@
 """
 Build difficulty_manifest.json for final TextWorld dataset artifacts.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,7 +39,9 @@ def _load_sidecar(path: Path) -> dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build TextWorld difficulty_manifest.json with fixed holdout split.")
+    parser = argparse.ArgumentParser(
+        description="Build TextWorld difficulty_manifest.json with fixed holdout split."
+    )
     parser.add_argument(
         "--dataset-dir",
         default="data/tasks/textworld",

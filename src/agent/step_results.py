@@ -35,16 +35,17 @@ def normalize_step_result(
         p9 = result[9]
         call_detail = p9 if isinstance(p9, dict) else None
     if n >= 7:
-        raw_lp = result[5]  # type: ignore[assignment]
-        vc_detail = result[6]  # type: ignore[assignment]
+        fifth, sixth = result[5], result[6]
+        raw_lp = fifth if isinstance(fifth, list) else None
+        vc_detail = sixth if isinstance(sixth, dict) else None
     elif n == 6:
         sixth = result[5]
         if isinstance(sixth, dict) and (
             "vc_prompt" in sixth or "vc_raw_text" in sixth or "vc_value" in sixth
         ):
             vc_detail = sixth
-        else:
-            raw_lp = sixth  # type: ignore[assignment]
+        elif isinstance(sixth, list):
+            raw_lp = sixth
     if n >= 5:
         return (
             result[0],

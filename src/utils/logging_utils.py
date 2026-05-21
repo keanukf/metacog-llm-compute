@@ -116,7 +116,7 @@ def _try_gpu_info() -> tuple[str | None, float | None]:
     Returns (gpu_name, vram_total_gb) if torch+CUDA are available, else (None, None).
     """
     try:
-        import torch  # type: ignore
+        import torch
 
         if not torch.cuda.is_available():
             return None, None
@@ -150,7 +150,7 @@ def write_run_metadata(
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     repo_root = Path(repo_root) if repo_root is not None else Path.cwd()
-    meta = {
+    meta: dict[str, Any] = {
         "run_id": str(uuid.uuid4()),
         "script": str(script),
         "config_path": str(config_path),
@@ -196,9 +196,12 @@ def _synthesize_steps_detail(episode: dict[str, Any]) -> list[dict[str, Any]]:
         for d in step_correctness:
             if not isinstance(d, dict):
                 continue
+            idx_raw = d.get("step_index")
+            if idx_raw is None:
+                continue
             try:
-                idx = int(d.get("step_index"))
-            except Exception:
+                idx = int(idx_raw)
+            except (TypeError, ValueError):
                 continue
             corr_by_idx[idx] = d.get("correctness")
 
@@ -261,7 +264,7 @@ def load_episodes(
         return episodes
 
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
     except Exception as e:
         raise ImportError("pandas is required for as_dataframe=True") from e
     return pd.DataFrame(episodes)
@@ -309,7 +312,7 @@ def load_steps(checkpoint_dir: str | Path):
                 row["tle_max_entropy"] = tle.get("max_entropy")
             rows.append(row)
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
 
         return pd.DataFrame(rows)
     except Exception:
