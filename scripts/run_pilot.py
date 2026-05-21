@@ -37,9 +37,11 @@ from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, loa
 from src.utils.run_progress import format_run_elapsed, log, log_step_line
 from src.agent.compute_stages import VC_FOLLOWUP_PROMPT_MARKER
 from src.pilot.artifacts import (
+    logprob_export_settings as _logprob_export_settings,
     maybe_write_logprob_artifacts as _maybe_write_logprob_artifacts,
     maybe_write_vc_artifacts as _maybe_write_vc_artifacts,
     save_json as _save_json,
+    vc_export_settings as _vc_export_settings,
 )
 from src.pilot.steps import (
     episode_vc_tle_rates as _episode_vc_tle_rates,
