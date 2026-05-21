@@ -9,8 +9,7 @@ import random
 import re
 from typing import Any
 
-from src.agent import cot_parser
-from src.agent import compute_prompt_utils
+from src.agent import compute_prompt_utils, cot_parser
 from src.signals import token_entropy, verbalized_confidence
 
 # (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None, prompt_full, response_full, call_detail|None)
