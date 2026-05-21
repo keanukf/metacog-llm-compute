@@ -10,6 +10,7 @@ in the process environment. That avoids a common failure mode: IDEs or shells pr
 empty ``LANGFUSE_*`` (or other) keys, which makes ``load_dotenv(override=False)`` skip those
 lines, return False, and leave secrets unset.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,7 +38,11 @@ def load_dotenv_if_present(repo_root: str | Path, *, override: bool = True) -> d
     try:
         from dotenv import load_dotenv  # type: ignore
     except Exception as e:  # pragma: no cover
-        return {"loaded": False, "reason": f"python-dotenv unavailable: {e!s}", "env_path": str(env_path)}
+        return {
+            "loaded": False,
+            "reason": f"python-dotenv unavailable: {e!s}",
+            "env_path": str(env_path),
+        }
 
     # utf-8-sig strips a leading UTF-8 BOM so the first key is not "\ufeffLANGFUSE_..." (which breaks os.environ lookups).
     ok = bool(
@@ -55,4 +60,3 @@ def load_dotenv_if_present(repo_root: str | Path, *, override: bool = True) -> d
         "reason": "no variables parsed from .env (empty, comment-only, or invalid syntax)",
         "env_path": str(env_path),
     }
-

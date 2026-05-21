@@ -1,6 +1,7 @@
 """
 Compute stages: C0 (direct + logprobs), C1 (CoT + verify), C2 (self-consistency / majority vote).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -29,7 +30,9 @@ _SINGLE_LINE_OUTPUT_INSTRUCTION: str = (
 )
 
 # Shared generation instruction body (reused to keep C0/C1 parity stable over time).
-_C0_GENERATION_INSTRUCTION: str = "Generate one command directly from <task>, <history>, and <state>."
+_C0_GENERATION_INSTRUCTION: str = (
+    "Generate one command directly from <task>, <history>, and <state>."
+)
 
 DEFAULT_C1_VERIFY_INSTRUCTION = (
     "You are doing a verification pass over a draft_action.\n"
@@ -197,7 +200,11 @@ def _history_to_xml(history: list[str]) -> str:
             continue
 
         act = _unwrap_history_entry(entry, "ACTION:")
-        obs = _unwrap_history_entry(history[idx + 1], "OBSERVATION:") if (idx + 1) < len(history) else None
+        obs = (
+            _unwrap_history_entry(history[idx + 1], "OBSERVATION:")
+            if (idx + 1) < len(history)
+            else None
+        )
         if act is not None and obs is not None:
             step_body = "\n".join(
                 [
@@ -205,7 +212,7 @@ def _history_to_xml(history: list[str]) -> str:
                     f"<observation>{obs.rstrip()}</observation>",
                 ]
             )
-            parts.append(_xml_block("step", step_body, attrs=f'index=\"{step_index}\"'))
+            parts.append(_xml_block("step", step_body, attrs=f'index="{step_index}"'))
             step_index += 1
             idx += 2
             continue
@@ -586,7 +593,9 @@ def _c0_step_core(
     followup_cot_max_chars: int,
     vc_raw_completion_max_chars: int,
 ) -> StepReturn:
-    prompt = f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
+    prompt = (
+        f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
+    )
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
     # Force thinking OFF for baseline action calls (C0). Only the C1-CoT subcall uses thinking.
     gen_kw["enable_thinking"] = False
@@ -663,7 +672,9 @@ def _c1_step_core(
     )
     cot_prompt = f"{base_prompt}{cot_instruction}"
     act_tok = int(action_max_tokens) if action_max_tokens is not None else 32
-    cot_max_tokens = int(c1_cot_max_tokens) if c1_cot_max_tokens is not None else max(128, act_tok * 2)
+    cot_max_tokens = (
+        int(c1_cot_max_tokens) if c1_cot_max_tokens is not None else max(128, act_tok * 2)
+    )
     if cot_max_tokens <= 0:
         cot_max_tokens = max(128, act_tok * 2)
     cot_temp = c1_cot_temperature
@@ -681,8 +692,6 @@ def _c1_step_core(
     draft_status = str(parsed.get("status") or "unparsed")
     parse_method = str(parsed.get("parse_method") or "none")
     draft_reasoning_raw = str(parsed.get("reasoning_internal") or "")
-    draft = draft_action if draft_action else "(no draft parsed)"
-
     verify_instr = (c1_verify_instruction or "").strip() or DEFAULT_C1_VERIFY_INSTRUCTION
     verify_instruction = (
         "\n\n"
@@ -692,7 +701,9 @@ def _c1_step_core(
         f"{verify_instr.strip()}"
     )
     verify_prompt = f"{base_prompt}{verify_instruction}"
-    verify_max_tokens = c1_verify_max_tokens if c1_verify_max_tokens is not None else action_max_tokens
+    verify_max_tokens = (
+        c1_verify_max_tokens if c1_verify_max_tokens is not None else action_max_tokens
+    )
     verify_stop = c1_verify_stop if c1_verify_stop is not None else action_stop
     gen_kw = _action_generate_kwargs(verify_max_tokens, float(c1_verify_temperature), verify_stop)
     # Verify must be single-line action; force thinking OFF.
@@ -758,7 +769,18 @@ def _c1_step_core(
             },
         ],
     }
-    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, verify_prompt, response_full, call_detail)
+    return (
+        action,
+        tle,
+        vc,
+        tokens_used,
+        lm_calls,
+        lp_out,
+        vc_detail,
+        verify_prompt,
+        response_full,
+        call_detail,
+    )
 
 
 def _majority_vote(
@@ -806,7 +828,9 @@ def _c2_step_core(
     followup_cot_max_chars: int,
     vc_raw_completion_max_chars: int,
 ) -> StepReturn:
-    prompt = f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
+    prompt = (
+        f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
+    )
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
     # Force thinking OFF for self-consistency sampling; only C1-CoT uses thinking.
     gen_kw["enable_thinking"] = False
@@ -877,21 +901,23 @@ def _c2_step_core(
         raw_text = str(s.get("response") or "")
         s["tle"] = token_entropy.extract_action_tle_from_response(raw_text, lp) if lp else None
         if lp and isinstance(lp, list):
-            vals = [float(x.get("logprob")) for x in lp if isinstance(x, dict) and x.get("logprob") is not None]
+            vals = [
+                float(x.get("logprob"))
+                for x in lp
+                if isinstance(x, dict) and x.get("logprob") is not None
+            ]
             s["mean_logprob"] = (sum(vals) / len(vals)) if vals else None
         else:
             s["mean_logprob"] = None
 
     winner_action_exec = ""
     winner_raw_first = ""
-    win_logprobs: list[dict[str, Any]] | None = None
     winner_tle: dict[str, float] | None = None
     winner_mean_logprob: float | None = None
     for s in samples:
         if str(s.get("vote_key") or "") == winning_key:
             winner_action_exec = str(s.get("action_exec") or "")
             winner_raw_first = str(s.get("raw_first_line") or "")
-            win_logprobs = s.get("logprobs")
             winner_tle = s.get("tle")
             mlp = s.get("mean_logprob")
             winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
@@ -900,7 +926,6 @@ def _c2_step_core(
         s0 = samples[0]
         winner_action_exec = str(s0.get("action_exec") or "")
         winner_raw_first = str(s0.get("raw_first_line") or "")
-        win_logprobs = s0.get("logprobs")
         winner_tle = s0.get("tle")
         mlp = s0.get("mean_logprob")
         winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
@@ -942,7 +967,9 @@ def _c2_step_core(
     lm_calls = int(n) + extra_calls
     if save_action_logprobs:
         # For C2 we keep all samples' action logprobs so posthoc analysis can study agreement vs uncertainty.
-        lp_saved = [s.get("logprobs") if isinstance(s.get("logprobs"), list) else None for s in samples]
+        lp_saved = [
+            s.get("logprobs") if isinstance(s.get("logprobs"), list) else None for s in samples
+        ]
     else:
         lp_saved = None
     sample_blocks = [
@@ -1133,10 +1160,11 @@ def get_step_fn(
         "C2": _c2_step_core,
     }
     fn = core_map.get(stage, _c0_step_core)
-    vc_followup_logprobs = bool(save_vc_distributions) and (vc_mode or "").strip().lower() == "followup"
+    vc_followup_logprobs = (
+        bool(save_vc_distributions) and (vc_mode or "").strip().lower() == "followup"
+    )
 
     if stage == "C2":
-
         c2_call_index = 0
 
         def _w2(obs: str, hist: list[str], m: Any):
@@ -1213,4 +1241,3 @@ def get_step_fn(
         )
 
     return _w
-

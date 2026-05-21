@@ -3,6 +3,7 @@ Pilot Test 5 — End-to-End Mini-Experiment.
 Mini pipeline: 2 instances x 3 stages x 1 run = 6 episodes with mock env and mock model.
 Assert 6 episode outputs with required keys.
 """
+
 from __future__ import annotations
 
 import json
@@ -12,7 +13,7 @@ import pytest
 from src.agent.base_agent import run_episode
 from src.agent.compute_stages import get_step_fn
 from src.environments.textworld_env import TextWorldEnv
-from src.utils.logging_utils import EpisodeLogger, log_episode
+from src.utils.logging_utils import EpisodeLogger
 
 
 @pytest.fixture
@@ -20,6 +21,7 @@ def mock_model():
     class M:
         def generate(self, prompt, logprobs=False, **kwargs):
             return "go north", [{"logprob": -0.5}] * 5 if logprobs else None
+
     return M()
 
 
@@ -66,7 +68,6 @@ def test_e2e_mini_pipeline_6_episodes(mock_model, temp_results_dir):
     logger = EpisodeLogger(temp_results_dir)
     instances = 2
     stages = ["C0", "C1", "C2"]
-    run = 1
     episode_ids = []
     for inst in range(instances):
         for stage in stages:
@@ -101,4 +102,10 @@ def test_e2e_mini_pipeline_6_episodes(mock_model, temp_results_dir):
     for f in files:
         with open(f) as fp:
             d = json.load(fp)
-        assert "episode_id" in d and "steps" in d and "lm_calls" in d and "total_lm_calls" in d and "tokens" in d
+        assert (
+            "episode_id" in d
+            and "steps" in d
+            and "lm_calls" in d
+            and "total_lm_calls" in d
+            and "tokens" in d
+        )

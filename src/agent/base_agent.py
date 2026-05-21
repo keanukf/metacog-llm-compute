@@ -2,16 +2,17 @@
 Minimal agent loop: observation -> LM call -> action -> next observation.
 No framework (no LangChain/LlamaIndex). Each compute stage is a clear function.
 """
+
 from __future__ import annotations
 
 import contextlib
 import random
+import re
 import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
-import re
 
 from src.agent.allocator import allocate
 from src.agent.compute_stages import get_step_fn
@@ -47,7 +48,9 @@ def _truncate_for_history(text: str, *, max_chars: int = 1000, head_ratio: float
     return f"{t[:head]}\n…[snip]…\n{t[-tail:]}"
 
 
-def _compact_history_for_prompt(history: list[str], *, keep_last_pairs: int | None = None) -> list[str]:
+def _compact_history_for_prompt(
+    history: list[str], *, keep_last_pairs: int | None = None
+) -> list[str]:
     """
     Return a compact history view for prompting.
 
@@ -173,7 +176,18 @@ def _normalize_step_result(
             response_full,
             call_detail,
         )
-    return result[0], result[1], result[2], 0, 1, raw_lp, vc_detail, prompt_full, response_full, call_detail
+    return (
+        result[0],
+        result[1],
+        result[2],
+        0,
+        1,
+        raw_lp,
+        vc_detail,
+        prompt_full,
+        response_full,
+        call_detail,
+    )
 
 
 def _copy_step_results(env: Any) -> list[dict[str, Any]] | None:
@@ -268,16 +282,24 @@ def run_episode(
     vc_detail_per_step: list[dict[str, Any] | None] = []
     steps_detail: list[dict[str, Any]] = []
     if step_fn is None:
-        def _stub_step(o: str, h: list[str], m: Any) -> tuple[str, dict | None, float | None, int, int]:
+
+        def _stub_step(
+            o: str, h: list[str], m: Any
+        ) -> tuple[str, dict | None, float | None, int, int]:
             return "go north", None, None, 0, 0
+
         step_fn = _stub_step
 
     trace_path: Path | None = None
     if save_step_traces:
         if not episode_id:
-            warnings.warn("save_step_traces is True but episode_id is missing; step traces not written.")
+            warnings.warn(
+                "save_step_traces is True but episode_id is missing; step traces not written."
+            )
         elif not trace_output_dir:
-            warnings.warn("save_step_traces is True but trace_output_dir is missing; step traces not written.")
+            warnings.warn(
+                "save_step_traces is True but trace_output_dir is missing; step traces not written."
+            )
         else:
             trace_path = Path(trace_output_dir) / f"trace_{episode_id}.jsonl"
             trace_path.parent.mkdir(parents=True, exist_ok=True)
@@ -324,7 +346,9 @@ def run_episode(
 
             with step_cm as step_span:
                 t0 = time.perf_counter()
-                history_for_prompt = _compact_history_for_prompt(history, keep_last_pairs=history_keep_last_pairs)
+                history_for_prompt = _compact_history_for_prompt(
+                    history, keep_last_pairs=history_keep_last_pairs
+                )
                 if pin_recipe and pinned_recipe:
                     history_for_prompt = [
                         history_for_prompt[0],
@@ -333,9 +357,18 @@ def run_episode(
                     ]
                 raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
                 step_wall_time_s = time.perf_counter() - t0
-                action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full, call_detail = (
-                    _normalize_step_result(raw)
-                )
+                (
+                    action,
+                    tle,
+                    vc,
+                    tokens_used,
+                    lm_calls_this_step,
+                    log_raw,
+                    vc_det,
+                    prompt_full,
+                    response_full,
+                    call_detail,
+                ) = _normalize_step_result(raw)
 
                 tle_per_step.append(tle)
                 vc_per_step.append(vc)
@@ -354,10 +387,16 @@ def run_episode(
                     "step_wall_time_s": float(step_wall_time_s),
                     "step_start_time_utc": step_start_dt,
                 }
-                if trace_hook is not None and step_span is not None and hasattr(trace_hook, "log_step_children"):
+                if (
+                    trace_hook is not None
+                    and step_span is not None
+                    and hasattr(trace_hook, "log_step_children")
+                ):
                     try:
                         subcalls = None
-                        if isinstance(call_detail, dict) and isinstance(call_detail.get("subcalls"), list):
+                        if isinstance(call_detail, dict) and isinstance(
+                            call_detail.get("subcalls"), list
+                        ):
                             subcalls = call_detail.get("subcalls")
                         trace_hook.log_step_children(
                             step_span=step_span,
@@ -459,7 +498,9 @@ def run_episode(
                 if step_span is None and hasattr(trace_hook, "log_step"):
                     try:
                         subcalls = None
-                        if isinstance(call_detail, dict) and isinstance(call_detail.get("subcalls"), list):
+                        if isinstance(call_detail, dict) and isinstance(
+                            call_detail.get("subcalls"), list
+                        ):
                             subcalls = call_detail.get("subcalls")
                         trace_hook.log_step(
                             step_index=steps,
@@ -514,7 +555,9 @@ def run_episode(
     finally:
         if trace_hook is not None:
             try:
-                succ = bool(getattr(env, "task_success", False)) or bool(getattr(env, "done", False))
+                succ = bool(getattr(env, "task_success", False)) or bool(
+                    getattr(env, "done", False)
+                )
             except Exception:
                 succ = False
             final_tags: list[str] = []
@@ -692,9 +735,13 @@ def run_adaptive_episode(
     trace_path: Path | None = None
     if save_step_traces:
         if not episode_id:
-            warnings.warn("save_step_traces is True but episode_id is missing; step traces not written.")
+            warnings.warn(
+                "save_step_traces is True but episode_id is missing; step traces not written."
+            )
         elif not trace_output_dir:
-            warnings.warn("save_step_traces is True but trace_output_dir is missing; step traces not written.")
+            warnings.warn(
+                "save_step_traces is True but trace_output_dir is missing; step traces not written."
+            )
         else:
             trace_path = Path(trace_output_dir) / f"trace_{episode_id}.jsonl"
             trace_path.parent.mkdir(parents=True, exist_ok=True)
@@ -728,14 +775,29 @@ def run_adaptive_episode(
             stage_per_step.append(stage)
             step_fn = resolve(stage)
             t0 = time.perf_counter()
-            history_for_prompt = _compact_history_for_prompt(history, keep_last_pairs=history_keep_last_pairs)
+            history_for_prompt = _compact_history_for_prompt(
+                history, keep_last_pairs=history_keep_last_pairs
+            )
             if pin_recipe and pinned_recipe:
-                history_for_prompt = [history_for_prompt[0], f"PINNED RECIPE:\n{pinned_recipe}", *history_for_prompt[1:]]
+                history_for_prompt = [
+                    history_for_prompt[0],
+                    f"PINNED RECIPE:\n{pinned_recipe}",
+                    *history_for_prompt[1:],
+                ]
             raw = step_fn(step_obs_for_prompt, history_for_prompt, model)
             step_wall_time_s = time.perf_counter() - t0
-            action, tle, vc, tokens_used, lm_calls_this_step, log_raw, vc_det, prompt_full, response_full, call_detail = (
-                _normalize_step_result(raw)
-            )
+            (
+                action,
+                tle,
+                vc,
+                tokens_used,
+                lm_calls_this_step,
+                log_raw,
+                vc_det,
+                prompt_full,
+                response_full,
+                call_detail,
+            ) = _normalize_step_result(raw)
             tle_per_step.append(tle)
             vc_per_step.append(vc)
             if save_logprob_distributions:
@@ -825,7 +887,9 @@ def run_adaptive_episode(
                 if hasattr(trace_hook, "log_step"):
                     try:
                         subcalls = None
-                        if isinstance(call_detail, dict) and isinstance(call_detail.get("subcalls"), list):
+                        if isinstance(call_detail, dict) and isinstance(
+                            call_detail.get("subcalls"), list
+                        ):
                             subcalls = call_detail.get("subcalls")
                         trace_hook.log_step(
                             step_index=steps,
@@ -882,7 +946,9 @@ def run_adaptive_episode(
     finally:
         if trace_hook is not None:
             try:
-                succ = bool(getattr(env, "task_success", False)) or bool(getattr(env, "done", False))
+                succ = bool(getattr(env, "task_success", False)) or bool(
+                    getattr(env, "done", False)
+                )
             except Exception:
                 succ = False
             final_tags: list[str] = []

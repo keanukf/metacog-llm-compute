@@ -26,6 +26,28 @@ Run scripts from the **repository root** so imports resolve (see `run_pilot.py` 
 
 ---
 
+## Installation paths (local vs cloud)
+
+Use one of these two install paths depending on context:
+
+- **Local development / CI quality checks** (editable package + dev tools):
+
+```bash
+pip install -e ".[dev]"
+```
+
+- **RunPod / cloud GPU reproducibility** (pinned environment for experiments):
+
+```bash
+pip install -r requirements.txt
+```
+
+`pyproject.toml` is the semantic project source (package metadata, extras, tooling config),
+while `requirements.txt` remains the pinned cloud install target used by
+`scripts/setup_cloud.sh`.
+
+---
+
 ## Unit tests vs pilot: what each is for
 
 | | **Unit tests (pytest)** | **Pilot (run_pilot.py)** |

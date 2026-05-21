@@ -3,6 +3,7 @@ Semantic Consistency (SC) — Extension.
 Requires 5x sampling per step; compare consistency across samples.
 Stub only.
 """
+
 from __future__ import annotations
 
 from typing import Any

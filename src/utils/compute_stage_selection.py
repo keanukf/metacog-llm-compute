@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-
 _VALID_STAGES: tuple[str, ...] = ("C0", "C1", "C2")
 
 
@@ -114,4 +113,3 @@ def resolve_compute_stages_for_domain(
 
     stages = _validate_and_order(_parse_stage_list(raw))
     return stages if stages else default_list
-

@@ -3,6 +3,7 @@ Verbalized Confidence (VC): extract numeric confidence 0-100 from model output.
 Prompt: "Answer, then rate your confidence 0-100."
 Fallback: few-shot examples in prompt; robust parsing here.
 """
+
 from __future__ import annotations
 
 import re

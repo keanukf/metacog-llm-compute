@@ -3,6 +3,7 @@ Pilot Test 4 — TextWorld Mini-Environment.
 Test env interface: reset(), step(), .observation, .done.
 Uses stub TextWorldEnv so no TextWorld install required.
 """
+
 from __future__ import annotations
 
 from src.environments.textworld_env import TextWorldEnv
@@ -104,7 +105,9 @@ def test_action_in_admissible():
 def test_append_admissible_to_observation():
     from src.environments.textworld_env import _append_admissible_to_observation
 
-    out = _append_admissible_to_observation("A room.", {"admissible_commands": ["go north", "look"]})
+    out = _append_admissible_to_observation(
+        "A room.", {"admissible_commands": ["go north", "look"]}
+    )
     assert out.startswith("A room.")
     assert "Valid commands this turn:" in out
     assert "go north" in out and "look" in out
@@ -116,8 +119,16 @@ def test_append_admissible_to_observation():
 def test_textworld_env_opt_in_includes_admissible_in_observation():
     class _FakeGymEnv:
         def __init__(self) -> None:
-            self._reset_result: tuple[str, dict] | str = ("reset", {"admissible_commands": ["go north"]})
-            self._step_result: tuple[str, float, bool, dict] = ("step", 0.0, False, {"admissible_commands": ["look"]})
+            self._reset_result: tuple[str, dict] | str = (
+                "reset",
+                {"admissible_commands": ["go north"]},
+            )
+            self._step_result: tuple[str, float, bool, dict] = (
+                "step",
+                0.0,
+                False,
+                {"admissible_commands": ["look"]},
+            )
 
         def reset(self):
             return self._reset_result
@@ -155,7 +166,12 @@ def _make_realish_env(fake: _FakeGymEnv) -> TextWorldEnv:
 def test_correctness_uses_pre_step_admissible():
     fake = _FakeGymEnv()
     fake._reset_result = ("reset", {"admissible_commands": ["eat lettuce", "look"], "score": 0})
-    fake._step_result = ("*** You lost! ***", 0.0, True, {"admissible_commands": ["look"], "score": 0})
+    fake._step_result = (
+        "*** You lost! ***",
+        0.0,
+        True,
+        {"admissible_commands": ["look"], "score": 0},
+    )
 
     env = _make_realish_env(fake)
     env.reset()
@@ -166,7 +182,12 @@ def test_correctness_uses_pre_step_admissible():
 def test_info_lost_sets_task_lost_and_step_record():
     fake = _FakeGymEnv()
     fake._reset_result = ("reset", {"admissible_commands": ["eat lettuce"], "score": 0})
-    fake._step_result = ("*** You lost! ***", 0.0, True, {"lost": True, "admissible_commands": [], "score": 0})
+    fake._step_result = (
+        "*** You lost! ***",
+        0.0,
+        True,
+        {"lost": True, "admissible_commands": [], "score": 0},
+    )
 
     env = _make_realish_env(fake)
     env.reset()
@@ -180,7 +201,12 @@ def test_info_lost_sets_task_lost_and_step_record():
 def test_info_won_sets_task_success_and_step_record():
     fake = _FakeGymEnv()
     fake._reset_result = ("reset", {"admissible_commands": ["eat meal"], "score": 0})
-    fake._step_result = ("*** You won! ***", 1.0, True, {"won": True, "admissible_commands": [], "score": 1})
+    fake._step_result = (
+        "*** You won! ***",
+        1.0,
+        True,
+        {"won": True, "admissible_commands": [], "score": 1},
+    )
 
     env = _make_realish_env(fake)
     env.reset()

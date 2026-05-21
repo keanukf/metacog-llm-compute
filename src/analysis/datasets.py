@@ -155,7 +155,9 @@ def _synthesize_steps_detail_minimal(ep: dict[str, Any]) -> list[dict[str, Any]]
     return out
 
 
-def _ensure_steps_detail(ep: dict[str, Any], *, had_steps_detail: bool) -> tuple[list[dict[str, Any]], bool]:
+def _ensure_steps_detail(
+    ep: dict[str, Any], *, had_steps_detail: bool
+) -> tuple[list[dict[str, Any]], bool]:
     if had_steps_detail and isinstance(ep.get("steps_detail"), list):
         return list(ep["steps_detail"]), False
     return _synthesize_steps_detail_minimal(ep), True
@@ -247,7 +249,13 @@ def load_run_dataset(
                 row["tle_max_entropy"] = None
 
             # Sidecar paths
-            for sk in ("logprobs_json_path", "logprobs_csv_path", "vc_json_path", "vc_csv_path", "trace_jsonl_path"):
+            for sk in (
+                "logprobs_json_path",
+                "logprobs_csv_path",
+                "vc_json_path",
+                "vc_csv_path",
+                "trace_jsonl_path",
+            ):
                 row[sk] = ep.get(sk)
 
             steps.append(row)
@@ -337,4 +345,3 @@ def validate_analysis_schema(
         "missing_label_rate": (n_missing_label / n) if n else 0.0,
         "synthesized_steps_rate": (n_synth / n) if n else 0.0,
     }
-

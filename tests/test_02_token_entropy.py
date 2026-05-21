@@ -2,9 +2,8 @@
 Pilot Test 2 — Token-Entropie-Extraktion.
 Unit tests for signals.token_entropy: synthetic logprobs, TLE differs for easy vs hard.
 """
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from src.signals.token_entropy import (
     compute_tle,
@@ -25,8 +24,8 @@ def test_compute_tle_returns_mean_and_max():
 
 def test_compute_tle_higher_entropy_for_uncertain_tokens():
     # More uncertain (lower logprob / more uniform) -> higher entropy
-    easy = [{"logprob": -0.1}] * 10   # high prob
-    hard = [{"logprob": -2.0}] * 10   # lower prob
+    easy = [{"logprob": -0.1}] * 10  # high prob
+    hard = [{"logprob": -2.0}] * 10  # lower prob
     easy_tle = compute_tle(easy)
     hard_tle = compute_tle(hard)
     assert hard_tle["mean_entropy"] > easy_tle["mean_entropy"]

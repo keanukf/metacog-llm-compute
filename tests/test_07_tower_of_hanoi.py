@@ -2,13 +2,16 @@
 Pilot Test 7 — Tower of Hanoi environment.
 Tests instance generation, env interface, correctness tracking, parsing, and terminal conditions.
 """
+
 from __future__ import annotations
 
 from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
 
 
 def _task(num_disks: int = 3) -> dict:
-    return generate_instances(1, seed=7, num_disks_range=(num_disks, num_disks), partial_start_range=(0, 0))[0]
+    return generate_instances(
+        1, seed=7, num_disks_range=(num_disks, num_disks), partial_start_range=(0, 0)
+    )[0]
 
 
 def test_generate_instances_count():

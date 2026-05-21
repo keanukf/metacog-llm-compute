@@ -1,4 +1,5 @@
 """Compute stages: VC follow-up and prompt prefix."""
+
 from __future__ import annotations
 
 from src.agent import compute_stages as cs
@@ -36,7 +37,10 @@ def test_c0_tle_is_action_line_only_when_tokens_present():
     # from computing on the full sequence.
     from src.signals.token_entropy import compute_tle
 
-    assert tle["mean_entropy"] != compute_tle([{"logprob": -0.1}] * 4 + [{"logprob": -5.0}])["mean_entropy"]
+    assert (
+        tle["mean_entropy"]
+        != compute_tle([{"logprob": -0.1}] * 4 + [{"logprob": -5.0}])["mean_entropy"]
+    )
 
 
 def test_c1_tle_comes_from_verify_call_and_is_action_only():
@@ -59,7 +63,9 @@ def test_c1_tle_comes_from_verify_call_and_is_action_only():
                 ]
                 return text, lp
             # CoT call (ignored for TLE)
-            return "<think>\n- x\n</think>\ntake key", ([{"logprob": -0.01}] * 50 if logprobs else None)
+            return "<think>\n- x\n</think>\ntake key", (
+                [{"logprob": -0.01}] * 50 if logprobs else None
+            )
 
     m = _C1Model()
     step = get_step_fn("C1", vc_mode="none")
@@ -83,7 +89,9 @@ def test_thinking_flags_c1_cot_only():
             self.seen.append(kwargs.get("enable_thinking"))
             # 1) CoT call (no <draft_action> marker)
             if "<draft_action>" not in (prompt or ""):
-                return "<think>plan</think>\ngo east", ([{"logprob": -0.1}] * 5 if logprobs else None)
+                return "<think>plan</think>\ngo east", (
+                    [{"logprob": -0.1}] * 5 if logprobs else None
+                )
             # 2) Verify call
             return "go east", ([{"logprob": -0.2}] * 3 if logprobs else None)
 
@@ -258,7 +266,9 @@ class _C1TwoCallModel:
             # Verify should be deterministic by default (stabilizes TLE distribution).
             assert float(kwargs.get("temperature", 0.0)) == 0.0
             return "go north", [{"logprob": -0.3}] * 4 if logprobs else None
-        return "<think>\nConsider the map.\n</think>\ngo north", [{"logprob": -0.5}] * 8 if logprobs else None
+        return "<think>\nConsider the map.\n</think>\ngo north", [
+            {"logprob": -0.5}
+        ] * 8 if logprobs else None
 
 
 def test_c1_two_lm_calls_with_followup_vc():
@@ -295,7 +305,9 @@ def test_c1_vc_followup_includes_chain_of_thought():
                 return "55", [{"logprob": -0.1}] * 2 if logprobs else None
             if "<draft_action>" in (prompt or ""):
                 return "go east", [{"logprob": -0.2}] * 3 if logprobs else None
-            return "<think>\nMarkerReasoningUnique42.\n</think>\ngo east", [{"logprob": -0.15}] * 10 if logprobs else None
+            return "<think>\nMarkerReasoningUnique42.\n</think>\ngo east", [
+                {"logprob": -0.15}
+            ] * 10 if logprobs else None
 
     m = _M()
     step = get_step_fn("C1", vc_mode="followup")
@@ -314,7 +326,9 @@ def test_c1_two_lm_calls_vc_none():
             self.calls += 1
             if "<draft_action>" in (prompt or ""):
                 return "take key", [{"logprob": -0.2}] * 3 if logprobs else None
-            return "<think>\nPlan.\n</think>\ntake key", [{"logprob": -0.4}] * 8 if logprobs else None
+            return "<think>\nPlan.\n</think>\ntake key", [
+                {"logprob": -0.4}
+            ] * 8 if logprobs else None
 
     m = _NoVc()
     step = get_step_fn("C1", vc_mode="none", prompt_prefix="P.")

@@ -6,6 +6,7 @@ Token-Level Entropy (TLE) from model logprobs.
   H = -sum_i p_i log2(p_i) over the **renormalized softmax** of the top-k logprobs only.
   This is an approximation when the full vocabulary distribution is unavailable.
 """
+
 from __future__ import annotations
 
 import math

@@ -2,6 +2,7 @@
 vLLM wrapper with fallback to HuggingFace Transformers.
 Abstract interface: generate(prompt, logprobs=False) -> text, optional logprobs.
 """
+
 from __future__ import annotations
 
 import json
@@ -241,7 +242,9 @@ def _lmstudio_post_v1_responses(
                     out2 = json.loads(raw2)
                     return out2 if isinstance(out2, dict) else None
             except Exception as e2:
-                warnings.warn(f"LM Studio POST /v1/responses failed (retry): {e2!s}; first error body: {err_body!r}")
+                warnings.warn(
+                    f"LM Studio POST /v1/responses failed (retry): {e2!s}; first error body: {err_body!r}"
+                )
                 return None
         warnings.warn(f"LM Studio POST /v1/responses HTTP {e.code}: {err_body!r}")
         return None
@@ -333,10 +336,10 @@ class VLLMWrapper(ModelWrapper):
     def _ensure_loaded(self) -> None:
         if self._llm is not None:
             return
-        from vllm import LLM
-        from transformers import AutoTokenizer
-
         import torch
+        from transformers import AutoTokenizer
+        from vllm import LLM
+
         if not torch.cuda.is_available():
             raise RuntimeError("VLLMWrapper requires CUDA")
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_name, trust_remote_code=True)
@@ -348,7 +351,9 @@ class VLLMWrapper(ModelWrapper):
             **self._kwargs,
         )
 
-    def _maybe_apply_chat_template(self, prompt: str, *, enable_thinking: bool | None = None) -> str:
+    def _maybe_apply_chat_template(
+        self, prompt: str, *, enable_thinking: bool | None = None
+    ) -> str:
         """
         For instruct/chat-tuned models (e.g. Qwen3), wrap raw text as a single user turn
         and apply the model's chat template so generation starts in the right mode.
@@ -430,7 +435,14 @@ class VLLMWrapper(ModelWrapper):
                 k: v
                 for k, v in kwargs.items()
                 if k
-                not in ("prompt", "logprobs", "max_tokens", "temperature", "stop", "enable_thinking")
+                not in (
+                    "prompt",
+                    "logprobs",
+                    "max_tokens",
+                    "temperature",
+                    "stop",
+                    "enable_thinking",
+                )
             },
         )
         outputs = self._llm.generate([rendered_prompt], sampling_params)
@@ -492,7 +504,8 @@ class VLLMWrapper(ModelWrapper):
         extra = {
             k: v
             for k, v in kwargs.items()
-            if k not in ("prompt", "logprobs", "max_tokens", "temperature", "stop", "enable_thinking")
+            if k
+            not in ("prompt", "logprobs", "max_tokens", "temperature", "stop", "enable_thinking")
         }
         nn = max(1, int(n))
         try:
@@ -552,8 +565,8 @@ class HFWrapper(ModelWrapper):
     def _ensure_loaded(self) -> None:
         if self._model is not None:
             return
-        from transformers import AutoModelForCausalLM, AutoTokenizer
         import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_name, trust_remote_code=True)
         # On Apple Silicon, device_map="auto" often stays on CPU; use device_map="cpu" then .to("mps")
@@ -634,10 +647,12 @@ class HFWrapper(ModelWrapper):
             return text, lp_out
         else:
             if hasattr(generated, "sequences"):
-                out_ids = generated.sequences[0][inputs["input_ids"].shape[1]:]
+                out_ids = generated.sequences[0][inputs["input_ids"].shape[1] :]
                 text = self._tokenizer.decode(out_ids, skip_special_tokens=True)
             else:
-                text = self._tokenizer.decode(generated[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+                text = self._tokenizer.decode(
+                    generated[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
+                )
             return text, None
 
 
@@ -678,6 +693,7 @@ class LMStudioWrapper(ModelWrapper):
                 "LMStudioWrapper requires the openai package. Install with: pip install openai"
             ) from e
         import os
+
         key = self._api_key or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
         self._client = OpenAI(base_url=normalize_openai_base_url(self._base_url), api_key=key)
         return self._client
@@ -766,7 +782,11 @@ def create_wrapper(
     if model_name and backend == "lmstudio":
         url = base_url or kwargs.get("lmstudio_base_url") or "http://localhost:1234/v1"
         api_key = kwargs.get("lmstudio_api_key") or kwargs.get("api_key")
-        rest = {k: v for k, v in kwargs.items() if k not in ("lmstudio_base_url", "lmstudio_api_key", "api_key")}
+        rest = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ("lmstudio_base_url", "lmstudio_api_key", "api_key")
+        }
         top_k = int(rest.pop("lmstudio_top_logprobs", kwargs.get("lmstudio_top_logprobs", 5)))
         return LMStudioWrapper(
             model_name=model_name,

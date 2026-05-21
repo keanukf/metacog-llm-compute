@@ -1,6 +1,7 @@
 """
 Shared environment and model construction for phase runners (Phase 1 / Phase 2).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -107,5 +108,7 @@ def make_experiment_env(
             partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
         )[0]
         include_vm = bool(dom_cfg.get("include_valid_moves", False)) if dom_cfg else False
-        return TowerOfHanoiEnv(task=task_instance, max_steps=max_steps, include_valid_moves=include_vm)
+        return TowerOfHanoiEnv(
+            task=task_instance, max_steps=max_steps, include_valid_moves=include_vm
+        )
     return TextWorldEnv(game_file=None, max_steps=max_steps)

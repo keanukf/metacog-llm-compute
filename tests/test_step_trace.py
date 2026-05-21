@@ -1,4 +1,5 @@
 """Step trace JSONL and extended step result normalization."""
+
 from __future__ import annotations
 
 import json
@@ -89,11 +90,15 @@ def test_run_episode_writes_step_trace_jsonl(tmp_path: Path) -> None:
     assert row0["action_parsed"] == "act_one_line"
     assert row0["observation_before"] == "room A"
     assert "ACTION:" not in row0["history_snapshot"]  # no prior actions yet
-    assert "OBSERVATION: room A" in "\n".join(row0["history_snapshot"])  # reset() seeded into history
+    assert "OBSERVATION: room A" in "\n".join(
+        row0["history_snapshot"]
+    )  # reset() seeded into history
     row1 = json.loads(lines[1])
     assert row1["step_index"] == 1
     assert any(isinstance(x, str) and x.startswith("ACTION:") for x in row1["history_snapshot"])
-    assert any(isinstance(x, str) and x.startswith("OBSERVATION:") for x in row1["history_snapshot"])
+    assert any(
+        isinstance(x, str) and x.startswith("OBSERVATION:") for x in row1["history_snapshot"]
+    )
 
 
 def test_run_episode_history_includes_prior_action(tmp_path: Path) -> None:
@@ -137,7 +142,9 @@ def test_step0_prompt_does_not_duplicate_reset_obs_with_leading_spaces(tmp_path:
             return "   AAA\nBBB"
 
         def step(self, action: str) -> str:
-            self.step_results.append({"step_index": 0, "correctness": "legal", "action_parsed": action})
+            self.step_results.append(
+                {"step_index": 0, "correctness": "legal", "action_parsed": action}
+            )
             self.done = True
             return "after"
 
@@ -156,7 +163,9 @@ def test_step0_prompt_does_not_duplicate_reset_obs_with_leading_spaces(tmp_path:
         episode_id="ep_spaces",
         trace_output_dir=str(tmp_path),
     )
-    row0 = json.loads((tmp_path / "trace_ep_spaces.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    row0 = json.loads(
+        (tmp_path / "trace_ep_spaces.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
     prompt = row0["prompt_full"]
     assert prompt.count("   AAA\nBBB") == 1
 
@@ -177,7 +186,9 @@ class _NEnv:
         return self._obs_seq[0]
 
     def step(self, action: str) -> str:
-        self.step_results.append({"step_index": self._i, "correctness": "legal", "action_parsed": action})
+        self.step_results.append(
+            {"step_index": self._i, "correctness": "legal", "action_parsed": action}
+        )
         self._i += 1
         if self._i >= len(self._obs_seq) - 1:
             self.done = True
@@ -235,7 +246,9 @@ def test_pinned_recipe_is_injected_after_discovery() -> None:
     pinned_seen: list[bool] = []
 
     def step_fn(obs: str, history: list[str], model) -> tuple[str, None, None, int, int]:
-        pinned_seen.append(any(isinstance(x, str) and x.startswith("PINNED RECIPE:") for x in history))
+        pinned_seen.append(
+            any(isinstance(x, str) and x.startswith("PINNED RECIPE:") for x in history)
+        )
         return "noop", None, None, 0, 1
 
     from src.agent.base_agent import run_episode
@@ -307,6 +320,59 @@ def test_langfuse_trace_hook_prefers_update_trace_when_available() -> None:
     h = LangfuseTraceHook(c)
     h.episode_start("epX", session_id="sess", tags=["pilot", "textworld"], trace_name="epX")
     assert any(
-        name == "update_trace" and call.get("trace_id") == "trace_1" and call.get("tags") == ["pilot", "textworld"]
+        name == "update_trace"
+        and call.get("trace_id") == "trace_1"
+        and call.get("tags") == ["pilot", "textworld"]
         for name, call in c.calls
-    )
+    ), f"Expected update_trace call not found. Calls: {c.calls}"
+
+
+def test_langfuse_trace_hook_update_trace_without_langfuse_package(
+    monkeypatch,
+) -> None:
+    """Legacy path must call update_trace even when langfuse is not installed (CI dev deps)."""
+    import builtins
+
+    from src.utils.tracing import LangfuseTraceHook
+
+    real_import = builtins.__import__
+
+    def _import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "langfuse.types":
+            raise ImportError("langfuse not installed")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+
+    class _FakeSpan:
+        def __init__(self) -> None:
+            self.id = "span_1"
+
+        def end(self) -> None:
+            return None
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict]] = []
+
+        def create_trace_id(self) -> str:
+            return "trace_1"
+
+        def start_observation(self, **kwargs):
+            return _FakeSpan()
+
+        def update_trace(self, trace_id: str, **payload) -> None:
+            self.calls.append(("update_trace", {"trace_id": trace_id, **payload}))
+
+        def flush(self) -> None:
+            return None
+
+    c = _FakeClient()
+    h = LangfuseTraceHook(c)
+    h.episode_start("epX", session_id="sess", tags=["pilot", "textworld"], trace_name="epX")
+    assert any(
+        name == "update_trace"
+        and call.get("trace_id") == "trace_1"
+        and call.get("tags") == ["pilot", "textworld"]
+        for name, call in c.calls
+    ), f"Expected update_trace without langfuse package. Calls: {c.calls}"
