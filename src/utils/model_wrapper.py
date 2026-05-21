@@ -11,6 +11,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from src.utils.errors import BackendError
+
 
 def normalize_openai_base_url(base_url: str) -> str:
     """
@@ -341,7 +343,7 @@ class VLLMWrapper(ModelWrapper):
         from vllm import LLM
 
         if not torch.cuda.is_available():
-            raise RuntimeError("VLLMWrapper requires CUDA")
+            raise BackendError("VLLMWrapper requires CUDA")
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_name, trust_remote_code=True)
         self._llm = LLM(
             model=self._model_name,
@@ -689,7 +691,7 @@ class LMStudioWrapper(ModelWrapper):
         try:
             from openai import OpenAI
         except ImportError as e:
-            raise RuntimeError(
+            raise BackendError(
                 "LMStudioWrapper requires the openai package. Install with: pip install openai"
             ) from e
         import os
