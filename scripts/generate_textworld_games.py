@@ -7,12 +7,12 @@ the companion TextWorld ``.json`` game file (``Game.serialize``, required at pla
 plus one ``.meta.json`` experiment sidecar per instance (generation settings, seeds,
 walkthrough summary — must not overwrite the ``.json``).
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import random
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -235,13 +235,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate TextWorld Cooking dataset (.z8 + Game .json + .meta.json sidecars)."
     )
-    parser.add_argument("--output-dir", default="data/tasks/textworld", help="Directory for generated game files")
+    parser.add_argument(
+        "--output-dir", default="data/tasks/textworld", help="Directory for generated game files"
+    )
     parser.add_argument("--num-rooms", type=int, required=True, help="Map size (rooms)")
     parser.add_argument("--num-ingredients", type=int, required=True, help="Recipe complexity")
     parser.add_argument("--cut", action="store_true", help="Enable cutting operations")
     parser.add_argument("--cook", action="store_true", help="Enable cooking operations")
-    parser.add_argument("--open", action="store_true", dest="open_", help="Enable open/close operations")
-    parser.add_argument("--num-instances", type=int, default=10, help="Number of game instances to generate")
+    parser.add_argument(
+        "--open", action="store_true", dest="open_", help="Enable open/close operations"
+    )
+    parser.add_argument(
+        "--num-instances", type=int, default=10, help="Number of game instances to generate"
+    )
     parser.add_argument("--seed", type=int, required=True, help="Master RNG seed")
     parser.add_argument("--start-index", type=int, default=0, help="Start index for file naming")
     parser.add_argument(

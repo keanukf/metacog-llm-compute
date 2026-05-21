@@ -11,14 +11,15 @@ Usage:
   python scripts/run_pilot.py --only test2 --config configs/pilot.yaml ...   # TLE only
   python scripts/run_pilot.py --no-timestamp-run ...  # flat layout (e.g. merge feasibility inputs)
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import warnings
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -32,24 +33,36 @@ from src.utils.errors import BackendError
 
 _DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 
-from src.utils.experiment_env import make_experiment_env, resolve_textworld_game_path
-from src.utils.step_config import resolve_step_fn_kwargs
-from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
-from src.utils.run_progress import format_run_elapsed, log, log_step_line
 from src.agent.compute_stages import VC_FOLLOWUP_PROMPT_MARKER
 from src.pilot.artifacts import (
     logprob_export_settings as _logprob_export_settings,
+)
+from src.pilot.artifacts import (
     maybe_write_logprob_artifacts as _maybe_write_logprob_artifacts,
+)
+from src.pilot.artifacts import (
     maybe_write_vc_artifacts as _maybe_write_vc_artifacts,
+)
+from src.pilot.artifacts import (
     save_json as _save_json,
+)
+from src.pilot.artifacts import (
     vc_export_settings as _vc_export_settings,
 )
+from src.pilot.orchestrator import run_pilot_main
 from src.pilot.steps import (
     episode_vc_tle_rates as _episode_vc_tle_rates,
+)
+from src.pilot.steps import (
     prepare_feasibility_inputs as _prepare_feasibility_inputs,
+)
+from src.pilot.steps import (
     run_mock_inference_speed_benchmark as _run_mock_inference_speed_benchmark,
 )
-from src.pilot.orchestrator import run_pilot_main
+from src.utils.experiment_env import make_experiment_env, resolve_textworld_game_path
+from src.utils.pilot_config import load_pilot_config_with_lmstudio_override, load_yaml_path
+from src.utils.run_progress import format_run_elapsed, log, log_step_line
+from src.utils.step_config import resolve_step_fn_kwargs
 
 
 def _step_trace_settings(config: dict) -> tuple[bool, Any]:
@@ -60,6 +73,7 @@ def _step_trace_settings(config: dict) -> tuple[bool, Any]:
 
     hook = optional_trace_hook_from_config(config, dotenv_info=_DOTENV_INFO)
     return save, hook
+
 
 # Canonical order for --only (subset runs in this order).
 PILOT_STEPS_ORDER = (
@@ -118,10 +132,15 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
     dtype = model_cfg.get("dtype", "float16")
     try:
         from src.utils.model_wrapper import create_wrapper
+
         if pilot_mode == "hf":
-            return create_wrapper(backend="hf", model_name=model_name, dtype=dtype, device="mps"), None
+            return create_wrapper(
+                backend="hf", model_name=model_name, dtype=dtype, device="mps"
+            ), None
         if pilot_mode == "cuda":
-            backend = str(config.get("inference", {}).get("backend", "vllm") or "vllm").strip().lower()
+            backend = (
+                str(config.get("inference", {}).get("backend", "vllm") or "vllm").strip().lower()
+            )
             # The YAML config is shared across local (Apple/MLX) and cloud (CUDA/vLLM) runs.
             # For RunPod smoke tests, cuda must never accidentally select a non-CUDA backend
             # like "mlx" — that would create a base ModelWrapper and fail at runtime.
@@ -147,13 +166,17 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
                     pass
             extra["chat_template"] = bool(inf.get("chat_template", True))
             extra["enable_thinking"] = bool(inf.get("enable_thinking", False))
-            return create_wrapper(backend=backend, model_name=model_name, dtype=dtype, **extra), None
+            return create_wrapper(
+                backend=backend, model_name=model_name, dtype=dtype, **extra
+            ), None
         if pilot_mode == "lmstudio":
             inf = config.get("inference", {})
             base_url = inf.get("lmstudio_base_url") or os.environ.get(
                 "LM_STUDIO_BASE_URL", "http://localhost:1234/v1"
             )
-            api_key = inf.get("lmstudio_api_key") or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
+            api_key = inf.get("lmstudio_api_key") or os.environ.get(
+                "LM_STUDIO_API_KEY", "lm-studio"
+            )
             top_k = int(inf.get("lmstudio_top_logprobs", 5))
             return (
                 create_wrapper(
@@ -214,7 +237,9 @@ def _sanity_check_real_inference(config: dict, pilot_mode: str, real_model: Any)
     temperature = float(inf_cfg.get("temperature", 0.3))
     prompt = "Reply with exactly: OK\\nConfidence: 50"
     t0 = time.perf_counter()
-    text, logprobs = real_model.generate(prompt, logprobs=True, max_tokens=max_tokens, temperature=temperature)
+    text, logprobs = real_model.generate(
+        prompt, logprobs=True, max_tokens=max_tokens, temperature=temperature
+    )
     elapsed = time.perf_counter() - t0
     n_out = len(logprobs) if logprobs else 0
     return {
@@ -243,13 +268,17 @@ def run_test1_inference_speed(
     if real_model is not None:
         # Real benchmark: 50 prompts, measure wall time and token count
         log(f"Test 1: inference speed — {num_prompts} prompts (logprobs on)...")
-        prompts = [f"Complete this sentence: The quick brown fox " * (i % 3 + 1) for i in range(num_prompts)]
+        prompts = [
+            "Complete this sentence: The quick brown fox " * (i % 3 + 1) for i in range(num_prompts)
+        ]
         latencies = []
         total_tokens = 0
         progress_interval = max(1, num_prompts // 5)  # e.g. every 10 for 50 prompts
         for i, p in enumerate(prompts):
             t0 = time.perf_counter()
-            text, logprobs = real_model.generate(p, logprobs=True, max_tokens=max_tokens, temperature=temperature)
+            text, logprobs = real_model.generate(
+                p, logprobs=True, max_tokens=max_tokens, temperature=temperature
+            )
             elapsed = time.perf_counter() - t0
             latencies.append(elapsed)
             n_out = len(logprobs) if logprobs else 0
@@ -264,12 +293,13 @@ def run_test1_inference_speed(
         n = len(latencies)
         mean_lat = sum(latencies) / n if n else 0.0
         variance = sum((x - mean_lat) ** 2 for x in latencies) / n if n else 0.0
-        std_lat = variance ** 0.5
+        std_lat = variance**0.5
         vram_gb = 0.0
         try:
             import torch
+
             if torch.cuda.is_available():
-                vram_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
+                vram_gb = torch.cuda.max_memory_allocated() / (1024**3)
         except Exception:
             pass
         return {
@@ -319,7 +349,14 @@ def run_test2_token_entropy(config: dict, output_dir: Path, *, real_model=None) 
                 with open(csv_path, "w", encoding="utf-8", newline="") as cf:
                     w = csv.writer(cf)
                     w.writerow(
-                        ["prompt_name", "completion_token_index", "rank_in_topk", "token", "logprob", "p_renorm_topk"]
+                        [
+                            "prompt_name",
+                            "completion_token_index",
+                            "rank_in_topk",
+                            "token",
+                            "logprob",
+                            "p_renorm_topk",
+                        ]
                     )
                     for pname, lp_list in per_prompt_logprob_tokens.items():
                         for tok_i, tok in enumerate(lp_list or []):
@@ -335,10 +372,26 @@ def run_test2_token_entropy(config: dict, output_dir: Path, *, real_model=None) 
                                 probs = softmax_probs_from_top_logprobs(top)
                                 for rank, (cand, pr) in enumerate(zip(cands, probs)):
                                     w.writerow(
-                                        [pname, tok_i, rank, cand.get("token", ""), cand.get("logprob", ""), f"{pr:.8g}"]
+                                        [
+                                            pname,
+                                            tok_i,
+                                            rank,
+                                            cand.get("token", ""),
+                                            cand.get("logprob", ""),
+                                            f"{pr:.8g}",
+                                        ]
                                     )
                             else:
-                                w.writerow([pname, tok_i, 0, tok.get("token", ""), tok.get("logprob", ""), "1.0"])
+                                w.writerow(
+                                    [
+                                        pname,
+                                        tok_i,
+                                        0,
+                                        tok.get("token", ""),
+                                        tok.get("logprob", ""),
+                                        "1.0",
+                                    ]
+                                )
                 log(f"Wrote {csv_path}")
         return out
 
@@ -354,7 +407,9 @@ def run_test2_token_entropy(config: dict, output_dir: Path, *, real_model=None) 
     max_entropies: list[float] = []
     per_prompt_logprob_tokens: dict[str, Any] = {}
     for name, p in prompts.items():
-        text, logprobs = real_model.generate(p, logprobs=True, max_tokens=max_tokens, temperature=temperature)
+        text, logprobs = real_model.generate(
+            p, logprobs=True, max_tokens=max_tokens, temperature=temperature
+        )
         tle = extract_tle_from_response(text, logprobs) if logprobs else None
         out["per_prompt"][name] = {
             "tle": tle,
@@ -396,7 +451,14 @@ def run_test2_token_entropy(config: dict, output_dir: Path, *, real_model=None) 
             with open(csv_path, "w", encoding="utf-8", newline="") as cf:
                 w = csv.writer(cf)
                 w.writerow(
-                    ["prompt_name", "completion_token_index", "rank_in_topk", "token", "logprob", "p_renorm_topk"]
+                    [
+                        "prompt_name",
+                        "completion_token_index",
+                        "rank_in_topk",
+                        "token",
+                        "logprob",
+                        "p_renorm_topk",
+                    ]
                 )
                 for pname, lp_list in per_prompt_logprob_tokens.items():
                     for tok_i, tok in enumerate(lp_list or []):
@@ -411,9 +473,27 @@ def run_test2_token_entropy(config: dict, output_dir: Path, *, real_model=None) 
                             ]
                             probs = softmax_probs_from_top_logprobs(top)
                             for rank, (cand, pr) in enumerate(zip(cands, probs)):
-                                w.writerow([pname, tok_i, rank, cand.get("token", ""), cand.get("logprob", ""), f"{pr:.8g}"])
+                                w.writerow(
+                                    [
+                                        pname,
+                                        tok_i,
+                                        rank,
+                                        cand.get("token", ""),
+                                        cand.get("logprob", ""),
+                                        f"{pr:.8g}",
+                                    ]
+                                )
                         else:
-                            w.writerow([pname, tok_i, 0, tok.get("token", ""), tok.get("logprob", ""), "1.0"])
+                            w.writerow(
+                                [
+                                    pname,
+                                    tok_i,
+                                    0,
+                                    tok.get("token", ""),
+                                    tok.get("logprob", ""),
+                                    "1.0",
+                                ]
+                            )
             log(f"Wrote {csv_path}")
     return out
 
@@ -442,7 +522,9 @@ def run_test3_verbalized_confidence(config: dict, *, real_model=None) -> dict:
     parsed: list[float | None] = []
     texts: list[str] = []
     for p in prompts:
-        text, _ = real_model.generate(p, logprobs=False, max_tokens=max_tokens, temperature=temperature)
+        text, _ = real_model.generate(
+            p, logprobs=False, max_tokens=max_tokens, temperature=temperature
+        )
         texts.append(text)
         parsed.append(parse_confidence(text))
     parseable = sum(1 for v in parsed if v is not None)
@@ -454,6 +536,7 @@ def run_test3_verbalized_confidence(config: dict, *, real_model=None) -> dict:
         "parsed_values": parsed,
         "sample_text_prefixes": [t[:120] for t in texts],
     }
+
 
 def run_test5_tower_of_hanoi(
     config: dict,
@@ -551,8 +634,14 @@ def run_test5_tower_of_hanoi(
         max_steps = max_steps_default
         if task_max_steps > 0:
             max_steps = max(max_steps_default, task_max_steps)
-        dom_cfg = (config.get("domain_prompts") or {}).get("tower_of_hanoi") if isinstance(config.get("domain_prompts"), dict) else None
-        include_vm = bool(dom_cfg.get("include_valid_moves", False)) if isinstance(dom_cfg, dict) else False
+        dom_cfg = (
+            (config.get("domain_prompts") or {}).get("tower_of_hanoi")
+            if isinstance(config.get("domain_prompts"), dict)
+            else None
+        )
+        include_vm = (
+            bool(dom_cfg.get("include_valid_moves", False)) if isinstance(dom_cfg, dict) else False
+        )
         env = TowerOfHanoiEnv(task=task, max_steps=max_steps, include_valid_moves=include_vm)
         step_cfg = resolve_step_fn_kwargs(config, "tower_of_hanoi")
         hist_keys = {
@@ -592,7 +681,9 @@ def run_test5_tower_of_hanoi(
             trace_model_name=model_nm or None,
             trace_hook=trace_hk,
             trace_session_id=session_id,
-            trace_tags=[t for t in ([*base_tags, stage, model_nm] if model_nm else [*base_tags, stage]) if t],
+            trace_tags=[
+                t for t in ([*base_tags, stage, model_nm] if model_nm else [*base_tags, stage]) if t
+            ],
             trace_name=ep_toh,
             **history_cfg,
         )
@@ -722,6 +813,7 @@ def run_test5_tower_of_hanoi(
         "avg_min_optimal_moves_remaining": avg_min_optimal_moves_remaining,
     }
 
+
 def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> list[dict]:
     """Test 4: instances x 3 stages x runs = episodes; structured JSON per episode.
 
@@ -835,7 +927,13 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                     trace_model_name=model_nm or None,
                     trace_hook=trace_hk,
                     trace_session_id=session_id,
-                    trace_tags=[t for t in ([*base_tags, stage, model_nm] if model_nm else [*base_tags, stage]) if t],
+                    trace_tags=[
+                        t
+                        for t in (
+                            [*base_tags, stage, model_nm] if model_nm else [*base_tags, stage]
+                        )
+                        if t
+                    ],
                     trace_name=ep_id,
                     **history_cfg,
                 )
@@ -949,7 +1047,9 @@ def _build_feasibility_report(
     checks: list[dict[str, Any]] = []
 
     def _add_check(id_: int, question: str, passed: bool, fallback: str) -> None:
-        checks.append({"id": id_, "question": question, "passed": bool(passed), "fallback": fallback})
+        checks.append(
+            {"id": id_, "question": question, "passed": bool(passed), "fallback": fallback}
+        )
 
     _add_check(
         1,
@@ -972,7 +1072,8 @@ def _build_feasibility_report(
     _add_check(
         4,
         "Verbalisierte Konfidenz parsebar (real)?",
-        (pilot_mode == "mock") or (isinstance(vc_parse_rate, (int, float)) and float(vc_parse_rate) >= 0.8),
+        (pilot_mode == "mock")
+        or (isinstance(vc_parse_rate, (int, float)) and float(vc_parse_rate) >= 0.8),
         "Add few-shot / enforce format",
     )
     _add_check(
@@ -996,7 +1097,8 @@ def _build_feasibility_report(
     _add_check(
         8,
         "End-to-End produziert vollständige Logs?",
-        bool(textworld_episodes) and all(isinstance(e, dict) and "steps" in e for e in textworld_episodes),
+        bool(textworld_episodes)
+        and all(isinstance(e, dict) and "steps" in e for e in textworld_episodes),
         "Logging debuggen",
     )
     _add_check(
@@ -1051,6 +1153,7 @@ def _resolve_pilot_mode(args) -> str:
         if mode == "mock":
             try:
                 import torch
+
                 if torch.cuda.is_available():
                     mode = "cuda"
                 elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
@@ -1065,8 +1168,14 @@ def _resolve_pilot_mode(args) -> str:
 
 def _run_pilot_from_args(args: argparse.Namespace) -> None:
     t_pilot0 = time.perf_counter()
-    config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
-    base_output = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
+    config_path = (
+        REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
+    )
+    base_output = (
+        REPO_ROOT / args.output_dir
+        if not Path(args.output_dir).is_absolute()
+        else Path(args.output_dir)
+    )
     base_output.mkdir(parents=True, exist_ok=True)
     if args.no_timestamp_run:
         output_dir = base_output
@@ -1080,7 +1189,9 @@ def _run_pilot_from_args(args: argparse.Namespace) -> None:
     )
     if getattr(args, "model_name", None):
         config.setdefault("model", {})["name"] = args.model_name
-    only_steps = _only_steps_in_order(frozenset(args.only)) if args.only else list(PILOT_STEPS_ORDER)
+    only_steps = (
+        _only_steps_in_order(frozenset(args.only)) if args.only else list(PILOT_STEPS_ORDER)
+    )
     only_set = frozenset(only_steps)
 
     log(f"Pilot run start — config={config_path} output_dir={output_dir}")

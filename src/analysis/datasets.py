@@ -114,8 +114,11 @@ def _index_correctness_by_step(step_correctness: Any) -> dict[int, Any]:
     for d in step_correctness:
         if not isinstance(d, dict):
             continue
+        idx_raw = d.get("step_index")
+        if idx_raw is None:
+            continue
         try:
-            idx = int(d.get("step_index"))
+            idx = int(idx_raw)
         except (TypeError, ValueError):
             continue
         out[idx] = d.get("correctness")
@@ -245,8 +248,11 @@ def load_run_dataset(
 
             # Step-level fields
             row.update(sd)
+            step_index_raw = sd.get("step_index")
+            if step_index_raw is None:
+                continue
             try:
-                step_index = int(sd.get("step_index"))
+                step_index = int(step_index_raw)
             except (TypeError, ValueError):
                 continue
             row["step_index"] = step_index
@@ -294,7 +300,7 @@ def episodes_frame(dataset: RunDataset):
     Return episodes as a pandas DataFrame if pandas is available, else a list[dict].
     """
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
 
         return pd.DataFrame(dataset.episodes)
     except (ImportError, AttributeError):
@@ -306,7 +312,7 @@ def steps_frame(dataset: RunDataset):
     Return steps as a pandas DataFrame if pandas is available, else a list[dict].
     """
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
 
         return pd.DataFrame(dataset.steps)
     except (ImportError, AttributeError):

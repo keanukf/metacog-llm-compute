@@ -53,7 +53,9 @@ def summarize_run_dir(run_dir: Path) -> dict[str, Any]:
         "model": str(model),
         "dir": str(run_dir),
         "tok_s": t1.get("tokens_per_sec"),
-        "vc_parse_rate": fea.get("summary", {}).get("vc_parse_rate") if isinstance(fea.get("summary"), dict) else None,
+        "vc_parse_rate": fea.get("summary", {}).get("vc_parse_rate")
+        if isinstance(fea.get("summary"), dict)
+        else None,
         "test3_parse_rate": t3.get("parse_rate"),
         "tle_mean_entropy_avg": _safe_get(t2, "summary", "mean_entropy_avg"),
         "toh_parse_rate": t5.get("parse_rate"),
@@ -61,14 +63,18 @@ def summarize_run_dir(run_dir: Path) -> dict[str, Any]:
         "toh_oscillation_rate": t5.get("oscillation_rate"),
         "toh_avg_optimal_rate": t5.get("avg_optimal_rate"),
         "feasibility_go": fea.get("go"),
-        "feasibility_passed": f"{fea.get('passed')}/{fea.get('total')}" if fea.get("passed") is not None else None,
+        "feasibility_passed": f"{fea.get('passed')}/{fea.get('total')}"
+        if fea.get("passed") is not None
+        else None,
         "sanity_has_logprobs": san.get("has_logprobs"),
         "sanity_completion_tokens_observed": san.get("completion_tokens_observed"),
     }
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Summarize pilot_batch_* outputs from run_pilot_models.py")
+    p = argparse.ArgumentParser(
+        description="Summarize pilot_batch_* outputs from run_pilot_models.py"
+    )
     p.add_argument("batch_dir", type=Path, help="Path to data/results/pilot_batch_<UTC>/")
     args = p.parse_args()
 
@@ -85,7 +91,9 @@ def main() -> None:
                 run_dirs.append(Path(str(r["output_dir"])))
     else:
         # Fallback: any child directory containing run_info.json
-        run_dirs = sorted([d for d in batch_dir.iterdir() if d.is_dir() and (d / "run_info.json").is_file()])
+        run_dirs = sorted(
+            [d for d in batch_dir.iterdir() if d.is_dir() and (d / "run_info.json").is_file()]
+        )
 
     rows = [summarize_run_dir(d) for d in run_dirs if d.is_dir()]
 

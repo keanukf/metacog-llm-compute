@@ -262,7 +262,7 @@ def _cohens_d(a: Sequence[float], b: Sequence[float]) -> float | None:
     pooled = ((va + vb) / 2.0) ** 0.5
     if pooled == 0:
         return None
-    return (ma - mb) / pooled
+    return float((ma - mb) / pooled)
 
 
 def calibration_by_step_position(
@@ -298,10 +298,14 @@ def calibration_by_step_position(
             if not isinstance(sd, dict):
                 continue
             idx = sd.get("step_index")
-            if not isinstance(idx, int):
+            if isinstance(idx, int):
+                pass
+            elif idx is None:
+                continue
+            else:
                 try:
                     idx = int(idx)
-                except Exception:
+                except (TypeError, ValueError):
                     continue
             bin_idx = int((idx / max(ep_len, 1)) * n_bins)
             if bin_idx >= n_bins:

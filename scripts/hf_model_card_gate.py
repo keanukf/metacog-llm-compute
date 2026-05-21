@@ -26,12 +26,10 @@ import argparse
 import json
 import os
 import re
-import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -138,7 +136,9 @@ def summarize_repo(repo_id: str, *, token: str | None) -> dict[str, Any]:
             if k in config_obj:
                 moe_struct[k] = config_obj.get(k)
         archs = config_obj.get("architectures")
-        if isinstance(archs, list) and any(isinstance(a, str) and "mixtral" in a.lower() for a in archs):
+        if isinstance(archs, list) and any(
+            isinstance(a, str) and "mixtral" in a.lower() for a in archs
+        ):
             moe_struct["architectures_hint"] = archs
 
     if moe_struct:
@@ -160,8 +160,10 @@ def summarize_repo(repo_id: str, *, token: str | None) -> dict[str, Any]:
         # Avoid generic "moe" substring hits from READMEs that discuss unrelated models.
 
     # "router" is too generic (appears in unrelated docs); only count it with MoE context.
-    if not moe_struct and "router" in _norm_text(readme_blob) and (
-        "expert" in _norm_text(readme_blob) or "mixtral" in _norm_text(readme_blob)
+    if (
+        not moe_struct
+        and "router" in _norm_text(readme_blob)
+        and ("expert" in _norm_text(readme_blob) or "mixtral" in _norm_text(readme_blob))
     ):
         moe_hits.append("router (near-expert/moe language)")
 
@@ -202,10 +204,14 @@ def summarize_repo(repo_id: str, *, token: str | None) -> dict[str, Any]:
         ],
     )
 
-    vl_hits = _contains_any(readme_blob, ["vision-language", "image input", "pix2struct", "vl-", "vlm"])
+    vl_hits = _contains_any(
+        readme_blob, ["vision-language", "image input", "pix2struct", "vl-", "vlm"]
+    )
     # "multimodal" is noisy; treat it as VL signal only with extra vision cues.
     if "multimodal" in _norm_text(readme_blob) and (
-        "image" in _norm_text(readme_blob) or "vision" in _norm_text(readme_blob) or "video" in _norm_text(readme_blob)
+        "image" in _norm_text(readme_blob)
+        or "vision" in _norm_text(readme_blob)
+        or "video" in _norm_text(readme_blob)
     ):
         vl_hits.append("multimodal (near vision/image language)")
 
@@ -215,7 +221,9 @@ def summarize_repo(repo_id: str, *, token: str | None) -> dict[str, Any]:
     elif moe_hits:
         verdict_moe = "review_readme_hits_for_moe_language"
 
-    verdict_hybrid = "unknown" if not hybrid_hits else "review_readme_hits_for_nonstandard_attn_language"
+    verdict_hybrid = (
+        "unknown" if not hybrid_hits else "review_readme_hits_for_nonstandard_attn_language"
+    )
     verdict_vl = "unknown" if not vl_hits else "review_readme_hits_for_vl_language"
 
     return {
@@ -228,7 +236,11 @@ def summarize_repo(repo_id: str, *, token: str | None) -> dict[str, Any]:
         "private": private,
         "tags": tags_l[:40],
         "tag_hits": {
-            "looks_vl": [t for t in tags_l if any(x in t.lower() for x in ("vl", "vision", "image", "multimodal"))][:20],
+            "looks_vl": [
+                t
+                for t in tags_l
+                if any(x in t.lower() for x in ("vl", "vision", "image", "multimodal"))
+            ][:20],
             "looks_moe": [t for t in tags_l if "mixtral" in t.lower() or "moe" in t.lower()][:20],
         },
         "keyword_hits": {
@@ -252,8 +264,16 @@ def summarize_repo(repo_id: str, *, token: str | None) -> dict[str, Any]:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="HF Hub model-card gate (dense instruct sanity checks).")
-    p.add_argument("--repo-id", action="append", default=[], metavar="ORG/NAME", help="Model repo id (repeatable)")
+    p = argparse.ArgumentParser(
+        description="HF Hub model-card gate (dense instruct sanity checks)."
+    )
+    p.add_argument(
+        "--repo-id",
+        action="append",
+        default=[],
+        metavar="ORG/NAME",
+        help="Model repo id (repeatable)",
+    )
     p.add_argument(
         "--models-file",
         type=Path,
@@ -268,7 +288,9 @@ def main() -> None:
     ids: list[str] = []
     ids.extend([x.strip() for x in (args.repo_id or []) if str(x).strip()])
     if args.models_file is not None:
-        path = args.models_file if args.models_file.is_absolute() else (REPO_ROOT / args.models_file)
+        path = (
+            args.models_file if args.models_file.is_absolute() else (REPO_ROOT / args.models_file)
+        )
         ids.extend(_load_models_yaml(path))
 
     # de-dupe preserving order
@@ -301,8 +323,12 @@ def main() -> None:
             print(f"{r['repo_id']}: ERROR {r['error']}")
             continue
         print(f"== {r['repo_id']} ==")
-        print(f"pipeline_tag={r.get('pipeline_tag')} library={r.get('library_name')} gated={r.get('gated')} private={r.get('private')}")
-        print(f"readme_fetched={r.get('card_readme_fetched')} readme_url={r.get('card_readme_url')}")
+        print(
+            f"pipeline_tag={r.get('pipeline_tag')} library={r.get('library_name')} gated={r.get('gated')} private={r.get('private')}"
+        )
+        print(
+            f"readme_fetched={r.get('card_readme_fetched')} readme_url={r.get('card_readme_url')}"
+        )
         kh = r.get("keyword_hits") or {}
         print("keyword_hits:")
         for k, v in kh.items():

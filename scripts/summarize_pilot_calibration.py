@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Summarize TextWorld / ToH pilot episode JSONs for baseline calibration checks."""
+
 from __future__ import annotations
 
 import argparse
@@ -63,7 +64,9 @@ def summarize_dir(output_dir: Path) -> None:
             mtes = [_mean_tle(e) for e in group]
             mtes = [x for x in mtes if x is not None]
             if mtes:
-                print(f"    mean episode mean-TLE: {statistics.mean(mtes):.4f} (std {statistics.pstdev(mtes):.4f})")
+                print(
+                    f"    mean episode mean-TLE: {statistics.mean(mtes):.4f} (std {statistics.pstdev(mtes):.4f})"
+                )
             all_vc: list[float] = []
             for e in group:
                 all_vc.extend(_vc_values(e))
@@ -109,7 +112,9 @@ def summarize_dir(output_dir: Path) -> None:
                     continue
         if preds:
             ece = compute_ece(preds, corr, n_bins=10)
-            print(f"ECE (VC/100 vs optimal=1 else 0, coarse): {ece:.4f} over {len(preds)} step pairs")
+            print(
+                f"ECE (VC/100 vs optimal=1 else 0, coarse): {ece:.4f} over {len(preds)} step pairs"
+            )
         else:
             print("ECE: skipped (no vc_per_step + steps_detail pairs)")
 
