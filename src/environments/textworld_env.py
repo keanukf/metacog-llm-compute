@@ -18,6 +18,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.utils.errors import EnvironmentError
+
 try:
     import textworld  # noqa: F401
 
@@ -131,7 +133,7 @@ def _load_sidecar(game_file: str | None) -> dict[str, Any] | None:
                 data = json.load(f)
             if isinstance(data, dict):
                 return data
-        except Exception:
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
             return None
     # Legacy: experiment sidecar used to overwrite ``{stem}.json`` (wrong — broke TextWorld's Game.load).
     legacy = p.with_suffix(".json")
@@ -141,7 +143,7 @@ def _load_sidecar(game_file: str | None) -> dict[str, Any] | None:
                 data = json.load(f)
             if isinstance(data, dict) and "generation_parameters" in data:
                 return data
-        except Exception:
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
             return None
     return None
 
@@ -206,16 +208,17 @@ class TextWorldEnv:
                     name=f"tw_{id(self)}",
                     request_infos=infos,
                 )
-            except Exception:
+            except (ImportError, AttributeError, TypeError, ValueError):
                 env_id = textworld.gym.register_game(
                     self._game_file,
                     max_episode_steps=self._max_steps,
                     name=f"tw_{id(self)}",
                 )
             self._gym_env = textworld.gym.make(env_id)
-        except Exception:
+        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
             self._use_real = False
             self._gym_env = None
+            self._init_error = EnvironmentError(f"Failed to initialize TextWorld gym env: {exc}")
 
     def _parse_score(self, info: dict[str, Any]) -> float | None:
         if not info:

@@ -38,7 +38,7 @@ def _read_json(path: Path) -> dict[str, Any] | None:
         with open(path) as f:
             obj = json.load(f)
         return obj if isinstance(obj, dict) else None
-    except Exception:
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return None
 
 
@@ -54,9 +54,9 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
                     obj = json.loads(line)
                     if isinstance(obj, dict):
                         out.append(obj)
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     continue
-    except Exception:
+    except OSError:
         return []
     return out
 
@@ -114,7 +114,7 @@ def _index_correctness_by_step(step_correctness: Any) -> dict[int, Any]:
             continue
         try:
             idx = int(d.get("step_index"))
-        except Exception:
+        except (TypeError, ValueError):
             continue
         out[idx] = d.get("correctness")
     return out
@@ -229,7 +229,7 @@ def load_run_dataset(
             row.update(sd)
             try:
                 step_index = int(sd.get("step_index"))
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             row["step_index"] = step_index
             row["relative_step_position"] = float(step_index) / denom
@@ -279,7 +279,7 @@ def episodes_frame(dataset: RunDataset):
         import pandas as pd  # type: ignore
 
         return pd.DataFrame(dataset.episodes)
-    except Exception:
+    except (ImportError, AttributeError):
         return dataset.episodes
 
 
@@ -291,7 +291,7 @@ def steps_frame(dataset: RunDataset):
         import pandas as pd  # type: ignore
 
         return pd.DataFrame(dataset.steps)
-    except Exception:
+    except (ImportError, AttributeError):
         return dataset.steps
 
 
