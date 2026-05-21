@@ -16,7 +16,16 @@ from typing import Any, Callable
 
 from src.agent.allocator import allocate
 from src.agent.compute_stages import get_step_fn
+from src.agent.episode_runner import build_initial_history
+from src.agent.history_utils import compact_history_for_prompt, truncate_for_history
+from src.agent.step_results import normalize_step_result
+from src.agent.trace_integration import log_step_with_fallback
 from src.utils.logging_utils import write_step_trace_line
+
+# Backward compatibility for existing tests/imports during modularization.
+_normalize_step_result = normalize_step_result
+_truncate_for_history = truncate_for_history
+_compact_history_for_prompt = compact_history_for_prompt
 
 # Compute stage step: (observation, history, model) -> (action, tle_or_none, vc_or_none, tokens_used, lm_calls_this_step)
 # Backward compat: step may return 3- or 4-tuple; defaults fill in missing values.
@@ -26,62 +35,6 @@ StepFn = Callable[
     | tuple[str, dict | None, float | None, int]
     | tuple[str, dict | None, float | None, int, int],
 ]
-
-
-def _truncate_for_history(text: str, *, max_chars: int = 1000, head_ratio: float = 0.5) -> str:
-    """
-    Keep history compact to avoid blowing the model context window.
-
-    We preserve both the start (task framing) and the end (often contains valid commands / latest state).
-    """
-    t = text or ""
-    if max_chars <= 0 or len(t) <= max_chars:
-        return t
-    r = float(head_ratio)
-    if r <= 0.0:
-        head = 0
-    elif r >= 1.0:
-        head = max_chars
-    else:
-        head = int(max_chars * r)
-    tail = max_chars - head
-    return f"{t[:head]}\n…[snip]…\n{t[-tail:]}"
-
-
-def _compact_history_for_prompt(
-    history: list[str], *, keep_last_pairs: int | None = None
-) -> list[str]:
-    """
-    Return a compact history view for prompting.
-
-    History is stored as:
-      - first entry: "OBSERVATION: <reset text>"
-      - then repeating pairs: ("ACTION: ...", "OBSERVATION: ...")
-
-    We always keep the first entry and the last N ACTION/OBSERVATION pairs (never a half-pair).
-    If ``keep_last_pairs`` is None, no truncation is applied.
-    """
-    if not history:
-        return []
-    if keep_last_pairs is None:
-        return list(history)
-    if keep_last_pairs <= 0:
-        return list(history)
-    if len(history) <= 1:
-        return list(history)
-
-    rest = history[1:]
-    # If something went wrong and rest has odd length, keep as much as possible but prefer whole pairs.
-    if len(rest) % 2 != 0:
-        rest = rest[:-1]
-    pairs = [(rest[i], rest[i + 1]) for i in range(0, len(rest), 2)]
-    tail_pairs = pairs[-keep_last_pairs:] if keep_last_pairs > 0 else []
-    out: list[str] = [history[0]]
-    for a, o in tail_pairs:
-        out.append(a)
-        out.append(o)
-    return out
-
 
 _RECIPE_BLOCK_RE = re.compile(r"(Recipe\s*#\d+[\s\S]*?)\n\s*\n", re.IGNORECASE)
 
@@ -97,97 +50,6 @@ def _extract_recipe_block(text: str) -> str | None:
     if idx >= 0:
         return text[idx:].strip()
     return None
-
-
-def _normalize_step_result(
-    result: tuple,
-) -> tuple[
-    str,
-    dict | None,
-    float | None,
-    int,
-    int,
-    list[dict[str, Any]] | None,
-    dict[str, Any] | None,
-    str | None,
-    str | None,
-    dict[str, Any] | None,
-]:
-    """
-    Unpack step result as (action, tle, vc, tokens_used, lm_calls_this_step, logprobs_raw,
-    vc_detail, prompt_full, response_full, call_detail).
-
-    Backward compatibility:
-    - 3-tuple -> tokens_used=0, lm_calls_this_step=1, logprobs_raw=None, vc_detail=None,
-      prompt_full=None, response_full=None, call_detail=None
-    - 4-tuple -> lm_calls_this_step=1
-    - 6-tuple -> legacy: last element is raw per-token logprob list (optional save)
-    - 7-tuple -> (..., action_logprobs, vc_detail dict from follow-up)
-    - 9-tuple -> (..., prompt_full, response_full) for step tracing / observability
-    - 10-tuple -> (..., prompt_full, response_full, call_detail) with structured subcall logging
-    """
-    raw_lp: list[dict[str, Any]] | None = None
-    vc_detail: dict[str, Any] | None = None
-    prompt_full: str | None = None
-    response_full: str | None = None
-    call_detail: dict[str, Any] | None = None
-    n = len(result)
-    if n >= 9:
-        p7, p8 = result[7], result[8]
-        prompt_full = p7 if isinstance(p7, str) else None
-        response_full = p8 if isinstance(p8, str) else None
-    if n >= 10:
-        p9 = result[9]
-        call_detail = p9 if isinstance(p9, dict) else None
-    if n >= 7:
-        raw_lp = result[5]  # type: ignore[assignment]
-        vc_detail = result[6]  # type: ignore[assignment]
-    elif n == 6:
-        sixth = result[5]
-        if isinstance(sixth, dict) and (
-            "vc_prompt" in sixth or "vc_raw_text" in sixth or "vc_value" in sixth
-        ):
-            vc_detail = sixth
-        else:
-            raw_lp = sixth  # type: ignore[assignment]
-    if n >= 5:
-        return (
-            result[0],
-            result[1],
-            result[2],
-            int(result[3]),
-            int(result[4]),
-            raw_lp,
-            vc_detail,
-            prompt_full,
-            response_full,
-            call_detail,
-        )
-    if len(result) >= 4:
-        return (
-            result[0],
-            result[1],
-            result[2],
-            int(result[3]),
-            1,
-            raw_lp,
-            vc_detail,
-            prompt_full,
-            response_full,
-            call_detail,
-        )
-    return (
-        result[0],
-        result[1],
-        result[2],
-        0,
-        1,
-        raw_lp,
-        vc_detail,
-        prompt_full,
-        response_full,
-        call_detail,
-    )
 
 
 def _copy_step_results(env: Any) -> list[dict[str, Any]] | None:
@@ -269,9 +131,11 @@ def run_episode(
     # Keep reset() output in history: many envs (e.g. TextWorld) do not repeat the full scene
     # on every step, only the latest feedback + state. Without this, step ≥1 prompts lose the
     # opening game text.
-    history: list[str] = [
-        f"OBSERVATION: {_truncate_for_history(obs, max_chars=history_max_obs_chars, head_ratio=history_obs_head_ratio)}"
-    ]
+    history = build_initial_history(
+        obs,
+        history_max_obs_chars=history_max_obs_chars,
+        history_obs_head_ratio=history_obs_head_ratio,
+    )
     pinned_recipe: str | None = None
     steps = 0
     total_lm_calls = 0
@@ -368,7 +232,7 @@ def run_episode(
                     prompt_full,
                     response_full,
                     call_detail,
-                ) = _normalize_step_result(raw)
+                ) = normalize_step_result(raw)
 
                 tle_per_step.append(tle)
                 vc_per_step.append(vc)
@@ -495,43 +359,24 @@ def run_episode(
                     "step_wall_time_s": float(step_wall_time_s),
                 }
                 # If we did not create a step-span context, fall back to legacy step logging.
-                if step_span is None and hasattr(trace_hook, "log_step"):
-                    try:
-                        subcalls = None
-                        if isinstance(call_detail, dict) and isinstance(
-                            call_detail.get("subcalls"), list
-                        ):
-                            subcalls = call_detail.get("subcalls")
-                        trace_hook.log_step(
-                            step_index=steps,
-                            stage=compute_stage,
-                            observation=step_obs,
-                            action=action,
-                            prompt=prompt_full or "",
-                            action_output=response_full or "",
-                            vc_prompt=(vc_det or {}).get("vc_prompt") if vc_det else None,
-                            vc_output=(vc_det or {}).get("vc_raw_text") if vc_det else None,
-                            model_name=trace_model_name,
-                            metadata=lf_meta,
-                            subcalls=subcalls,
-                        )
-                    except Exception:
-                        trace_hook.log_action_generation(
-                            step_index=steps,
-                            compute_stage=compute_stage,
-                            prompt=prompt_full or "",
-                            output=response_full or "",
-                            model_name=trace_model_name,
-                            metadata=lf_meta,
-                        )
-                elif step_span is None:
-                    trace_hook.log_action_generation(
+                if step_span is None:
+                    subcalls = None
+                    if isinstance(call_detail, dict) and isinstance(
+                        call_detail.get("subcalls"), list
+                    ):
+                        subcalls = call_detail.get("subcalls")
+                    log_step_with_fallback(
+                        trace_hook=trace_hook,
                         step_index=steps,
-                        compute_stage=compute_stage,
-                        prompt=prompt_full or "",
-                        output=response_full or "",
-                        model_name=trace_model_name,
+                        stage=compute_stage,
+                        observation=step_obs,
+                        action=action,
+                        prompt_full=prompt_full,
+                        response_full=response_full,
+                        vc_det=vc_det,
+                        trace_model_name=trace_model_name,
                         metadata=lf_meta,
+                        subcalls=subcalls,
                     )
             # Maintain growing context as ACTION/OBSERVATION pairs.
             # This allows later prompts/traces to reconstruct the full interaction history.
@@ -717,9 +562,11 @@ def run_adaptive_episode(
 
     obs = env.reset()
     # Same as run_episode: retain full opening observation for growing prompts.
-    history: list[str] = [
-        f"OBSERVATION: {_truncate_for_history(obs, max_chars=history_max_obs_chars, head_ratio=history_obs_head_ratio)}"
-    ]
+    history = build_initial_history(
+        obs,
+        history_max_obs_chars=history_max_obs_chars,
+        history_obs_head_ratio=history_obs_head_ratio,
+    )
     pinned_recipe: str | None = None
     steps = 0
     total_lm_calls = 0
@@ -797,7 +644,7 @@ def run_adaptive_episode(
                 prompt_full,
                 response_full,
                 call_detail,
-            ) = _normalize_step_result(raw)
+            ) = normalize_step_result(raw)
             tle_per_step.append(tle)
             vc_per_step.append(vc)
             if save_logprob_distributions:
@@ -884,45 +731,23 @@ def run_adaptive_episode(
                     "tokens_generated": int(tokens_used),
                     "lm_calls": int(lm_calls_this_step),
                 }
-                if hasattr(trace_hook, "log_step"):
-                    try:
-                        subcalls = None
-                        if isinstance(call_detail, dict) and isinstance(
-                            call_detail.get("subcalls"), list
-                        ):
-                            subcalls = call_detail.get("subcalls")
-                        trace_hook.log_step(
-                            step_index=steps,
-                            stage=stage,
-                            strategy=strategy,
-                            observation=step_obs,
-                            action=action,
-                            prompt=prompt_full or "",
-                            action_output=response_full or "",
-                            vc_prompt=(vc_det or {}).get("vc_prompt") if vc_det else None,
-                            vc_output=(vc_det or {}).get("vc_raw_text") if vc_det else None,
-                            model_name=trace_model_name,
-                            metadata=lf_meta_a,
-                            subcalls=subcalls,
-                        )
-                    except Exception:
-                        trace_hook.log_action_generation(
-                            step_index=steps,
-                            compute_stage=stage,
-                            prompt=prompt_full or "",
-                            output=response_full or "",
-                            model_name=trace_model_name,
-                            metadata=lf_meta_a,
-                        )
-                else:
-                    trace_hook.log_action_generation(
-                        step_index=steps,
-                        compute_stage=stage,
-                        prompt=prompt_full or "",
-                        output=response_full or "",
-                        model_name=trace_model_name,
-                        metadata=lf_meta_a,
-                    )
+                subcalls = None
+                if isinstance(call_detail, dict) and isinstance(call_detail.get("subcalls"), list):
+                    subcalls = call_detail.get("subcalls")
+                log_step_with_fallback(
+                    trace_hook=trace_hook,
+                    step_index=steps,
+                    stage=stage,
+                    strategy=strategy,
+                    observation=step_obs,
+                    action=action,
+                    prompt_full=prompt_full,
+                    response_full=response_full,
+                    vc_det=vc_det,
+                    trace_model_name=trace_model_name,
+                    metadata=lf_meta_a,
+                    subcalls=subcalls,
+                )
             # Maintain growing context as ACTION/OBSERVATION pairs.
             history.append(f"ACTION: {action}")
             history.append(
