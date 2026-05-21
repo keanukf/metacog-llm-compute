@@ -9,6 +9,7 @@ import random
 import re
 from typing import Any
 
+from src.agent import compute_prompt_utils, cot_parser
 from src.signals import token_entropy, verbalized_confidence
 
 # (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None, prompt_full, response_full, call_detail|None)
@@ -155,6 +156,10 @@ def _parse_cot_action(cot_text: str) -> dict[str, str]:
         "reasoning_internal": reasoning_internal,
         "raw": raw,
     }
+
+
+# Use dedicated parser module while keeping local symbol for compatibility.
+_parse_cot_action = cot_parser.parse_cot_action
 
 
 def _xml_block(tag: str, content: str, *, attrs: str = "") -> str:
@@ -317,6 +322,19 @@ def _normalize_action_for_execution(action_line: str) -> str:
     s = _TRAILING_PUNCT_RE.sub("", s).strip()
     s = re.sub(r"\s+", " ", s)
     return s
+
+
+# Route prompt and action-normalization helpers through dedicated module while
+# keeping local names stable for callers and tests during transition.
+_xml_block = compute_prompt_utils.xml_block
+_unwrap_history_entry = compute_prompt_utils.unwrap_history_entry
+_history_to_xml = compute_prompt_utils.history_to_xml
+_strip_think_blocks = compute_prompt_utils.strip_think_blocks
+_build_prompt = compute_prompt_utils.build_prompt
+_extract_first_line = compute_prompt_utils.extract_first_line
+_normalize_action_line = compute_prompt_utils.normalize_action_line
+_normalize_vote_key = compute_prompt_utils.normalize_vote_key
+_normalize_action_for_execution = compute_prompt_utils.normalize_action_for_execution
 
 
 def _seeded_rng(seed_base: str | int | None, *, call_index: int) -> random.Random:
