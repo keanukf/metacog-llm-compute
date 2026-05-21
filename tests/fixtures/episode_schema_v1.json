@@ -1,0 +1,39 @@
+{
+  "schema_version": "episode.v1",
+  "episode_id": "ep_textworld_0_C0_0",
+  "domain": "textworld",
+  "compute_stage": "C0",
+  "task_success": true,
+  "episode_length_steps": 2,
+  "total_lm_calls": 2,
+  "total_tokens_generated": 42,
+  "wall_clock_time": 1.2,
+  "tle_per_step": [
+    {
+      "mean_entropy": 0.1
+    },
+    null
+  ],
+  "vc_per_step": [
+    80.0,
+    null
+  ],
+  "steps_detail": [
+    {
+      "step_index": 0,
+      "compute_stage": "C0",
+      "action": "look",
+      "tokens_generated": 20,
+      "lm_calls_this_step": 1,
+      "step_wall_time_s": 0.4
+    },
+    {
+      "step_index": 1,
+      "compute_stage": "C0",
+      "action": "open door",
+      "tokens_generated": 22,
+      "lm_calls_this_step": 1,
+      "step_wall_time_s": 0.8
+    }
+  ]
+}
