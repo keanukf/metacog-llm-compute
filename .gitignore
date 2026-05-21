@@ -12,6 +12,11 @@ data/tasks/*
 !data/results/.gitkeep
 !data/tasks/.gitkeep
 
+# Package / test artifacts (local only)
+*.egg-info/
+.coverage
+htmlcov/
+
 # Env and IDE
 .venv/
 venv/
