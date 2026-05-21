@@ -23,8 +23,14 @@ def test_prepare_feasibility_inputs_uses_disk_fallbacks(tmp_path: Path) -> None:
     save_json(tmp_path, "pilot_test3_vc", {"vc_ok": True})
     save_json(tmp_path, "pilot_test5_toh", {"parse_rate": 0.8})
     save_json(tmp_path, "pilot_sanity", {"ok": True})
-    save_json(tmp_path, "ep_textworld_0", {"vc_per_step": [10], "tle_per_step": [{"mean_entropy": 0.2}]})
-    save_json(tmp_path, "ep_tower_of_hanoi_0", {"vc_per_step": [20], "tle_per_step": [{"mean_entropy": 0.1}]})
+    save_json(
+        tmp_path, "ep_textworld_0", {"vc_per_step": [10], "tle_per_step": [{"mean_entropy": 0.2}]}
+    )
+    save_json(
+        tmp_path,
+        "ep_tower_of_hanoi_0",
+        {"vc_per_step": [20], "tle_per_step": [{"mean_entropy": 0.1}]},
+    )
 
     t1, t2, t3, eps, th, san, toh_eps = prepare_feasibility_inputs(
         tmp_path,

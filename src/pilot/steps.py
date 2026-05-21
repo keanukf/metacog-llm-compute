@@ -68,7 +68,9 @@ def episode_vc_tle_rates(
     return vc_rate, tle_rate
 
 
-def run_mock_inference_speed_benchmark(num_prompts: int, tokens_per_call: int = 200) -> dict[str, Any]:
+def run_mock_inference_speed_benchmark(
+    num_prompts: int, tokens_per_call: int = 200
+) -> dict[str, Any]:
     """Simulate a benchmark batch and return latency/tokens-per-second statistics."""
     latencies: list[float] = []
     total_tokens = 0
