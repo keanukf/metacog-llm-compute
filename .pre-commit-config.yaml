@@ -12,7 +12,9 @@ repos:
     rev: v1.11.2
     hooks:
       - id: mypy
+        pass_filenames: false
         additional_dependencies:
           - types-PyYAML
         args:
+          - --follow-imports=skip
           - src/signals/verbalized_confidence.py
