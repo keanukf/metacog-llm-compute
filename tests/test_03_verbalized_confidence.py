@@ -2,9 +2,8 @@
 Pilot Test 3 — Verbalisierte Konfidenz.
 Unit tests for signals.verbalized_confidence: parse numeric 0-100 from strings.
 """
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from src.signals.verbalized_confidence import (
     extract_vc_from_followup,

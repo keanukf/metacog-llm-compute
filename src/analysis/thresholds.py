@@ -179,21 +179,37 @@ def derive_stage_thresholds(
 
     if signal == "tle_mean_entropy":
         t1 = _quantile(xs, high_quantile)  # escalate to C1 above t1
-        t2 = _quantile(xs, min(0.95, high_quantile + (1 - high_quantile) / 2))  # more extreme for C2
+        t2 = _quantile(
+            xs, min(0.95, high_quantile + (1 - high_quantile) / 2)
+        )  # more extreme for C2
         # Ensure ordering
         if t2 < t1:
             t1, t2 = t2, t1
-        return {"signal": signal, "t_c0_c1": float(t1), "t_c1_c2": float(t2), "direction": "higher_is_harder", "n_samples": len(xs)}
+        return {
+            "signal": signal,
+            "t_c0_c1": float(t1),
+            "t_c1_c2": float(t2),
+            "direction": "higher_is_harder",
+            "n_samples": len(xs),
+        }
 
     # VC: lower = harder; thresholds are "below" cutoffs
     t2 = _quantile(xs, low_quantile)  # escalate to C2 below t2
-    t1 = _quantile(xs, max(0.05, low_quantile / 2))  # very low for C2? keep t1 <= t2? We want C2 below t2 and C1 below t1? Better:
+    t1 = _quantile(
+        xs, max(0.05, low_quantile / 2)
+    )  # very low for C2? keep t1 <= t2? We want C2 below t2 and C1 below t1? Better:
     # For VC we define: if vc < t_c1_c2 -> C2; elif vc < t_c0_c1 -> C1; else C0, so t_c1_c2 < t_c0_c1.
     t_c1_c2 = _quantile(xs, low_quantile)
     t_c0_c1 = _quantile(xs, high_quantile)
     if t_c1_c2 > t_c0_c1:
         t_c1_c2, t_c0_c1 = t_c0_c1, t_c1_c2
-    return {"signal": signal, "t_c0_c1": float(t_c0_c1), "t_c1_c2": float(t_c1_c2), "direction": "lower_is_harder", "n_samples": len(xs)}
+    return {
+        "signal": signal,
+        "t_c0_c1": float(t_c0_c1),
+        "t_c1_c2": float(t_c1_c2),
+        "direction": "lower_is_harder",
+        "n_samples": len(xs),
+    }
 
 
 def learn_thresholds_by_domain(
@@ -235,4 +251,3 @@ def write_threshold_artifact(
     with open(p, "w") as f:
         json.dump(obj, f, indent=2)
     return p
-

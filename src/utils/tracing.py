@@ -6,13 +6,14 @@ Configure via ``tracing`` YAML block and/or environment variables:
 
 Requires ``langfuse`` (see optional dependency group ``tracing`` in pyproject.toml).
 """
+
 from __future__ import annotations
 
 import contextlib
+import inspect
 import os
 import warnings
 from typing import Any, Protocol
-import inspect
 
 
 class TraceHook(Protocol):
@@ -206,7 +207,9 @@ class LangfuseTraceHook:
             self._supports_parent_observation_id = "parent_observation_id" in sig.parameters
             # Langfuse SDKs differ: some accept tags directly on observations, others don't.
             self._supports_observation_tags = "tags" in sig.parameters
-            self._supports_observation_times = ("start_time" in sig.parameters) or ("end_time" in sig.parameters)
+            self._supports_observation_times = ("start_time" in sig.parameters) or (
+                "end_time" in sig.parameters
+            )
         except Exception:
             self._supports_parent_observation_id = False
             self._supports_observation_tags = False
@@ -219,7 +222,9 @@ class LangfuseTraceHook:
         self._otel_has_start_span = callable(getattr(self._client, "start_span", None)) or callable(
             getattr(self._client, "start_observation", None)
         )
-        self._otel_api = bool(self._otel_has_start_as_current_observation) and bool(self._otel_has_start_span)
+        self._otel_api = bool(self._otel_has_start_as_current_observation) and bool(
+            self._otel_has_start_span
+        )
 
     @staticmethod
     def _extract_dt(meta: dict[str, Any] | None, key: str) -> Any | None:
@@ -378,34 +383,50 @@ class LangfuseTraceHook:
                             upd_trace(**payload)
                         except Exception:
                             pass
+                    elif self._trace_id is not None:
+                        client_upd = getattr(self._client, "update_trace", None)
+                        if callable(client_upd):
+                            try:
+                                client_upd(trace_id=self._trace_id, **payload)
+                            except TypeError:
+                                try:
+                                    client_upd(id=self._trace_id, **payload)
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
                 return
 
             # Legacy (pre-OTel) SDK path
-            from langfuse.types import TraceContext
-
             self._trace_id = self._client.create_trace_id()
-            ctx = TraceContext(trace_id=self._trace_id)
-            self._root_span = self._client.start_observation(
-                name="metacog_episode",
-                as_type="span",
-                trace_context=ctx,
-                metadata=meta,
-            )
-            payload: dict[str, Any] = {}
+            obs_kw: dict[str, Any] = {
+                "name": "metacog_episode",
+                "as_type": "span",
+                "metadata": meta,
+            }
+            try:
+                from langfuse.types import TraceContext  # type: ignore[import-not-found]
+
+                obs_kw["trace_context"] = TraceContext(trace_id=self._trace_id)
+            except ImportError:
+                # CI / minimal installs: no langfuse package; client may still be injected (tests).
+                pass
+            self._root_span = self._client.start_observation(**obs_kw)
+            trace_fields: dict[str, Any] = {}
             if trace_name:
-                payload["name"] = str(trace_name)
+                trace_fields["name"] = str(trace_name)
             if session_id:
-                payload["session_id"] = str(session_id)
+                trace_fields["session_id"] = str(session_id)
             if self._episode_tags:
-                payload["tags"] = list(self._episode_tags)
-            if payload:
+                trace_fields["tags"] = list(self._episode_tags)
+            if trace_fields:
                 upd_trace = getattr(self._client, "update_trace", None)
                 if callable(upd_trace):
                     try:
-                        upd_trace(trace_id=self._trace_id, **payload)
+                        upd_trace(trace_id=self._trace_id, **trace_fields)
                     except TypeError:
                         try:
-                            upd_trace(id=self._trace_id, **payload)
+                            upd_trace(id=self._trace_id, **trace_fields)
                         except Exception as e:
                             warnings.warn(f"Langfuse update_trace failed: {e!s}")
                     except Exception as e:
@@ -414,10 +435,10 @@ class LangfuseTraceHook:
                     upd = getattr(self._client, "update_current_trace", None)
                     if callable(upd):
                         try:
-                            upd(**payload)
+                            upd(**trace_fields)
                         except Exception as e:
                             try:
-                                upd(payload)
+                                upd(trace_fields)
                             except Exception:
                                 warnings.warn(f"Langfuse update_current_trace failed: {e!s}")
         except Exception as e:

@@ -1,6 +1,7 @@
 """
 Calibration metrics: ECE (Expected Calibration Error), Brier score, reliability diagrams.
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal, Sequence
@@ -116,7 +117,11 @@ def reliability_diagram_data(
     for i in range(n_bins):
         low = i / n_bins
         high = (i + 1) / n_bins
-        mask = [low <= p < high for p in predictions] if i < n_bins - 1 else [low <= p <= 1.0 for p in predictions]
+        mask = (
+            [low <= p < high for p in predictions]
+            if i < n_bins - 1
+            else [low <= p <= 1.0 for p in predictions]
+        )
         count = sum(mask)
         if count == 0:
             continue
@@ -138,7 +143,7 @@ def compute_auroc(scores: Sequence[float], labels: Sequence[int]) -> float:
         AUROC in [0, 1]. Returns 0.5 if AUROC is undefined (no positives or no negatives).
     """
     xs = list(scores)
-    ys = [int(l) for l in labels]
+    ys = [int(label) for label in labels]
     if len(xs) != len(ys) or not xs:
         return 0.5
     n_pos = sum(1 for y in ys if y == 1)
@@ -159,7 +164,7 @@ def compute_auroc(scores: Sequence[float], labels: Sequence[int]) -> float:
         avg = (rank + (rank + (j - i))) / 2.0
         for k in range(i, j + 1):
             ranks[order[k]] = avg
-        rank += (j - i + 1)
+        rank += j - i + 1
         i = j + 1
 
     rank_sum_pos = sum(ranks[i] for i in range(len(xs)) if ys[i] == 1)
@@ -175,7 +180,7 @@ def compute_auprc(scores: Sequence[float], labels: Sequence[int]) -> float:
     Returns the step-wise (right-continuous) PR AUC.
     """
     xs = list(scores)
-    ys = [int(l) for l in labels]
+    ys = [int(label) for label in labels]
     if len(xs) != len(ys) or not xs:
         return 0.0
     n_pos = sum(1 for y in ys if y == 1)
@@ -340,7 +345,11 @@ def calibration_by_step_position(
             ece = 0.0
             brier = 0.0
         label = (
-            ["early", "mid", "late"][i] if n_bins == 3 else ["early", "mid_early", "mid_late", "late"][i] if n_bins == 4 else f"bin_{i}"
+            ["early", "mid", "late"][i]
+            if n_bins == 3
+            else ["early", "mid_early", "mid_late", "late"][i]
+            if n_bins == 4
+            else f"bin_{i}"
         )
         out.append(
             {

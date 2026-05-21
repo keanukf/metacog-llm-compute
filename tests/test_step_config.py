@@ -1,4 +1,5 @@
 """resolve_step_fn_kwargs from YAML."""
+
 from __future__ import annotations
 
 from src.agent.compute_stages import DEFAULT_VC_FOLLOWUP_INSTRUCTION

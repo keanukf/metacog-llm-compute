@@ -1,4 +1,5 @@
 """Repo-root .env loading (LM Studio, Langfuse)."""
+
 from __future__ import annotations
 
 import os

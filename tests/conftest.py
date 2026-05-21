@@ -2,6 +2,7 @@
 Shared fixtures for pilot tests: mock_model, mock_env, sample_episode_data, temp_results_dir.
 Ensures repo root is on sys.path so 'src' imports work.
 """
+
 from __future__ import annotations
 
 import sys
@@ -17,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
 @pytest.fixture
 def mock_model():
     """Model-like object with generate(prompt, logprobs=False) returning (text, logprobs_or_none)."""
+
     class MockModel:
         def generate(self, prompt, logprobs=False, max_tokens=256, temperature=0.3, **kwargs):
             text = "go north"
@@ -24,12 +26,14 @@ def mock_model():
                 lp = [{"logprob": -0.5}] * 5
                 return text, lp
             return text, None
+
     return MockModel()
 
 
 @pytest.fixture
 def mock_env():
     """Env with reset() and step(action); .observation and .done."""
+
     class MockEnv:
         def __init__(self):
             self.observation = ""
@@ -47,6 +51,7 @@ def mock_env():
             self.done = self._steps >= 3
             self.observation = "You moved." if not self.done else "Done."
             return self.observation
+
     return MockEnv()
 
 
