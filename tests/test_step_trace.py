@@ -324,4 +324,55 @@ def test_langfuse_trace_hook_prefers_update_trace_when_available() -> None:
         and call.get("trace_id") == "trace_1"
         and call.get("tags") == ["pilot", "textworld"]
         for name, call in c.calls
-    )
+    ), f"Expected update_trace call not found. Calls: {c.calls}"
+
+
+def test_langfuse_trace_hook_update_trace_without_langfuse_package(
+    monkeypatch,
+) -> None:
+    """Legacy path must call update_trace even when langfuse is not installed (CI dev deps)."""
+    import builtins
+
+    from src.utils.tracing import LangfuseTraceHook
+
+    real_import = builtins.__import__
+
+    def _import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "langfuse.types":
+            raise ImportError("langfuse not installed")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+
+    class _FakeSpan:
+        def __init__(self) -> None:
+            self.id = "span_1"
+
+        def end(self) -> None:
+            return None
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict]] = []
+
+        def create_trace_id(self) -> str:
+            return "trace_1"
+
+        def start_observation(self, **kwargs):
+            return _FakeSpan()
+
+        def update_trace(self, trace_id: str, **payload) -> None:
+            self.calls.append(("update_trace", {"trace_id": trace_id, **payload}))
+
+        def flush(self) -> None:
+            return None
+
+    c = _FakeClient()
+    h = LangfuseTraceHook(c)
+    h.episode_start("epX", session_id="sess", tags=["pilot", "textworld"], trace_name="epX")
+    assert any(
+        name == "update_trace"
+        and call.get("trace_id") == "trace_1"
+        and call.get("tags") == ["pilot", "textworld"]
+        for name, call in c.calls
+    ), f"Expected update_trace without langfuse package. Calls: {c.calls}"
