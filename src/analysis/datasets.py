@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
+from src.utils.schemas import EpisodeRecord
+
 CorrectnessPolicy = Literal["optimal_only", "legal_or_optimal"]
 
 
@@ -163,6 +165,20 @@ def _ensure_steps_detail(
     return _synthesize_steps_detail_minimal(ep), True
 
 
+def _validate_episode_record(raw: dict[str, Any]) -> EpisodeRecord | None:
+    """Best-effort structural validation for episode JSON artifacts."""
+    required = ("episode_id", "compute_stage", "task_success")
+    if not all(k in raw for k in required):
+        return None
+    if not isinstance(raw.get("episode_id"), str):
+        return None
+    if not isinstance(raw.get("compute_stage"), str):
+        return None
+    if not isinstance(raw.get("task_success"), bool):
+        return None
+    return raw  # type: ignore[return-value]
+
+
 def load_run_dataset(
     run_dir: str | Path,
     *,
@@ -185,6 +201,8 @@ def load_run_dataset(
     for p in _episode_paths(run_dir):
         raw = _read_json(p)
         if raw is None:
+            continue
+        if _validate_episode_record(raw) is None:
             continue
         ep = dict(raw)
         ep.setdefault("episode_id", p.stem)

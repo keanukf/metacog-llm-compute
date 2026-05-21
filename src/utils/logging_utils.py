@@ -60,6 +60,7 @@ def log_episode(
         path = path / f"{episode_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     to_write = compact_episode_for_storage(data) if compact else dict(data)
+    to_write.setdefault("schema_version", "episode.v1")
     with open(path, "w") as f:
         json.dump(to_write, f, indent=2)
     return path
