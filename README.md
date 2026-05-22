@@ -94,7 +94,7 @@ Fixtures: `tests/conftest.py`. Pilot counterparts: [`docs/pilot.md`](docs/pilot.
 
 - **Model:** `src/utils/model_wrapper.py` — `VLLMWrapper`, `HFWrapper`, `LMStudioWrapper`
 - **Pilot:** `scripts/run_pilot.py` → orchestration in `src/pilot/`; config in `configs/pilot.yaml`
-- **Agent:** `src/agent/base_agent.py` facade; stages in `src/agent/compute_stages.py` and `src/agent/stages/`
+- **Agent:** `src/agent/base_agent.py` facade; compute stages in `src/agent/stages/` (`c0`, `c1`, `c2`; `compute_stages.py` facade)
 - **Phase 1/2:** `scripts/run_phase1.py`, `scripts/run_phase2.py` (checkpointing; use after pilot)
 
 ## References
