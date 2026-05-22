@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.agent.stages.shared import (
+    _SINGLE_LINE_OUTPUT_INSTRUCTION,
     DEFAULT_C1_VERIFY_INSTRUCTION,
     DEFAULT_VC_FOLLOWUP_INSTRUCTION,
     StepReturn,
@@ -74,15 +75,20 @@ def c1_step_core(
     draft_status = str(parsed.get("status") or "unparsed")
     parse_method = str(parsed.get("parse_method") or "none")
     draft_reasoning_raw = str(parsed.get("reasoning_internal") or "")
-    verify_instr = (c1_verify_instruction or "").strip() or DEFAULT_C1_VERIFY_INSTRUCTION
-    verify_instruction = (
-        "\n\n"
-        f"<draft_action>{draft_action}</draft_action>\n"
-        f"<draft_status>{draft_status}</draft_status>\n\n"
-        "Verify draft_action against the rules in <task> using <history> and <state> as the source of truth.\n\n"
-        f"{verify_instr.strip()}"
-    )
-    verify_prompt = f"{base_prompt}{verify_instruction}"
+    if draft_status == "parsed":
+        verify_instr = (c1_verify_instruction or "").strip() or DEFAULT_C1_VERIFY_INSTRUCTION
+        verify_instruction = (
+            "\n\n"
+            f"<draft_action>{draft_action}</draft_action>\n"
+            f"<draft_status>{draft_status}</draft_status>\n\n"
+            "Verify draft_action against the rules in <task> using <history> and <state> as the source of truth.\n\n"
+            f"{verify_instr.strip()}"
+        )
+        verify_prompt = f"{base_prompt}{verify_instruction}"
+    else:
+        # Keep the unparsed branch minimal to reduce instruction-echo failures
+        # like "Just the command." from long verifier prompts.
+        verify_prompt = f"{base_prompt}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
     verify_max_tokens = (
         c1_verify_max_tokens if c1_verify_max_tokens is not None else action_max_tokens
     )
