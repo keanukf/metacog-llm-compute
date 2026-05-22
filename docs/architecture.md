@@ -16,7 +16,7 @@
 1. A runner script (`scripts/run_pilot.py`, `scripts/run_phase1.py`, `scripts/run_phase2.py`) loads YAML config.
 2. Environment instances are created via `src/utils/experiment_env.py`.
 3. Agent loop (`src/agent/base_agent.py`) executes step-by-step with compute stage selection.
-4. Stage execution (`src/agent/compute_stages.py`) produces action + optional TLE/VC signals.
+4. Stage execution (`src/agent/stages/` — `c0`, `c1`, `c2`; facade `compute_stages.py`) produces action + optional TLE/VC signals.
 5. Episode artifacts are written through `src/utils/logging_utils.py`.
 6. Analysis loaders (`src/analysis/datasets.py`) flatten artifacts into episode/step tables.
 
@@ -24,7 +24,7 @@
 
 - `src/agent/base_agent.py`: stable episode APIs (`run_episode`, `run_adaptive_episode`)
 - `src/agent/allocator.py`: strategy-based stage assignment
-- `src/agent/compute_stages.py`: C0/C1/C2 execution contracts
+- `src/agent/stages/`: C0/C1/C2 implementations; `compute_stages.py` re-exports `get_step_fn` and constants
 
 ## Signal and Analysis Layer
 
