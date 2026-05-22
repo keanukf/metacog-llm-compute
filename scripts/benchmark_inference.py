@@ -10,6 +10,7 @@ Usage (from repo root):
   python scripts/benchmark_inference.py --config configs/pilot.yaml --pilot-mode lmstudio
   python scripts/benchmark_inference.py --config configs/pilot.yaml --real --output-dir data/results
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,7 +35,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Benchmark LM inference speed (tokens/s, latency). Uses pilot Test 1 harness."
     )
-    parser.add_argument("--config", default="configs/pilot.yaml", help="YAML with model, inference, optional test1_inference")
+    parser.add_argument(
+        "--config",
+        default="configs/pilot.yaml",
+        help="YAML with model, inference, optional test1_inference",
+    )
     parser.add_argument(
         "--lmstudio-config",
         default=None,
@@ -64,8 +69,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
-    output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
+    config_path = (
+        REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
+    )
+    output_dir = (
+        REPO_ROOT / args.output_dir
+        if not Path(args.output_dir).is_absolute()
+        else Path(args.output_dir)
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     pilot_mode = run_pilot._resolve_pilot_mode(args)
@@ -95,7 +106,9 @@ def main() -> None:
         **result,
     }
 
-    json_path = Path(args.output_json) if args.output_json else output_dir / "inference_benchmark.json"
+    json_path = (
+        Path(args.output_json) if args.output_json else output_dir / "inference_benchmark.json"
+    )
     if not json_path.is_absolute():
         json_path = REPO_ROOT / json_path
     json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,8 +116,12 @@ def main() -> None:
         json.dump(out, f, indent=2)
 
     print(f"tokens/s: {result.get('tokens_per_sec', 0):.2f}")
-    print(f"latency mean (s): {result.get('latency_mean', 0):.4f}  std: {result.get('latency_std', 0):.4f}")
-    print(f"total output tokens: {result.get('total_tokens', 0)}  prompts: {result.get('num_prompts', 0)}")
+    print(
+        f"latency mean (s): {result.get('latency_mean', 0):.4f}  std: {result.get('latency_std', 0):.4f}"
+    )
+    print(
+        f"total output tokens: {result.get('total_tokens', 0)}  prompts: {result.get('num_prompts', 0)}"
+    )
     print(f"Wrote {json_path}")
 
 

@@ -80,7 +80,9 @@ def validate(pilot_dir: Path) -> tuple[bool, list[str]]:
     # Episodes
     ep_jsons: list[dict[str, Any]] = []
     ep_jsons.extend([_read_json(p) or {} for p in sorted(pilot_dir.glob("ep_textworld_*.json"))])
-    ep_jsons.extend([_read_json(p) or {} for p in sorted(pilot_dir.glob("ep_tower_of_hanoi_*.json"))])
+    ep_jsons.extend(
+        [_read_json(p) or {} for p in sorted(pilot_dir.glob("ep_tower_of_hanoi_*.json"))]
+    )
     ep_jsons = [e for e in ep_jsons if isinstance(e, dict) and e]
 
     if ep_jsons:
@@ -126,7 +128,9 @@ def validate(pilot_dir: Path) -> tuple[bool, list[str]]:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Validate a pilot_YYYYMMDD_HHMMSS folder for signal integrity.")
+    p = argparse.ArgumentParser(
+        description="Validate a pilot_YYYYMMDD_HHMMSS folder for signal integrity."
+    )
     p.add_argument("--pilot-dir", type=Path, required=True, help="Path to pilot output directory")
     args = p.parse_args()
 
@@ -148,4 +152,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

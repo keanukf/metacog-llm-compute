@@ -5,9 +5,9 @@
 1. Install dev setup:
    - `pip install -e ".[dev]"`
 2. Run checks:
-   - `ruff check src tests`
-   - `ruff format --check src tests`
-   - `mypy src/signals/verbalized_confidence.py`
+   - `ruff check src tests scripts`
+   - `ruff format --check src tests scripts`
+   - `mypy src`
    - `python -m pytest tests/ -v`
 
 ## Mock pilot reproduction

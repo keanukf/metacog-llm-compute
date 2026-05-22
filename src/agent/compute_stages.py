@@ -7,7 +7,7 @@ from __future__ import annotations
 import hashlib
 import random
 import re
-from typing import Any
+from typing import Any, Callable, cast
 
 from src.agent import compute_prompt_utils, cot_parser
 from src.signals import token_entropy, verbalized_confidence
@@ -919,11 +919,13 @@ def _c2_step_core(
         raw_text = str(s.get("response") or "")
         s["tle"] = token_entropy.extract_action_tle_from_response(raw_text, lp) if lp else None
         if lp and isinstance(lp, list):
-            vals = [
-                float(x.get("logprob"))
-                for x in lp
-                if isinstance(x, dict) and x.get("logprob") is not None
-            ]
+            vals: list[float] = []
+            for x in lp:
+                if not isinstance(x, dict):
+                    continue
+                lp_val = x.get("logprob")
+                if isinstance(lp_val, (int, float)):
+                    vals.append(float(lp_val))
             s["mean_logprob"] = (sum(vals) / len(vals)) if vals else None
         else:
             s["mean_logprob"] = None
@@ -1091,6 +1093,12 @@ def c1_step(
         followup_max_context_chars=None,
         followup_cot_max_chars=12000,
         vc_raw_completion_max_chars=8000,
+        c1_cot_temperature=None,
+        c1_cot_max_tokens=None,
+        c1_verify_temperature=0.0,
+        c1_verify_max_tokens=None,
+        c1_verify_stop=None,
+        c1_verify_instruction=None,
     )
     return r[0], r[1], r[2], r[3], r[4]
 
@@ -1177,7 +1185,7 @@ def get_step_fn(
         "C1": _c1_step_core,
         "C2": _c2_step_core,
     }
-    fn = core_map.get(stage, _c0_step_core)
+    fn = cast(Callable[..., StepReturn], core_map.get(stage, _c0_step_core))
     vc_followup_logprobs = (
         bool(save_vc_distributions) and (vc_mode or "").strip().lower() == "followup"
     )

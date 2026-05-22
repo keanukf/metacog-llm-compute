@@ -18,6 +18,7 @@ data/tasks/*
 htmlcov/
 
 # Env and IDE
+.cursor/
 .venv/
 venv/
 .env

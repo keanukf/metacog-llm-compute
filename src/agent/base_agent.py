@@ -12,7 +12,7 @@ import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from src.agent.allocator import allocate
 from src.agent.compute_stages import get_step_fn
@@ -312,7 +312,10 @@ def run_episode(
             correctness_after: str | None = None
             sr = getattr(env, "step_results", None)
             if isinstance(sr, list) and sr:
-                correctness_after = sr[-1].get("correctness")  # type: ignore[union-attr]
+                last_sr = sr[-1]
+                correctness_after = (
+                    last_sr.get("correctness") if isinstance(last_sr, dict) else None
+                )
             if trace_path is not None:
                 trace_rec: dict[str, Any] = {
                     "step_index": steps,
@@ -434,9 +437,12 @@ def run_episode(
     if step_correctness is not None:
         by_idx: dict[int, dict[str, Any]] = {}
         for d in step_correctness:
+            idx_raw = d.get("step_index")
+            if idx_raw is None:
+                continue
             try:
-                idx = int(d.get("step_index"))
-            except Exception:
+                idx = int(idx_raw)
+            except (TypeError, ValueError):
                 continue
             by_idx[idx] = d
         for sd in steps_detail:
@@ -535,29 +541,32 @@ def run_adaptive_episode(
     else:
 
         def resolve(stage: str) -> StepFn:
-            return get_step_fn(
-                stage,
-                save_logprob_distributions=save_logprob_distributions,
-                save_vc_distributions=save_vc_distributions,
-                c2_n_samples=int(c2_n_samples),
-                c2_tie_break_seed=c2_tie_break_seed,
-                vc_mode=vc_mode,
-                prompt_prefix=prompt_prefix,
-                vc_followup_instruction=vc_followup_instruction,
-                action_max_tokens=action_max_tokens,
-                action_temperature=action_temperature,
-                action_stop=action_stop,
-                followup_max_tokens=followup_max_tokens,
-                followup_temperature=followup_temperature,
-                followup_max_context_chars=followup_max_context_chars,
-                followup_cot_max_chars=followup_cot_max_chars,
-                vc_raw_completion_max_chars=vc_raw_completion_max_chars,
-                c1_cot_temperature=c1_cot_temperature,
-                c1_cot_max_tokens=c1_cot_max_tokens,
-                c1_verify_temperature=c1_verify_temperature,
-                c1_verify_max_tokens=c1_verify_max_tokens,
-                c1_verify_stop=c1_verify_stop,
-                c1_verify_instruction=c1_verify_instruction,
+            return cast(
+                StepFn,
+                get_step_fn(
+                    stage,
+                    save_logprob_distributions=save_logprob_distributions,
+                    save_vc_distributions=save_vc_distributions,
+                    c2_n_samples=int(c2_n_samples),
+                    c2_tie_break_seed=c2_tie_break_seed,
+                    vc_mode=vc_mode,
+                    prompt_prefix=prompt_prefix,
+                    vc_followup_instruction=vc_followup_instruction,
+                    action_max_tokens=action_max_tokens,
+                    action_temperature=action_temperature,
+                    action_stop=action_stop,
+                    followup_max_tokens=followup_max_tokens,
+                    followup_temperature=followup_temperature,
+                    followup_max_context_chars=followup_max_context_chars,
+                    followup_cot_max_chars=followup_cot_max_chars,
+                    vc_raw_completion_max_chars=vc_raw_completion_max_chars,
+                    c1_cot_temperature=c1_cot_temperature,
+                    c1_cot_max_tokens=c1_cot_max_tokens,
+                    c1_verify_temperature=c1_verify_temperature,
+                    c1_verify_max_tokens=c1_verify_max_tokens,
+                    c1_verify_stop=c1_verify_stop,
+                    c1_verify_instruction=c1_verify_instruction,
+                ),
             )
 
     obs = env.reset()
@@ -684,7 +693,10 @@ def run_adaptive_episode(
             correctness_ad: str | None = None
             sr_a = getattr(env, "step_results", None)
             if isinstance(sr_a, list) and sr_a:
-                correctness_ad = sr_a[-1].get("correctness")  # type: ignore[union-attr]
+                last_sr_a = sr_a[-1]
+                correctness_ad = (
+                    last_sr_a.get("correctness") if isinstance(last_sr_a, dict) else None
+                )
             if trace_path is not None:
                 trace_rec_a: dict[str, Any] = {
                     "step_index": steps,
@@ -805,9 +817,12 @@ def run_adaptive_episode(
     if step_correctness is not None:
         by_idx: dict[int, dict[str, Any]] = {}
         for d in step_correctness:
+            idx_raw = d.get("step_index")
+            if idx_raw is None:
+                continue
             try:
-                idx = int(d.get("step_index"))
-            except Exception:
+                idx = int(idx_raw)
+            except (TypeError, ValueError):
                 continue
             by_idx[idx] = d
         for sd in steps_detail:

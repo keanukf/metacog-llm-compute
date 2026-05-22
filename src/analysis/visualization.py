@@ -145,8 +145,8 @@ def _plot_success_vs_cost(
         succ = sum(1 for e in eps if bool(e.get("task_success")))
         success_rate = succ / n
         costs = [_safe_float(e.get("normalized_compute_cost")) for e in eps]
-        costs = [c for c in costs if c is not None]
-        mean_cost = (sum(costs) / len(costs)) if costs else 0.0
+        costs_clean = [c for c in costs if c is not None]
+        mean_cost = (sum(costs_clean) / len(costs_clean)) if costs_clean else 0.0
         xs.append(mean_cost)
         ys.append(success_rate)
         labels.append(g)

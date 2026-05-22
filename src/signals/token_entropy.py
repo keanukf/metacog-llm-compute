@@ -167,9 +167,11 @@ def extract_action_tle_from_response(
         # Slice tokens starting at target_start until newline (or end).
         cursor = 0
         started = False
-        sliced: list[dict[str, Any]] = []
-        for rec in logprobs:  # type: ignore[assignment]
-            tok = rec.get("token", "")
+        thinking_slice: list[dict[str, Any]] = []
+        for rec in logprobs:
+            if not isinstance(rec, dict):
+                continue
+            tok = str(rec.get("token", ""))
             start = cursor
             end = start + len(tok)
             cursor = end
@@ -179,10 +181,10 @@ def extract_action_tle_from_response(
                 if tok.strip() == "":
                     continue
                 started = True
-            sliced.append(rec)
+            thinking_slice.append(rec)
             if started and ("\n" in tok):
                 break
-        return compute_tle(sliced) if sliced else None
+        return compute_tle(thinking_slice) if thinking_slice else None
 
     is_multiline = "\n" in out_text
     # If we don't have token strings, we can only be safe for single-line outputs.
@@ -193,18 +195,20 @@ def extract_action_tle_from_response(
 
     # Find the first non-empty line start and slice until its terminating newline (or end).
     started = False
-    sliced: list[dict[str, Any]] = []
-    for rec in logprobs:  # type: ignore[assignment]
-        tok = rec.get("token", "")
+    action_slice: list[dict[str, Any]] = []
+    for rec in logprobs:
+        if not isinstance(rec, dict):
+            continue
+        tok = str(rec.get("token", ""))
         if not started:
             # Skip leading whitespace/newlines until we hit real content.
             if tok.strip() == "":
                 continue
             started = True
-        sliced.append(rec)
+        action_slice.append(rec)
         if started and ("\n" in tok):
             break
 
-    if not sliced:
+    if not action_slice:
         return None
-    return compute_tle(sliced)
+    return compute_tle(action_slice)
