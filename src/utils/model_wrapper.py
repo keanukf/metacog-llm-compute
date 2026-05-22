@@ -744,6 +744,8 @@ class LMStudioWrapper(ModelWrapper):
         self._top_logprobs = max(1, int(lmstudio_top_logprobs))
         self._kwargs = kwargs
         self._client: Any = None
+        self._warned_missing_logprobs = False
+        self._warned_empty_responses = False
 
     def _ensure_client(self) -> Any:
         if self._client is not None:
@@ -798,15 +800,19 @@ class LMStudioWrapper(ModelWrapper):
                 text, lp_list = parse_lmstudio_responses_json(data, enable_thinking=enable_thinking)
                 if text or lp_list:
                     if logprobs and not lp_list:
-                        warnings.warn(
-                            "LM Studio /v1/responses returned text but no logprobs; "
-                            "TLE unavailable for this call."
-                        )
+                        if not self._warned_missing_logprobs:
+                            warnings.warn(
+                                "LM Studio /v1/responses returned text but no logprobs; "
+                                "TLE unavailable for this call (further identical warnings suppressed)."
+                            )
+                            self._warned_missing_logprobs = True
                     return text, lp_list if logprobs else None
-                warnings.warn(
-                    "LM Studio /v1/responses returned empty text and logprobs; "
-                    "falling back to /v1/completions."
-                )
+                if not self._warned_empty_responses:
+                    warnings.warn(
+                        "LM Studio /v1/responses returned empty text and logprobs; "
+                        "falling back to /v1/completions (further identical warnings suppressed)."
+                    )
+                    self._warned_empty_responses = True
 
         client = self._ensure_client()
         resp = client.completions.create(

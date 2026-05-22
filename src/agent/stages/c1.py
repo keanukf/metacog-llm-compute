@@ -104,21 +104,29 @@ def c1_step_core(
     tokens_used += len(cot_lp) if cot_lp else 0
     lm_calls = 2
     verify_repair_used = False
+    verify_fallback_source = None
     repair_prompt = None
     repair_text = None
     repair_lp = None
     if not action:
+        # If CoT already produced a plausible draft action, trust it before extra retries.
+        if draft_action:
+            action = draft_action
+            verify_fallback_source = "draft_action"
+        else:
+            verify_fallback_source = "verify_repair"
         # Recovery path: if verify echoed instructions or produced non-action text,
         # issue one minimal direct-action call on the same context.
-        repair_prompt = f"{base_prompt}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
-        repair_text, repair_lp = model.generate(repair_prompt, logprobs=True, **gen_kw)
-        action = _normalize_action_line(repair_text or "")
-        if action:
-            verify_repair_used = True
-            final_text = repair_text or ""
-            logprobs = repair_lp
-        tokens_used += len(repair_lp) if repair_lp else 0
-        lm_calls += 1
+        if not action:
+            repair_prompt = f"{base_prompt}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
+            repair_text, repair_lp = model.generate(repair_prompt, logprobs=True, **gen_kw)
+            action = _normalize_action_line(repair_text or "")
+            if action:
+                verify_repair_used = True
+                final_text = repair_text or ""
+                logprobs = repair_lp
+            tokens_used += len(repair_lp) if repair_lp else 0
+            lm_calls += 1
     tle = token_entropy.extract_action_tle_from_response(final_text, logprobs) if logprobs else None
 
     vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
@@ -166,6 +174,7 @@ def c1_step_core(
             "max_tokens": int(verify_max_tokens) if verify_max_tokens is not None else None,
             "stop": list(verify_stop) if isinstance(verify_stop, list) else None,
             "repair_used": bool(verify_repair_used),
+            "fallback_source": verify_fallback_source,
         },
     ]
     if repair_prompt is not None:
