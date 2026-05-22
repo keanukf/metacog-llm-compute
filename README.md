@@ -28,6 +28,8 @@ Run scripts from the **repository root** so imports resolve (see `run_pilot.py` 
 
 ## Installation paths (local vs cloud)
 
+Requires **Python 3.11+** (`requires-python` in `pyproject.toml`; CI uses 3.11).
+
 Use one of these two install paths depending on context:
 
 - **Local development / CI quality checks** (editable package + dev tools):
