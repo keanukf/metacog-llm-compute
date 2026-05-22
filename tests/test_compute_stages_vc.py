@@ -128,6 +128,30 @@ def test_c1_unparsed_uses_direct_single_line_verify_prompt():
     assert action == ""
 
 
+def test_c1_verify_empty_falls_back_to_cot_draft_action():
+    class _M:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return "<think>plan</think>\ngo east", (
+                    [{"logprob": -0.1}] * 4 if logprobs else None
+                )
+            # Verify echoes meta text -> no direct action parse.
+            return "Just the command.\n</instructions>", (
+                [{"logprob": -0.2}] * 2 if logprobs else None
+            )
+
+    m = _M()
+    step = get_step_fn("C1", vc_mode="none")
+    action, *_rest = step("obs", [], m)
+    # Should reuse draft action; no third repair call needed.
+    assert m.calls == 2
+    assert action == "go east"
+
+
 def test_thinking_flags_c0_forced_off():
     class _M:
         seen: list[bool | None]
