@@ -1,5 +1,7 @@
 # Quality and Reproduction Runbook
 
+Requires **Python 3.11+** (see `pyproject.toml`; CI uses 3.11).
+
 ## Local quality loop
 
 1. Install dev setup:
