@@ -82,6 +82,54 @@ def test_parse_lmstudio_responses_json_message_output_text():
     assert len(lp[0]["top_logprobs"]) == 2
 
 
+def test_parse_lmstudio_responses_json_reasoning_and_message_blocks():
+    """LM Studio Qwen3: reasoning in separate block, answer in message output_text."""
+    fixture = {
+        "output": [
+            {
+                "type": "reasoning",
+                "content": [
+                    {"type": "reasoning_text", "text": "Plan: exit is north, so go north."}
+                ],
+            },
+            {
+                "type": "message",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "go north",
+                        "logprobs": [{"token": "go", "logprob": -0.2}],
+                    }
+                ],
+            },
+        ]
+    }
+    text, lp = parse_lmstudio_responses_json(fixture, enable_thinking=True)
+    assert "go north" in text
+    assert "Plan: exit is north" in text
+    assert "<think>" in text
+    assert "</think>" in text
+    assert lp is not None and len(lp) == 1
+
+
+def test_parse_lmstudio_responses_json_non_thinking_uses_message_only():
+    fixture = {
+        "output": [
+            {
+                "type": "reasoning",
+                "content": [{"type": "reasoning_text", "text": "should be ignored"}],
+            },
+            {
+                "type": "message",
+                "content": [{"type": "output_text", "text": "go east"}],
+            },
+        ]
+    }
+    text, _ = parse_lmstudio_responses_json(fixture, enable_thinking=False)
+    assert text == "go east"
+    assert "ignored" not in text
+
+
 def test_parse_lmstudio_responses_json_flat_output_text_block():
     fixture = {
         "output": [

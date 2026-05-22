@@ -112,66 +112,123 @@ def _openai_completion_logprobs_to_list(raw_lp: Any) -> list[dict[str, Any]] | N
     return None
 
 
-def parse_lmstudio_responses_json(data: dict[str, Any]) -> tuple[str, list[dict[str, Any]] | None]:
-    """
-    Parse LM Studio POST /v1/responses JSON into (assistant_text, per_token_records).
+def _lmstudio_consume_logprobs_list(raw: Any, token_records: list[dict[str, Any]]) -> None:
+    if not isinstance(raw, list):
+        return
+    for tok in raw:
+        if not isinstance(tok, dict):
+            continue
+        rec: dict[str, Any] = {
+            "token": str(tok.get("token", "")),
+            "logprob": float(tok.get("logprob", 0.0)),
+        }
+        top = tok.get("top_logprobs")
+        if isinstance(top, list) and top:
+            rec["top_logprobs"] = []
+            for x in top:
+                if isinstance(x, dict):
+                    rec["top_logprobs"].append(
+                        {
+                            "token": str(x.get("token", "")),
+                            "logprob": float(x.get("logprob", 0.0)),
+                        }
+                    )
+        token_records.append(rec)
 
-    Expected shapes include output[].content[] parts with type output_text, text, and logprobs[]
-    (each entry may have token, logprob, top_logprobs[]). Structure may vary slightly by version;
-    this function tries several common layouts.
+
+def _lmstudio_extract_reasoning_and_message(
+    data: dict[str, Any],
+) -> tuple[str, str, list[dict[str, Any]]]:
     """
-    if not isinstance(data, dict):
-        return "", None
+    Split LM Studio /v1/responses ``output`` into (reasoning_text, message_text, logprobs).
+
+    Qwen3 on LM Studio often returns ``type: reasoning`` (reasoning_text) plus
+    ``type: message`` (output_text) instead of inline `` blocks.
+    """
+    reasoning_chunks: list[str] = []
+    message_chunks: list[str] = []
     token_records: list[dict[str, Any]] = []
-    text_chunks: list[str] = []
 
-    def _consume_logprobs_list(raw: Any) -> None:
-        if not isinstance(raw, list):
+    def _walk_parts(parts: Any) -> None:
+        if not isinstance(parts, list):
             return
-        for tok in raw:
-            if not isinstance(tok, dict):
+        for part in parts:
+            if not isinstance(part, dict):
                 continue
-            rec: dict[str, Any] = {
-                "token": str(tok.get("token", "")),
-                "logprob": float(tok.get("logprob", 0.0)),
-            }
-            top = tok.get("top_logprobs")
-            if isinstance(top, list) and top:
-                rec["top_logprobs"] = []
-                for x in top:
-                    if isinstance(x, dict):
-                        rec["top_logprobs"].append(
-                            {
-                                "token": str(x.get("token", "")),
-                                "logprob": float(x.get("logprob", 0.0)),
-                            }
-                        )
-            token_records.append(rec)
+            ptype = str(part.get("type") or "")
+            t = part.get("text")
+            if ptype in ("reasoning_text", "reasoning") and isinstance(t, str) and t.strip():
+                reasoning_chunks.append(t.strip())
+            elif ptype == "output_text" or (ptype == "" and "text" in part):
+                if isinstance(t, str) and t:
+                    message_chunks.append(t)
+                _lmstudio_consume_logprobs_list(part.get("logprobs"), token_records)
 
     out_blocks = data.get("output")
     if isinstance(out_blocks, list):
         for block in out_blocks:
             if not isinstance(block, dict):
                 continue
-            if block.get("type") == "output_text":
+            btype = str(block.get("type") or "")
+            if btype == "reasoning":
+                _walk_parts(block.get("content"))
+                continue
+            if btype == "message":
+                _walk_parts(block.get("content"))
+                continue
+            if btype == "output_text":
                 t = block.get("text")
                 if isinstance(t, str) and t:
-                    text_chunks.append(t)
-                _consume_logprobs_list(block.get("logprobs"))
+                    message_chunks.append(t)
+                _lmstudio_consume_logprobs_list(block.get("logprobs"), token_records)
                 continue
-            parts = block.get("content")
-            if not isinstance(parts, list):
-                continue
-            for part in parts:
-                if not isinstance(part, dict):
-                    continue
-                if part.get("type") == "output_text" or "logprobs" in part or "text" in part:
-                    t = part.get("text")
-                    if isinstance(t, str) and t:
-                        text_chunks.append(t)
-                    _consume_logprobs_list(part.get("logprobs"))
+            _walk_parts(block.get("content"))
 
-    text = "".join(text_chunks).strip()
+    reasoning_text = "\n\n".join(reasoning_chunks).strip()
+    message_text = "".join(message_chunks).strip()
+    return reasoning_text, message_text, token_records
+
+
+def _lmstudio_assemble_assistant_text(
+    reasoning_text: str,
+    message_text: str,
+    *,
+    enable_thinking: bool | None,
+) -> str:
+    """Map LM Studio split blocks to Qwen3-style text our C1 parser understands."""
+    if enable_thinking is False:
+        return message_text
+    if reasoning_text and message_text:
+        return f"<think>\n{reasoning_text}\n</think>\n\n{message_text.lstrip()}"
+    if reasoning_text:
+        return f"<think>\n{reasoning_text}\n</think>\n\n"
+    return message_text
+
+
+def parse_lmstudio_responses_json(
+    data: dict[str, Any],
+    *,
+    enable_thinking: bool | None = None,
+) -> tuple[str, list[dict[str, Any]] | None]:
+    """
+    Parse LM Studio POST /v1/responses JSON into (assistant_text, per_token_records).
+
+    LM Studio 0.4+ may return separate ``reasoning`` and ``message`` output blocks for Qwen3.
+    When ``enable_thinking`` is True (or unset and reasoning is present), reasoning is wrapped
+    in `` blocks so :func:`src.agent.cot_parser.parse_cot_action` can use ``post_think``.
+    When ``enable_thinking`` is False, only ``message`` output_text is returned (verify/C0).
+    """
+    if not isinstance(data, dict):
+        return "", None
+    reasoning_text, message_text, token_records = _lmstudio_extract_reasoning_and_message(data)
+    use_thinking = enable_thinking
+    if use_thinking is None and reasoning_text:
+        use_thinking = True
+    text = _lmstudio_assemble_assistant_text(
+        reasoning_text,
+        message_text,
+        enable_thinking=use_thinking,
+    )
     if not text and token_records:
         text = "".join(rec.get("token", "") for rec in token_records).strip()
     if not token_records:
@@ -203,7 +260,10 @@ def _lmstudio_post_v1_responses(
         "max_output_tokens": int(max_tokens),
     }
     if enable_thinking is not None:
-        body["enable_thinking"] = bool(enable_thinking)
+        et = bool(enable_thinking)
+        body["enable_thinking"] = et
+        # LM Studio Qwen3: chat_template_kwargs is the documented toggle (top-level may be ignored).
+        body["chat_template_kwargs"] = {"enable_thinking": et}
     payload = json.dumps(body).encode("utf-8")
     req = Request(
         url,
@@ -735,12 +795,17 @@ class LMStudioWrapper(ModelWrapper):
                 **thinking_kw,
             )
             if data is not None:
-                text, lp_list = parse_lmstudio_responses_json(data)
-                if lp_list:
-                    return text, lp_list
+                text, lp_list = parse_lmstudio_responses_json(data, enable_thinking=enable_thinking)
+                if text or lp_list:
+                    if logprobs and not lp_list:
+                        warnings.warn(
+                            "LM Studio /v1/responses returned text but no logprobs; "
+                            "TLE unavailable for this call."
+                        )
+                    return text, lp_list if logprobs else None
                 warnings.warn(
-                    "LM Studio /v1/responses returned no usable logprobs; falling back to /v1/completions "
-                    "with logprobs omitted (TLE unavailable)."
+                    "LM Studio /v1/responses returned empty text and logprobs; "
+                    "falling back to /v1/completions."
                 )
 
         client = self._ensure_client()
