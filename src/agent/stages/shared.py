@@ -524,6 +524,8 @@ def _run_vc_followup(
         "max_tokens": int(followup_max_tokens),
         "temperature": float(followup_temperature),
         "enable_thinking": False,
+        # VC prompt asks for a single scalar (0-100). Cut trailing explanations early.
+        "stop": ["\n"],
     }
     if request_logprobs:
         text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
