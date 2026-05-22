@@ -94,6 +94,17 @@ def parse_cot_action(cot_text: str) -> dict[str, str]:
                 "raw": raw,
             }
 
+    # Last resort: recover embedded command mentions from verbose reasoning.
+    embedded = normalize_action_line(raw)
+    if embedded and not _looks_like_tag_artifact(embedded):
+        return {
+            "action": embedded,
+            "status": "parsed",
+            "parse_method": "embedded_action_fallback",
+            "reasoning_internal": reasoning_internal,
+            "raw": raw,
+        }
+
     return {
         "action": "",
         "status": "unparsed",
