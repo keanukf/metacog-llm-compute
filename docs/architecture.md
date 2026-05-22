@@ -1,5 +1,16 @@
 # Architecture and Dataflow
 
+## Documentation map
+
+- [`docs/runbook.md`](runbook.md) — quality loop, mock pilot, `data/` layout
+- [`docs/pilot.md`](pilot.md) — pilot modes and CLI
+- [`docs/runpod.md`](runpod.md) — cloud GPU workflow
+- [`docs/textworld.md`](textworld.md) — TextWorld dataset
+- [`docs/scripts.md`](scripts.md) — script catalog
+- [`docs/artifact_schema.md`](artifact_schema.md) — episode JSON contract
+- [`docs/adrs.md`](adrs.md) — decision log
+- [`configs/README.md`](../configs/README.md) — YAML reference
+
 ## Runtime Flow
 
 1. A runner script (`scripts/run_pilot.py`, `scripts/run_phase1.py`, `scripts/run_phase2.py`) loads YAML config.
