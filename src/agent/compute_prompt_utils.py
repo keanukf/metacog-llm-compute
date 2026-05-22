@@ -4,6 +4,14 @@ import re
 
 _THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
 _TRAILING_PUNCT_RE = re.compile(r"[.!?]+$")
+_INSTRUCTION_ECHO_RE = re.compile(
+    r"(?i)^\s*(?:"
+    r"just\s+the\s+command"
+    r"|output\s+exactly\s+one\s+command(?:\s+on\s+a\s+single\s+line)?"
+    r"|one\s+command\s+on\s+a\s+single\s+line"
+    r"|no\s+reasoning,\s*no\s+tags,\s*no\s+preamble"
+    r")\.?\s*$"
+)
 
 
 def xml_block(tag: str, content: str, *, attrs: str = "") -> str:
@@ -106,8 +114,14 @@ def extract_first_line(text: str) -> str:
 def normalize_action_line(text: str) -> str:
     line = extract_first_line(strip_think_blocks(text or ""))
     if line.upper().startswith("ACTION:"):
-        return line.split(":", 1)[1].strip()
-    return line
+        line = line.split(":", 1)[1].strip()
+    s = (line or "").strip()
+    if not s:
+        return ""
+    # Some endpoints occasionally echo instruction text instead of an action.
+    if _INSTRUCTION_ECHO_RE.match(s):
+        return ""
+    return s
 
 
 def normalize_vote_key(action_line: str) -> str:

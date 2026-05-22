@@ -101,6 +101,33 @@ def test_thinking_flags_c1_cot_only():
     assert m.seen[:2] == [True, False]
 
 
+def test_c1_unparsed_uses_direct_single_line_verify_prompt():
+    class _M:
+        def __init__(self) -> None:
+            self.prompts: list[str] = []
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.prompts.append(prompt)
+            if len(self.prompts) == 1:
+                # CoT emits only a think block -> unparsed draft.
+                return "<think>plan only</think>\n\n", (
+                    [{"logprob": -0.1}] * 2 if logprobs else None
+                )
+            # Verify echoes meta text; action normalizer should drop it.
+            return "Just the command.\n</instructions>", (
+                [{"logprob": -0.2}] * 2 if logprobs else None
+            )
+
+    m = _M()
+    step = get_step_fn("C1", vc_mode="none")
+    action, *_rest = step("obs", [], m)
+    assert len(m.prompts) >= 2
+    verify_prompt = m.prompts[1]
+    assert "<draft_action>" not in verify_prompt
+    assert "Output exactly one command on a single line." in verify_prompt
+    assert action == ""
+
+
 def test_thinking_flags_c0_forced_off():
     class _M:
         seen: list[bool | None]
