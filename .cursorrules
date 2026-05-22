@@ -9,7 +9,7 @@ Thesis codebase for **metacognitive effort allocation in sequential LM agents**:
 
 ## Tech stack and layout
 
-- **Language:** Python 3.10+. Use type hints and docstrings; prefer `from __future__ import annotations` in scripts.
+- **Language:** Python 3.11+. Use type hints and docstrings; prefer `from __future__ import annotations` in scripts.
 - **Config:** YAML in `configs/` (e.g. `pilot.yaml`, `experiment_core.yaml`). Do not commit secrets in YAML; use environment variables for API keys (e.g. LM Studio).
 - **Package:** `src/` is the main package; run scripts from repo root so `sys.path` includes repo root (see `run_pilot.py`).
 - **Tests:** pytest in `tests/`; unit tests with mocks (no GPU). Run: `python -m pytest tests/ -v`. Shared fixtures in `tests/conftest.py`.
