@@ -39,7 +39,9 @@ def _summarize_variant_dir(run_dir: Path) -> dict[str, Any]:
     # Prefer a direct layout (via --no-timestamp-run), but if we see nested pilot_* folders,
     # summarize the newest one.
     root = run_dir
-    nested = sorted([p for p in run_dir.glob("pilot_*") if p.is_dir()], key=lambda p: p.stat().st_mtime)
+    nested = sorted(
+        [p for p in run_dir.glob("pilot_*") if p.is_dir()], key=lambda p: p.stat().st_mtime
+    )
     if nested:
         root = nested[-1]
 
@@ -48,7 +50,9 @@ def _summarize_variant_dir(run_dir: Path) -> dict[str, Any]:
     t5 = _read_json(root / "pilot_test5_toh.json") or {}
 
     episodes: list[dict[str, Any]] = []
-    for p in sorted(root.glob("ep_textworld_*.json")) + sorted(root.glob("ep_tower_of_hanoi_*.json")):
+    for p in sorted(root.glob("ep_textworld_*.json")) + sorted(
+        root.glob("ep_tower_of_hanoi_*.json")
+    ):
         ep = _read_json(p)
         if isinstance(ep, dict):
             episodes.append(ep)
@@ -62,9 +66,9 @@ def _summarize_variant_dir(run_dir: Path) -> dict[str, Any]:
     return {
         "sanity_has_logprobs": san.get("has_logprobs"),
         "sanity_completion_tokens_observed": san.get("completion_tokens_observed"),
-        "test2_mean_entropy_avg": ((t2.get("summary") or {}) if isinstance(t2.get("summary"), dict) else {}).get(
-            "mean_entropy_avg"
-        ),
+        "test2_mean_entropy_avg": (
+            (t2.get("summary") or {}) if isinstance(t2.get("summary"), dict) else {}
+        ).get("mean_entropy_avg"),
         "toh_parse_rate": t5.get("parse_rate"),
         "toh_success_rate": t5.get("success_rate"),
         "toh_avg_optimal_rate": t5.get("avg_optimal_rate"),
@@ -156,4 +160,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

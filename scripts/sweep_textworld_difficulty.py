@@ -2,6 +2,7 @@
 """
 Sweep TextWorld Cooking generation difficulty and evaluate C0 behavior.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -124,13 +125,30 @@ def _score_candidate(success_rate: float, mean_episode_length: float) -> float:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sweep TextWorld Cooking difficulty for C0 target window.")
-    parser.add_argument("--config", default="configs/experiment_core.yaml", help="Experiment config path")
-    parser.add_argument("--output-dir", default="data/tasks/textworld/sweeps", help="Where sweep artifacts are written")
-    parser.add_argument("--instances-per-combo", type=int, default=6, help="Small batch size per parameter combination (5-10 recommended)")
+    parser = argparse.ArgumentParser(
+        description="Sweep TextWorld Cooking difficulty for C0 target window."
+    )
+    parser.add_argument(
+        "--config", default="configs/experiment_core.yaml", help="Experiment config path"
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="data/tasks/textworld/sweeps",
+        help="Where sweep artifacts are written",
+    )
+    parser.add_argument(
+        "--instances-per-combo",
+        type=int,
+        default=6,
+        help="Small batch size per parameter combination (5-10 recommended)",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Master seed for reproducibility")
-    parser.add_argument("--open", action="store_true", dest="open_", help="Enable open/close operations")
-    parser.add_argument("--runtime-max-steps", type=int, default=25, help="Agent-loop cap (targeted 20-25)")
+    parser.add_argument(
+        "--open", action="store_true", dest="open_", help="Enable open/close operations"
+    )
+    parser.add_argument(
+        "--runtime-max-steps", type=int, default=25, help="Agent-loop cap (targeted 20-25)"
+    )
     parser.add_argument("--real", action="store_true", help="Use real model backend from config")
     parser.add_argument("--keep-games", action="store_true", help="Keep per-combo generated games")
     args = parser.parse_args()
@@ -193,9 +211,7 @@ def main() -> None:
                         "success_rate": [0.30, 0.50],
                         "episode_length": [8, 15],
                     },
-                    "inside_window": (
-                        0.30 <= success_rate <= 0.50 and 8.0 <= mean_len <= 15.0
-                    ),
+                    "inside_window": (0.30 <= success_rate <= 0.50 and 8.0 <= mean_len <= 15.0),
                     "distance_score": _score_candidate(success_rate, mean_len),
                 }
                 results.append(candidate)

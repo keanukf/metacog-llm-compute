@@ -4,6 +4,7 @@ Interactive terminal play for Tower of Hanoi — sanity-check the environment wi
 
 Uses TowerOfHanoiEnv from src.environments.tower_of_hanoi; does not modify that module.
 """
+
 from __future__ import annotations
 
 import argparse

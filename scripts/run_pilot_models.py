@@ -23,6 +23,7 @@ Usage::
     --pilot-mode cuda --real
   # If --models and --models-file are omitted, ``configs/models.yaml`` is used when present.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -115,14 +116,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run run_pilot.py once per model with distinct output directories and an optional manifest."
     )
-    parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML (forwarded)")
+    parser.add_argument(
+        "--config", default="configs/pilot.yaml", help="Pilot config YAML (forwarded)"
+    )
     parser.add_argument(
         "--lmstudio-config",
         default=None,
         metavar="PATH",
         help="Forwarded to run_pilot.py when using --pilot-mode lmstudio",
     )
-    parser.add_argument("--output-dir", default="data/results", help="Base directory; batch folder is created under it")
+    parser.add_argument(
+        "--output-dir",
+        default="data/results",
+        help="Base directory; batch folder is created under it",
+    )
     parser.add_argument(
         "--pilot-mode",
         type=parse_pilot_mode_arg,
@@ -191,7 +198,11 @@ def main() -> None:
         sys.exit(2)
 
     batch_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    base_out = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
+    base_out = (
+        REPO_ROOT / args.output_dir
+        if not Path(args.output_dir).is_absolute()
+        else Path(args.output_dir)
+    )
     batch_root = base_out / f"pilot_batch_{batch_stamp}"
     batch_root.mkdir(parents=True, exist_ok=False)
 

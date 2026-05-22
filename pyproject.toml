@@ -17,7 +17,15 @@ dependencies = [
     "seaborn",
 ]
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.6.0", "mypy>=1.11.0", "pre-commit>=4.0.0"]
+dev = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+    "pre-commit>=4.0.0",
+    "types-PyYAML>=6.0",
+    "pandas-stubs>=2.0",
+]
 full = [
     "vllm==0.19.1",
     "transformers==4.56.2",
@@ -52,6 +60,10 @@ ignore = [
     "E501",
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Entry scripts set sys.path / load_dotenv before importing src.*
+"scripts/*.py" = ["E402"]
+
 [tool.mypy]
 python_version = "3.10"
 warn_unused_configs = true
@@ -63,6 +75,43 @@ check_untyped_defs = true
 exclude = [
     "^tests/",
 ]
+
+[[tool.mypy.overrides]]
+module = "src.environments.textworld_env"
+ignore_missing_imports = true
+disable_error_code = ["import-untyped", "import-not-found", "unused-ignore"]
+
+[[tool.mypy.overrides]]
+module = "src.utils.model_wrapper"
+ignore_missing_imports = true
+disable_error_code = ["unused-ignore", "arg-type", "import-not-found"]
+
+[[tool.mypy.overrides]]
+module = "src.utils.tracing"
+ignore_missing_imports = true
+disable_error_code = [
+    "arg-type",
+    "union-attr",
+    "assignment",
+    "no-any-return",
+    "typeddict-item",
+    "unused-ignore",
+    "import-not-found",
+]
+
+[[tool.mypy.overrides]]
+module = "src.utils.logging_utils"
+ignore_missing_imports = true
+disable_error_code = ["import-not-found"]
+
+[[tool.mypy.overrides]]
+module = [
+    "src.analysis.visualization",
+    "src.analysis.calibration",
+    "src.analysis.thresholds",
+    "src.utils.dotenv_loader",
+]
+disable_error_code = ["unused-ignore"]
 
 [tool.coverage.run]
 source = ["src"]

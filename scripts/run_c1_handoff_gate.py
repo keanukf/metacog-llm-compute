@@ -95,7 +95,9 @@ def _create_real_model(config: dict, pilot_mode: str) -> Any:
         return create_wrapper(backend=backend, model_name=model_name, dtype=dtype, **extra)
     if pilot_mode == "lmstudio":
         inf = config.get("inference", {}) or {}
-        base_url = inf.get("lmstudio_base_url") or os.environ.get("LM_STUDIO_BASE_URL", "http://localhost:1234/v1")
+        base_url = inf.get("lmstudio_base_url") or os.environ.get(
+            "LM_STUDIO_BASE_URL", "http://localhost:1234/v1"
+        )
         api_key = inf.get("lmstudio_api_key") or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
         top_k = int(inf.get("lmstudio_top_logprobs", 5))
         return create_wrapper(
@@ -168,23 +170,41 @@ def _render_report(domain: str, counts: GateCounts, *, out_path: Path) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Run C1 handoff empirical gate and write markdown summary.")
+    ap = argparse.ArgumentParser(
+        description="Run C1 handoff empirical gate and write markdown summary."
+    )
     ap.add_argument("--config", default="configs/pilot.yaml", help="YAML config path")
     ap.add_argument("--output-dir", default="data/results", help="Base output directory")
-    ap.add_argument("--no-timestamp-run", action="store_true", help="Write directly under --output-dir")
+    ap.add_argument(
+        "--no-timestamp-run", action="store_true", help="Write directly under --output-dir"
+    )
     ap.add_argument("--pilot-mode", default="mock", help="mock|hf|cuda|lmstudio")
     ap.add_argument("--real", action="store_true", help="Require real model (fail if not)")
     ap.add_argument("--domain", choices=["textworld", "tower_of_hanoi"], default="textworld")
-    ap.add_argument("--n-episodes", type=int, default=10, help="Episodes to run (gate counts steps)")
+    ap.add_argument(
+        "--n-episodes", type=int, default=10, help="Episodes to run (gate counts steps)"
+    )
     ap.add_argument("--max-steps", type=int, default=10, help="Max env steps per episode")
     args = ap.parse_args()
 
-    config_path = REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
-    base_output = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
+    config_path = (
+        REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
+    )
+    base_output = (
+        REPO_ROOT / args.output_dir
+        if not Path(args.output_dir).is_absolute()
+        else Path(args.output_dir)
+    )
     base_output.mkdir(parents=True, exist_ok=True)
-    output_dir = base_output if args.no_timestamp_run else make_run_subdirectory(base_output, prefix="c1_handoff_gate")
+    output_dir = (
+        base_output
+        if args.no_timestamp_run
+        else make_run_subdirectory(base_output, prefix="c1_handoff_gate")
+    )
 
-    config, _, _ = load_pilot_config_with_lmstudio_override(config_path, args.pilot_mode, REPO_ROOT, None)
+    config, _, _ = load_pilot_config_with_lmstudio_override(
+        config_path, args.pilot_mode, REPO_ROOT, None
+    )
     stage = "C1"
     step_cfg = resolve_step_fn_kwargs(config, args.domain)
     hist_keys = {
@@ -195,7 +215,9 @@ def main() -> None:
         "pin_recipe",
     }
     history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in hist_keys}
-    step_fn = get_step_fn(stage, save_logprob_distributions=False, save_vc_distributions=False, **step_cfg)
+    step_fn = get_step_fn(
+        stage, save_logprob_distributions=False, save_vc_distributions=False, **step_cfg
+    )
 
     if args.pilot_mode == "mock":
         model: Any = None
@@ -233,7 +255,9 @@ def main() -> None:
             _ = resolve_textworld_game_path(inst, config, REPO_ROOT)
             env = make_experiment_env("textworld", inst, config, int(args.max_steps), REPO_ROOT)
         else:
-            env = make_experiment_env("tower_of_hanoi", inst, config, int(args.max_steps), REPO_ROOT)
+            env = make_experiment_env(
+                "tower_of_hanoi", inst, config, int(args.max_steps), REPO_ROOT
+            )
         ep_id = f"c1_handoff_gate_{domain}_{ep_i}"
         run_episode(
             env,
@@ -273,4 +297,3 @@ if __name__ == "__main__":
     main()
     dt = time.perf_counter() - t0
     print(f"Done in {dt:.2f}s")
-

@@ -112,9 +112,13 @@ def _render_report_md(metrics: dict, figures: dict[str, str]) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--run-dir", required=True, help="Run/checkpoint directory containing ep_*.json")
+    ap.add_argument(
+        "--run-dir", required=True, help="Run/checkpoint directory containing ep_*.json"
+    )
     ap.add_argument("--out-dir", default="", help="Output directory (default: <run-dir>/analysis)")
-    ap.add_argument("--parquet", action="store_true", help="Also write Parquet (requires pandas + pyarrow)")
+    ap.add_argument(
+        "--parquet", action="store_true", help="Also write Parquet (requires pandas + pyarrow)"
+    )
     args = ap.parse_args()
 
     run_dir = Path(args.run_dir)
@@ -128,8 +132,13 @@ def main() -> None:
         out_dir = (REPO_ROOT / out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    from src.analysis.allocation import (
+        efficiency_summary,
+        regret_vs_baselines,
+        run_health,
+        stage_mix,
+    )
     from src.analysis.datasets import load_run_dataset
-    from src.analysis.allocation import efficiency_summary, regret_vs_baselines, run_health, stage_mix
     from src.analysis.visualization import plot_run_overview
 
     ds = load_run_dataset(run_dir)
@@ -168,4 +177,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

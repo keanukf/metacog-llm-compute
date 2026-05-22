@@ -2,10 +2,10 @@
 """
 Play a TextWorld story file (.z8, .z5, or legacy .ulx) interactively in the terminal.
 """
+
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +62,9 @@ def _print_status(info: dict[str, Any], fallback_score: float | None) -> float |
 def main() -> None:
     parser = argparse.ArgumentParser(description="Play a TextWorld story file interactively.")
     parser.add_argument("game_file", help="Path to compiled game (.z8, .z5, … or .ulx)")
-    parser.add_argument("--max-steps", type=int, default=50, help="Interactive cap for this debug session")
+    parser.add_argument(
+        "--max-steps", type=int, default=50, help="Interactive cap for this debug session"
+    )
     args = parser.parse_args()
 
     game_file = Path(args.game_file).expanduser().resolve()
