@@ -279,6 +279,21 @@ def test_extract_first_line_returns_first_non_empty():
     assert _extract_first_line("") == ""
 
 
+def test_c0_recovers_embedded_action_from_verbose_output():
+    class _M:
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            text = (
+                "Just the command.\n</task>\n"
+                'The player is in the Livingroom, and the correct command should be "go east".'
+            )
+            return text, ([{"logprob": -0.2}] * 4 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn("C0", vc_mode="none")
+    action, *_rest = step("obs", [], m)
+    assert action == "go east"
+
+
 class _C1TwoCallModel:
     """CoT call then verify (both use logprobs in real C1); optional VC follow-up."""
 
