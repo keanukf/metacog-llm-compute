@@ -1,0 +1,120 @@
+# Pilot runner (`run_pilot.py`)
+
+The pilot runs Tests 1–6 in sequence and writes benchmark and calibration outputs. See [`configs/pilot.yaml`](../configs/pilot.yaml) and [`configs/README.md`](../configs/README.md).
+
+**Related:** [`docs/runbook.md`](runbook.md) (mock checklist), [`docs/runpod.md`](runpod.md) (CUDA), [`docs/scripts.md`](scripts.md) (all scripts).
+
+## Pilot modes
+
+| Mode | Flag | Hardware | Backend | Use case |
+|------|------|----------|---------|----------|
+| **Pilot 0** | `--pilot-mode mock` (default) | None | Mock | Quick local sanity; CI; no model download. |
+| **Pilot 1** | `--pilot-mode hf` | Mac M1/M2 (Apple Silicon) | HuggingFace + MPS | Test full pipeline locally before buying GPU. |
+| **Pilot 2** | `--pilot-mode cuda` | NVIDIA GPU (e.g. RunPod) | vLLM (or HF) | Validate GPU setup and throughput before Phase 1/2. |
+| **Pilot 3** | `--pilot-mode lmstudio` | LM Studio host (LAN or localhost) | OpenAI-compatible HTTP | Local or LAN LM Studio (`LM_STUDIO_BASE_URL`, default `http://localhost:1234/v1`). |
+
+## Pilot 0 — Mock (default)
+
+No real model, stub environments. Confirms the script and output format:
+
+```bash
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results
+```
+
+You get per-step JSON under `--output-dir` (e.g. `pilot_test1_inference.json`, `pilot_test2_tle.json`, …) plus `ep_textworld_*.json` / `ep_tower_of_hanoi_*.json` for episodes and `pilot_feasibility.json`. In **mock** mode, metrics are synthetic (e.g. unrealistic `tokens_per_sec`).
+
+**Optional granular logprobs.** Set `logging.save_logprob_distributions: true` in `configs/pilot.yaml` to write per-env-step completion token rows (including `top_logprobs` when the backend returns them) as sidecar files under `logging.logprob_subdir` (default `logprobs/`), e.g. `{episode_id}_logprobs.json`, without bloating the main episode JSON. Use `logprob_export_format: csv` or `both` for a long tidy table; CSV includes `p_renorm_topk` (softmax over the returned top-k at export time). Size grows with steps × tokens × top-k—keep off for long runs unless needed. Test 2 can also emit `pilot_test2_tle_distributions.json` (and optional CSV) in that subdirectory. Phase 1 (`run_phase1.py`) honors the same `logging.*` keys next to checkpoints.
+
+Run individual steps without the full pipeline:
+
+```bash
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --only test2
+```
+
+`--only` accepts one or more of: `sanity`, `test1`, `test2`, `test3`, `test4`, `test5`, `feasibility` (executed in that order). For `feasibility`, missing inputs are filled from JSON already present in `output_dir` when available.
+
+After a run, aggregate TextWorld / ToH episode JSONs (success rate by stage, mean TLE, VC spread, optional ECE proxy):
+
+```bash
+PYTHONPATH=. python scripts/summarize_pilot_calibration.py data/results/pilot_<UTC>/
+```
+
+Optional validation:
+
+```bash
+python scripts/validate_pilot_outputs.py --pilot-dir data/results/pilot_<UTC>/
+```
+
+## Pilot 1 — HuggingFace on Apple Silicon (hf)
+
+On a Mac with M1/M2/M3, run the same pipeline with the real model via HuggingFace on Metal (MPS). No CUDA or vLLM required:
+
+```bash
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode hf
+```
+
+`--pilot-mode m1` is accepted as a deprecated alias for `hf`. For the same machine, **lmstudio** is often faster because inference runs inside LM Studio instead of raw Transformers.
+
+Requires `transformers`, `torch` with MPS support, and enough RAM/Unified Memory for the model (e.g. Qwen2.5-3B). Slower than Pilot 2 but catches setup and integration errors before spending on cloud GPU.
+
+## Pilot 2 — Real CUDA GPU
+
+On a machine with CUDA (e.g. RunPod RTX 3090), use vLLM for real inference and measured throughput:
+
+```bash
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode cuda
+```
+
+Or use `--real` to auto-detect: if CUDA is available → cuda; else if MPS (Mac) → hf; else mock.
+
+Full RunPod workflow: [`docs/runpod.md`](runpod.md).
+
+## Pilot 3 — LM Studio
+
+LM Studio exposes an OpenAI-compatible API (often `http://localhost:1234/v1` or a LAN address). Set `model.name` to the **exact model identifier** shown in LM Studio for API requests:
+
+```bash
+export LM_STUDIO_BASE_URL="http://192.168.178.173:1234/v1"
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode lmstudio
+```
+
+Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; default API key is `lm-studio` if unset (`LM_STUDIO_API_KEY`). Requires the `openai` package.
+
+**Thinking mode (C1 only):** This repo forces **model-native thinking ON only for the C1 CoT subcall**; C1 verify, C0, C2, and VC follow-up calls force thinking OFF. To smoke-test that the CoT→Verify handoff parses cleanly on your deployed endpoint/model (including LM Studio), run:
+
+```bash
+python scripts/run_c1_handoff_gate.py --config configs/pilot.yaml --pilot-mode lmstudio --real --domain textworld --n-episodes 3 --max-steps 5
+```
+
+**Token-level entropy (TLE) with LM Studio:** The usual OpenAI-compat endpoints (`/v1/completions`, `/v1/chat/completions`) do not return logprobs in LM Studio. For `logprobs=True`, the code uses **`POST /v1/responses`** (LM Studio **0.4.x+**) with `include: ["message.output_text.logprobs"]` and `top_logprobs` (see `inference.lmstudio_top_logprobs` in config, default 5). TLE is Shannon entropy over the **renormalized top-k** distribution per token (approximation vs full vocabulary). vLLM/HF still use top-1 logprobs and the legacy binary-entropy path.
+
+**Step-level observability:** With `logging.save_step_traces: true` (default in `configs/pilot.yaml`), each episode writes `trace_{episode_id}.jsonl` next to the episode JSON: one line per env step with full prompt, full raw model output, observations, and `history_snapshot` (including prior `ACTION: ...` lines so the model cannot “forget” what it did). For Langfuse cloud traces, install `pip install ".[tracing]"`, set `tracing.langfuse_enabled: true`, and export `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (optional `LANGFUSE_HOST` for EU). Phase 1/2 runners pass the same options when enabled in YAML.
+
+- **Test 1:** Real prompts → measured tokens/s, latency, VRAM (CUDA only).
+- **Tests 2–3:** With a real model, TLE and VC are evaluated on **real generations**; in mock mode they use synthetic/static checks.
+- **Test 4:** TextWorld e2e episodes (stub env unless a real game file is wired in).
+- **Test 5:** Tower of Hanoi parseability (C0; count from `configs/pilot.yaml`).
+- **Feasibility:** Go/No-Go checklist and ECE (from TextWorld episodes), written to `pilot_feasibility.json`.
+
+After a non-mock pilot, `pilot_test1_inference.json` includes realistic `tokens_per_sec` for that device/endpoint.
+
+## Multi-model batch (`run_pilot_models.py`)
+
+Run the full pilot once per model id with one command. Each run writes under `data/results/pilot_batch_<UTC>/pilot_<UTC>_<slug>/` and optional `pilot_batch_manifest.json` lists `model_id`, output path, exit code, and wall time. For **L0.3** (local LM Studio spot-checks of several GGUF/MLX candidates), use `--pilot-mode lmstudio --real` and load each model in LM Studio (or point `LM_STUDIO_BASE_URL` at the right server) before the corresponding subprocess. For **L0.4** (RunPod vLLM model-selection benchmark), use `--pilot-mode cuda --real` — this repo loads **one HF repo id per subprocess** (no separate vLLM server swap required). Example:
+
+```bash
+python scripts/run_pilot_models.py --config configs/pilot.yaml --pilot-mode lmstudio --real \
+  --models "id1,id2"
+# or: --models-file path/to/models.yaml  (list of strings or models: [ ... ])
+# Default list: edit configs/models.yaml and omit --models / --models-file to use it
+```
+
+## Tower of Hanoi (manual play)
+
+Interactive sanity check without a model: [`scripts/play_tower_of_hanoi.py`](../scripts/play_tower_of_hanoi.py). See [`docs/scripts.md`](scripts.md).
+
+```bash
+python scripts/play_tower_of_hanoi.py
+```
+
+Defaults: 3 disks, seed 42. Flags: `--num-disks`, `--seed`, `--partial-moves`, `--max-steps`.
