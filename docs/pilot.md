@@ -80,7 +80,16 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/result
 
 Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; default API key is `lm-studio` if unset (`LM_STUDIO_API_KEY`). Requires the `openai` package.
 
-**Thinking mode (C1 only):** This repo forces **model-native thinking ON only for the C1 CoT subcall**; C1 verify, C0, C2, and VC follow-up calls force thinking OFF. To smoke-test that the CoT→Verify handoff parses cleanly on your deployed endpoint/model (including LM Studio), run:
+**Thinking mode (C1 only):** This repo forces **model-native thinking ON only for the C1 CoT subcall**; C1 verify, C0, C2, and VC follow-up calls force thinking OFF.
+
+**LM Studio + Qwen3 checklist** (if CoT/verify lack `` blocks or verify still “thinks” aloud):
+
+1. **Model id** — Use hybrid **`Qwen/Qwen3-4B`** (or LM Studio `qwen/qwen3-4b`), not **`Qwen3-4B-Instruct-2507`** (non-thinking-only snapshot).
+2. **API path** — C1 uses `POST /v1/responses` with `include: message.output_text.logprobs`. If logprobs are empty, the wrapper used to fall back to raw `/v1/completions` (no chat template); check traces for that warning.
+3. **Response shape** — LM Studio often returns `output[].type == "reasoning"` plus `message`, not inline think tags. The wrapper reassembles `` + answer text for the C1 parser.
+4. **`enable_thinking=False`** — On some LM Studio builds, verify still emits a `reasoning` block; toggle **Developer → Inference → Custom Fields → Enable Thinking** off in the app, or set `defaultValue: false` in the model’s `model.yaml` (`enable_thinking` Jinja variable).
+5. **Smoke test** — To check CoT→verify parsing on your endpoint:
+
 
 ```bash
 python scripts/run_c1_handoff_gate.py --config configs/pilot.yaml --pilot-mode lmstudio --real --domain textworld --n-episodes 3 --max-steps 5
