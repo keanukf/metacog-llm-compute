@@ -97,12 +97,29 @@ def c1_step_core(
     # Verify must be single-line action; force thinking OFF.
     gen_kw["enable_thinking"] = False
     final_text, logprobs = model.generate(verify_prompt, logprobs=True, **gen_kw)
-    tle = token_entropy.extract_action_tle_from_response(final_text, logprobs) if logprobs else None
+    verify_text_raw = final_text
+    verify_lp_raw = logprobs
+    action = _normalize_action_line(final_text or "")
     tokens_used = len(logprobs) if logprobs else 0
     tokens_used += len(cot_lp) if cot_lp else 0
     lm_calls = 2
-
-    action = _normalize_action_line(final_text or "")
+    verify_repair_used = False
+    repair_prompt = None
+    repair_text = None
+    repair_lp = None
+    if not action:
+        # Recovery path: if verify echoed instructions or produced non-action text,
+        # issue one minimal direct-action call on the same context.
+        repair_prompt = f"{base_prompt}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
+        repair_text, repair_lp = model.generate(repair_prompt, logprobs=True, **gen_kw)
+        action = _normalize_action_line(repair_text or "")
+        if action:
+            verify_repair_used = True
+            final_text = repair_text or ""
+            logprobs = repair_lp
+        tokens_used += len(repair_lp) if repair_lp else 0
+        lm_calls += 1
+    tle = token_entropy.extract_action_tle_from_response(final_text, logprobs) if logprobs else None
 
     vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
         model,
@@ -131,31 +148,45 @@ def c1_step_core(
 
     lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
     response_full = f"=== C1 CoT ===\n{cot_text}\n\n=== C1 verify ===\n{final_text}"
+    subcalls = [
+        {
+            "kind": "cot",
+            "prompt": cot_prompt,
+            "response": cot_text,
+            "tokens_generated": int(len(cot_lp) if cot_lp else 0),
+            "temperature": float(cot_temp),
+            "max_tokens": int(cot_max_tokens),
+        },
+        {
+            "kind": "verify",
+            "prompt": verify_prompt,
+            "response": verify_text_raw,
+            "tokens_generated": int(len(verify_lp_raw) if verify_lp_raw else 0),
+            "temperature": float(c1_verify_temperature),
+            "max_tokens": int(verify_max_tokens) if verify_max_tokens is not None else None,
+            "stop": list(verify_stop) if isinstance(verify_stop, list) else None,
+            "repair_used": bool(verify_repair_used),
+        },
+    ]
+    if repair_prompt is not None:
+        subcalls.append(
+            {
+                "kind": "verify_repair",
+                "prompt": repair_prompt,
+                "response": repair_text,
+                "tokens_generated": int(len(repair_lp) if repair_lp else 0),
+                "temperature": float(c1_verify_temperature),
+                "max_tokens": int(verify_max_tokens) if verify_max_tokens is not None else None,
+                "stop": list(verify_stop) if isinstance(verify_stop, list) else None,
+            }
+        )
     call_detail = {
         "stage": "C1",
         "draft_action": draft_action,
         "draft_status": draft_status,
         "parse_method": parse_method,
         "draft_reasoning_raw": draft_reasoning_raw,
-        "subcalls": [
-            {
-                "kind": "cot",
-                "prompt": cot_prompt,
-                "response": cot_text,
-                "tokens_generated": int(len(cot_lp) if cot_lp else 0),
-                "temperature": float(cot_temp),
-                "max_tokens": int(cot_max_tokens),
-            },
-            {
-                "kind": "verify",
-                "prompt": verify_prompt,
-                "response": final_text,
-                "tokens_generated": int(len(logprobs) if logprobs else 0),
-                "temperature": float(c1_verify_temperature),
-                "max_tokens": int(verify_max_tokens) if verify_max_tokens is not None else None,
-                "stop": list(verify_stop) if isinstance(verify_stop, list) else None,
-            },
-        ],
+        "subcalls": subcalls,
     }
     return (
         action,
