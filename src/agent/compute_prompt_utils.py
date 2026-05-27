@@ -31,6 +31,10 @@ _CUE_ACTION_CANDIDATE_RE = re.compile(
     rf"(?:is|should\s+be|would\s+be|must\s+be|to\s+use)\s*[:=]?\s*[\"']?\s*"
     rf"({_ACTION_PATTERN})\b"
 )
+_DECISION_ACTION_CANDIDATE_RE = re.compile(
+    rf"(?i)\b(?:need(?:s)?\s+to|should|must|next\s+step\s+is\s+to)\s+"
+    rf"({_ACTION_PATTERN})\b"
+)
 
 
 def xml_block(tag: str, content: str, *, attrs: str = "") -> str:
@@ -147,11 +151,15 @@ def normalize_action_line(text: str) -> str:
     # Fallback for verbose verify outputs: recover the first embedded action candidate.
     # Example: '... correct command should be "go east" ...'
     search_text = stripped if stripped.strip() else (text or "")
-    for rx in (_QUOTED_ACTION_CANDIDATE_RE, _CUE_ACTION_CANDIDATE_RE):
-        m = rx.search(search_text)
-        if not m:
+    for rx in (
+        _QUOTED_ACTION_CANDIDATE_RE,
+        _CUE_ACTION_CANDIDATE_RE,
+        _DECISION_ACTION_CANDIDATE_RE,
+    ):
+        matches = list(rx.finditer(search_text))
+        if not matches:
             continue
-        cand = re.sub(r"\s+", " ", (m.group(1) or "").strip())
+        cand = re.sub(r"\s+", " ", (matches[-1].group(1) or "").strip())
         if _INSTRUCTION_ECHO_RE.match(cand):
             return ""
         return cand

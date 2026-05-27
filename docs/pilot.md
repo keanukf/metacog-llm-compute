@@ -95,6 +95,34 @@ Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; def
 python scripts/run_c1_handoff_gate.py --config configs/pilot.yaml --pilot-mode lmstudio --real --domain textworld --n-episodes 3 --max-steps 5
 ```
 
+### Output handling contract (C1)
+
+For reproducibility and debugging, C1 uses a strict input/output contract:
+
+1. **CoT call (`enable_thinking=true`)**
+   - **Input:** `<task> + <history> + <state>` plus instruction to output one command after `</think>`.
+   - **Preferred CoT format:** include `<command>...</command>` at the end of the think block.
+   - **Output consumed:** `cot_parser.parse_cot_action(...)` extracts:
+     - `<command>...</command>` (preferred),
+     - else first plausible line after `</think>`,
+     - else conservative fallbacks.
+   - **Result:** `draft_action`, `draft_status`, `parse_method`.
+
+2. **Verify call (`enable_thinking=false`)**
+   - **Input:** same base context; optional `<draft_action>` hint when CoT parsed an action.
+   - **Required output:** exactly one action line.
+   - **Parsing:** `normalize_action_line(...)` strips think blocks, rejects instruction echoes (e.g. `Just the command.`), then tries conservative embedded-action recovery.
+   - **Fallback policy (minimal):**
+     - primary = parsed verify action
+     - if verify is non-action and `draft_action` exists: use `draft_action`
+     - no extra multi-stage verify retries
+
+3. **VC follow-up (`enable_thinking=false`)**
+   - **Input:** `<task_context>`, `<output_to_judge>`, and confidence instruction.
+   - **Output consumed:** first line only (`stop=["\\n"]`) parsed as 0-100 confidence.
+
+**TLE semantics:** TLE is computed from verify-call logprobs only. If LM Studio returns text but no logprobs, `tle` is `null` for that step by design. This affects telemetry quality, not action execution.
+
 **Token-level entropy (TLE) with LM Studio:** The usual OpenAI-compat endpoints (`/v1/completions`, `/v1/chat/completions`) do not return logprobs in LM Studio. For `logprobs=True`, the code uses **`POST /v1/responses`** (LM Studio **0.4.x+**) with `include: ["message.output_text.logprobs"]` and `top_logprobs` (see `inference.lmstudio_top_logprobs` in config, default 5). TLE is Shannon entropy over the **renormalized top-k** distribution per token (approximation vs full vocabulary). vLLM/HF still use top-1 logprobs and the legacy binary-entropy path.
 
 **Step-level observability:** With `logging.save_step_traces: true` (default in `configs/pilot.yaml`), each episode writes `trace_{episode_id}.jsonl` next to the episode JSON: one line per env step with full prompt, full raw model output, observations, and `history_snapshot` (including prior `ACTION: ...` lines so the model cannot “forget” what it did). For Langfuse cloud traces, install `pip install ".[tracing]"`, set `tracing.langfuse_enabled: true`, and export `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (optional `LANGFUSE_HOST` for EU). Phase 1/2 runners pass the same options when enabled in YAML.
