@@ -6,7 +6,6 @@ from typing import Any
 
 from src.agent.stages.shared import (
     _SINGLE_LINE_OUTPUT_INSTRUCTION,
-    DEFAULT_C1_VERIFY_INSTRUCTION,
     DEFAULT_VC_FOLLOWUP_INSTRUCTION,
     StepReturn,
     _action_generate_kwargs,
@@ -51,6 +50,7 @@ def c1_step_core(
     cot_instruction = (
         "\n\n"
         "Before answering, briefly reason inside <think>...</think> tags.\n"
+        "Inside <think>, end with <command>YOUR_COMMAND</command>.\n"
         "After </think>, output exactly one final command on a single line."
     )
     cot_prompt = f"{base_prompt}{cot_instruction}"
@@ -75,20 +75,20 @@ def c1_step_core(
     draft_status = str(parsed.get("status") or "unparsed")
     parse_method = str(parsed.get("parse_method") or "none")
     draft_reasoning_raw = str(parsed.get("reasoning_internal") or "")
-    if draft_status == "parsed":
-        verify_instr = (c1_verify_instruction or "").strip() or DEFAULT_C1_VERIFY_INSTRUCTION
-        verify_instruction = (
-            "\n\n"
-            f"<draft_action>{draft_action}</draft_action>\n"
-            f"<draft_status>{draft_status}</draft_status>\n\n"
-            "Verify draft_action against the rules in <task> using <history> and <state> as the source of truth.\n\n"
-            f"{verify_instr.strip()}"
+    verify_parts = [base_prompt]
+    # Keep verify prompt compact: if CoT produced a draft action, provide it as optional hint.
+    if draft_action:
+        verify_parts.append(
+            "\n".join(
+                [
+                    f"<draft_action>{draft_action}</draft_action>",
+                    "If draft_action is valid and useful in this state, return it unchanged.",
+                    "Otherwise, return one corrected command.",
+                ]
+            )
         )
-        verify_prompt = f"{base_prompt}{verify_instruction}"
-    else:
-        # Keep the unparsed branch minimal to reduce instruction-echo failures
-        # like "Just the command." from long verifier prompts.
-        verify_prompt = f"{base_prompt}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
+    verify_parts.append(_SINGLE_LINE_OUTPUT_INSTRUCTION)
+    verify_prompt = "\n\n".join(p for p in verify_parts if p)
     verify_max_tokens = (
         c1_verify_max_tokens if c1_verify_max_tokens is not None else action_max_tokens
     )
@@ -103,31 +103,20 @@ def c1_step_core(
     tokens_used = len(logprobs) if logprobs else 0
     tokens_used += len(cot_lp) if cot_lp else 0
     lm_calls = 2
-    verify_repair_used = False
     verify_fallback_source = None
-    repair_prompt = None
-    repair_text = None
-    repair_lp = None
     if not action:
-        # If CoT already produced a plausible draft action, trust it before extra retries.
         if draft_action:
             action = draft_action
             verify_fallback_source = "draft_action"
-        else:
-            verify_fallback_source = "verify_repair"
-        # Recovery path: if verify echoed instructions or produced non-action text,
-        # issue one minimal direct-action call on the same context.
-        if not action:
-            repair_prompt = f"{base_prompt}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
-            repair_text, repair_lp = model.generate(repair_prompt, logprobs=True, **gen_kw)
-            action = _normalize_action_line(repair_text or "")
-            if action:
-                verify_repair_used = True
-                final_text = repair_text or ""
-                logprobs = repair_lp
-            tokens_used += len(repair_lp) if repair_lp else 0
-            lm_calls += 1
-    tle = token_entropy.extract_action_tle_from_response(final_text, logprobs) if logprobs else None
+    # If executed action came from CoT fallback, verify logprobs no longer correspond to executed action.
+    if verify_fallback_source == "draft_action":
+        tle = None
+    else:
+        tle = (
+            token_entropy.extract_action_tle_from_response(final_text, logprobs)
+            if logprobs
+            else None
+        )
 
     vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
         model,
@@ -173,22 +162,9 @@ def c1_step_core(
             "temperature": float(c1_verify_temperature),
             "max_tokens": int(verify_max_tokens) if verify_max_tokens is not None else None,
             "stop": list(verify_stop) if isinstance(verify_stop, list) else None,
-            "repair_used": bool(verify_repair_used),
             "fallback_source": verify_fallback_source,
         },
     ]
-    if repair_prompt is not None:
-        subcalls.append(
-            {
-                "kind": "verify_repair",
-                "prompt": repair_prompt,
-                "response": repair_text,
-                "tokens_generated": int(len(repair_lp) if repair_lp else 0),
-                "temperature": float(c1_verify_temperature),
-                "max_tokens": int(verify_max_tokens) if verify_max_tokens is not None else None,
-                "stop": list(verify_stop) if isinstance(verify_stop, list) else None,
-            }
-        )
     call_detail = {
         "stage": "C1",
         "draft_action": draft_action,

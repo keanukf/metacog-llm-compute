@@ -318,6 +318,21 @@ def test_c0_recovers_embedded_action_from_verbose_output():
     assert action == "go east"
 
 
+def test_c0_recovers_decision_cue_action_from_verbose_output():
+    class _M:
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            text = (
+                "<think>We are in the bedroom and need to reach the kitchen. "
+                "So we need to go north first.</think>"
+            )
+            return text, ([{"logprob": -0.2}] * 4 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn("C0", vc_mode="none")
+    action, *_rest = step("obs", [], m)
+    assert action == "go north"
+
+
 class _C1TwoCallModel:
     """CoT call then verify (both use logprobs in real C1); optional VC follow-up."""
 
