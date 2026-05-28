@@ -210,7 +210,9 @@ def main() -> None:
     vc_export_format = str(lg.get("vc_export_format", "json")).lower()
     logprob_subdir = str(lg.get("logprob_subdir", "logprobs"))
     vc_subdir = str(lg.get("vc_subdir", "vc"))
-    save_step_traces = bool(lg.get("save_step_traces", False))
+    from src.utils.trace_debug_view import resolve_step_trace_flags
+
+    save_step_traces, _, _, _ = resolve_step_trace_flags(config)
 
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
@@ -493,6 +495,11 @@ def main() -> None:
     )
     with open(run_summary_path, "w") as f:
         json.dump(summary, f, indent=2)
+    from src.utils.run_output_layout import finalize_run_debug_views
+
+    dbg = finalize_run_debug_views(checkpoint_dir, config)
+    if dbg is not None:
+        log(f"Wrote debug views under {dbg}")
     print(json.dumps(summary, indent=2))
 
 

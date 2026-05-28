@@ -44,6 +44,9 @@ logging:
   vc_export_format: json   # json | csv | both — VC follow-up sidecars (*_vc.json)
   vc_subdir: vc
   save_step_traces: false   # true for debugging: trace_{episode_id}.jsonl in checkpoint dir
+  write_debug_views: true   # builds debug_views/ from traces (forces save_step_traces when true)
+  debug_view_head_chars: 800
+  debug_view_tail_chars: 800
 
 tracing:
   langfuse_enabled: true

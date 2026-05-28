@@ -127,6 +127,35 @@ For reproducibility and debugging, C1 uses a strict input/output contract:
 
 **Step-level observability:** With `logging.save_step_traces: true` (default in `configs/pilot.yaml`), each episode writes `trace_{episode_id}.jsonl` next to the episode JSON: one line per env step with full prompt, full raw model output, observations, and `history_snapshot` (including prior `ACTION: ...` lines so the model cannot “forget” what it did). For Langfuse cloud traces, install `pip install ".[tracing]"`, set `tracing.langfuse_enabled: true`, and export `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (optional `LANGFUSE_HOST` for EU). Phase 1/2 runners pass the same options when enabled in YAML.
 
+### Debug views (`debug_views/`)
+
+After each pilot, Phase 1, or Phase 2 run (and after `run_c1_handoff_gate.py`), the repo writes a **compact JSON summary** under `debug_views/` when `logging.write_debug_views: true` (default). This is a human-readable view of the inference pipeline per environment step — **including truncated prompts and responses** — without opening multi-megabyte `trace_*.jsonl` files.
+
+| File | Purpose |
+|------|---------|
+| `debug_views/run_summary.json` | Run-level index: episode list, step counts, parse-method histogram, empty-action count |
+| `debug_views/episode_{episode_id}.json` | Per-episode `steps[]` with `pipeline` blocks |
+
+Each step’s `pipeline` may include:
+
+- **`primary`** — C0 (or combined prompt/response for the step)
+- **`cot`** / **`verify`** — C1 subcalls (truncated prompt/response, `gen` params, verify `parse` metadata such as `parse_method`, `draft_action`, `fallback_source`)
+- **`vc_followup`** — VC confidence follow-up when present
+- **`c2_samples`** / **`c2_vote`** — C2 self-consistency samples and majority-vote summary
+- **`final`** — parsed action, truncated observations, last few `history_tail` lines
+
+Truncation uses `logging.debug_view_head_chars` and `debug_view_tail_chars` (default 800 each): each string is stored as `{head, tail, length, sha256_prefix, truncated}`.
+
+**Machine truth** remains in `trace_*.jsonl`. Debug views are for inspection and RunPod download review.
+
+Regenerate for an existing run folder:
+
+```bash
+python scripts/build_debug_views.py --run-dir data/results/pilot_<UTC>/
+```
+
+If `write_debug_views` is true but `save_step_traces` is false, runners enable step traces automatically (debug views require trace JSONL as input).
+
 - **Test 1:** Real prompts → measured tokens/s, latency, VRAM (CUDA only).
 - **Tests 2–3:** With a real model, TLE and VC are evaluated on **real generations**; in mock mode they use synthetic/static checks.
 - **Test 4:** TextWorld e2e episodes (stub env unless a real game file is wired in).
