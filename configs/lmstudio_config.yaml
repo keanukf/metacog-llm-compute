@@ -34,7 +34,7 @@ pilot:
   # - Back-compat: 1/2/3 means run first N stages (C0/C1/C2)
   # - Explicit: "C0" or ["C0","C2"]
   # - Per-domain: compute_stages_by_domain overrides global compute_stages
-  compute_stages: C1   # e.g. C0 | C0,C2 | 1 | 2 | 3
+  compute_stages: C0   # e.g. C0 | C0,C2 | 1 | 2 | 3
   # compute_stages_by_domain:
   #   textworld: C0
   #   tower_of_hanoi: C0
@@ -51,7 +51,7 @@ test3_verbalized_confidence:
 test4_textworld:
   num_mini_envs: 3
   max_rooms: 5
-  max_env_steps: 5
+  max_env_steps: 10
 
 tower_of_hanoi:
   pilot_episodes: 1
