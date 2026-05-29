@@ -65,9 +65,8 @@ domain_prompts:
   textworld:
     prefix: >
       You are playing a parser-based text adventure (interactive fiction). Base each reply on the
-      latest game text shown below. Output exactly one imperative command on a single line—typical
-      forms include movement (go north), looking (look), and object use (take knife, open door).
-      Do not add narration, quotes around the command, role-play, multiple commands, or reasoning.
+      latest game text shown below. Use only parser commands from the templates below (e.g. go north,
+      look, take key). Do not add narration, quotes, role-play, multiple actions, or reasoning.
       
       Command templates (valid forms; do NOT assume an explicit list of allowed commands will be provided):
       - go [north|south|east|west|up|down]
