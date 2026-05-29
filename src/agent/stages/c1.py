@@ -51,7 +51,7 @@ def c1_step_core(
         "\n\n"
         "Before answering, briefly reason inside <think>...</think> tags.\n"
         "Inside <think>, end with <command>YOUR_COMMAND</command>.\n"
-        "After </think>, output exactly one final command on a single line."
+        "After </think>, write one valid game action on its own line (e.g. go north)."
     )
     cot_prompt = f"{base_prompt}{cot_instruction}"
     act_tok = int(action_max_tokens) if action_max_tokens is not None else 32

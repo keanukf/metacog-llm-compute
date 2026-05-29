@@ -20,9 +20,8 @@ _LEGACY_DEFAULT_PREFIX_BY_DOMAIN: dict[str, str] = {
     "textworld": (
         "You are playing a parser-based text adventure (interactive fiction). "
         "Base each reply on the latest game text shown below. "
-        "Output exactly one imperative command on a single line—typical forms include movement "
-        "(go north), looking (look), and object use (take knife, open door). "
-        "Do not add narration, quotes around the command, role-play, multiple commands, or reasoning.\n\n"
+        "Use only parser commands from the templates below. Typical forms: go north, look, take key. "
+        "Do not add narration, quotes, role-play, multiple actions, or reasoning.\n\n"
         "Command templates (examples of valid forms, not an exhaustive list):\n"
         "- go [north|south|east|west|up|down]\n"
         "- take [object]\n"

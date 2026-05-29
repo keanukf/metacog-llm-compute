@@ -110,8 +110,8 @@ For reproducibility and debugging, C1 uses a strict input/output contract:
 
 2. **Verify call (`enable_thinking=false`)**
    - **Input:** same base context; optional `<draft_action>` hint when CoT parsed an action.
-   - **Required output:** exactly one action line.
-   - **Parsing:** `normalize_action_line(...)` strips think blocks, rejects instruction echoes (e.g. `Just the command.`), then tries conservative embedded-action recovery.
+   - **Required output:** one valid game action on a single line (see `_SINGLE_LINE_OUTPUT_INSTRUCTION` in `shared.py`).
+   - **Parsing:** `normalize_action_line(...)` strips think blocks, rejects instruction echoes (e.g. `Just the command.`, paraphrases of the footer instruction), then tries conservative embedded-action recovery.
    - **Fallback policy (minimal):**
      - primary = parsed verify action
      - if verify is non-action and `draft_action` exists: use `draft_action`

@@ -7,9 +7,13 @@ _TRAILING_PUNCT_RE = re.compile(r"[.!?]+$")
 _INSTRUCTION_ECHO_RE = re.compile(
     r"(?i)^\s*(?:"
     r"just\s+the\s+command"
-    r"|output\s+exactly\s+one\s+command(?:\s+on\s+a\s+single\s+line)?"
+    r"|just\s+the\s+action"
+    r"|just\s+the\s+next\s+action"
+    r"|output\s+exactly\s+one\s+(?:imperative\s+)?command(?:\s+on\s+a\s+single\s+line)?"
     r"|one\s+command\s+on\s+a\s+single\s+line"
     r"|no\s+reasoning,\s*no\s+tags,\s*no\s+preamble"
+    r"|write\s+one\s+valid\s+game\s+action\s+on\s+a\s+single\s+line"
+    r"|do\s+not\s+explain,\s*add\s+xml\s+tags"
     r")\.?\s*$"
 )
 _ACTION_PATTERN = (

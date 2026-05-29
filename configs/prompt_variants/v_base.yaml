@@ -40,7 +40,7 @@ domain_prompts:
       Important: You have an inventory from the start of the game. You can inspect it any time with: inventory.
 
       Rules for your output:
-      - Output exactly ONE imperative command on a single line. No reasoning, no quotes, no narration.
+      - Write one valid game action on a single line (e.g. go north, take key). No explanation or XML tags.
       - If an action produces no visible change, try a different action instead of repeating it.
       - Examples:
         - If you see: "You are in a small room. Exits: north." you can reply: go north

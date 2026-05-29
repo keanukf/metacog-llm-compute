@@ -124,7 +124,7 @@ def test_c1_unparsed_uses_direct_single_line_verify_prompt():
     assert len(m.prompts) >= 2
     verify_prompt = m.prompts[1]
     assert "<draft_action>" not in verify_prompt
-    assert "Output exactly one command on a single line." in verify_prompt
+    assert "Write one valid game action on a single line" in verify_prompt
     assert action == ""
 
 
@@ -531,7 +531,7 @@ def test_single_line_output_instruction_literal_has_single_definition_in_src():
     from pathlib import Path
 
     repo_root = Path(__file__).resolve().parent.parent
-    literal = "Output exactly one command on a single line."
+    literal = "Write one valid game action on a single line"
     matches: list[Path] = []
     for p in (repo_root / "src").rglob("*.py"):
         txt = p.read_text(encoding="utf-8")
