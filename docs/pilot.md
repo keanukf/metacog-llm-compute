@@ -80,15 +80,81 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/result
 
 Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; default API key is `lm-studio` if unset (`LM_STUDIO_API_KEY`). Requires the `openai` package.
 
-**Thinking mode (C1 only):** This repo forces **model-native thinking ON only for the C1 CoT subcall**; C1 verify, C0, C2, and VC follow-up calls force thinking OFF. To smoke-test that the CoT→Verify handoff parses cleanly on your deployed endpoint/model (including LM Studio), run:
+**Thinking mode (C1 only):** This repo forces **model-native thinking ON only for the C1 CoT subcall**; C1 verify, C0, C2, and VC follow-up calls force thinking OFF.
+
+**LM Studio + Qwen3 checklist** (if CoT/verify lack `` blocks or verify still “thinks” aloud):
+
+1. **Model id** — Use hybrid **`Qwen/Qwen3-4B`** (or LM Studio `qwen/qwen3-4b`), not **`Qwen3-4B-Instruct-2507`** (non-thinking-only snapshot).
+2. **API path** — C1 uses `POST /v1/responses` with `include: message.output_text.logprobs`. If logprobs are empty, the wrapper used to fall back to raw `/v1/completions` (no chat template); check traces for that warning.
+3. **Response shape** — LM Studio often returns `output[].type == "reasoning"` plus `message`, not inline think tags. The wrapper reassembles `` + answer text for the C1 parser.
+4. **`enable_thinking=False`** — On some LM Studio builds, verify still emits a `reasoning` block; toggle **Developer → Inference → Custom Fields → Enable Thinking** off in the app, or set `defaultValue: false` in the model’s `model.yaml` (`enable_thinking` Jinja variable).
+5. **Smoke test** — To check CoT→verify parsing on your endpoint:
+
 
 ```bash
 python scripts/run_c1_handoff_gate.py --config configs/pilot.yaml --pilot-mode lmstudio --real --domain textworld --n-episodes 3 --max-steps 5
 ```
 
+### Output handling contract (C1)
+
+For reproducibility and debugging, C1 uses a strict input/output contract:
+
+1. **CoT call (`enable_thinking=true`)**
+   - **Input:** `<task> + <history> + <state>` plus instruction to output one command after `</think>`.
+   - **Preferred CoT format:** include `<command>...</command>` at the end of the think block.
+   - **Output consumed:** `cot_parser.parse_cot_action(...)` extracts:
+     - `<command>...</command>` (preferred),
+     - else first plausible line after `</think>`,
+     - else conservative fallbacks.
+   - **Result:** `draft_action`, `draft_status`, `parse_method`.
+
+2. **Verify call (`enable_thinking=false`)**
+   - **Input:** same base context; optional `<draft_action>` hint when CoT parsed an action.
+   - **Required output:** one valid game action on a single line (see `_SINGLE_LINE_OUTPUT_INSTRUCTION` in `shared.py`).
+   - **Parsing:** `normalize_action_line(...)` strips think blocks, rejects instruction echoes (e.g. `Just the command.`, paraphrases of the footer instruction), then tries conservative embedded-action recovery.
+   - **Fallback policy (minimal):**
+     - primary = parsed verify action
+     - if verify is non-action and `draft_action` exists: use `draft_action`
+     - no extra multi-stage verify retries
+
+3. **VC follow-up (`enable_thinking=false`)**
+   - **Input:** `<task_context>`, `<output_to_judge>`, and confidence instruction.
+   - **Output consumed:** first line only (`stop=["\\n"]`) parsed as 0-100 confidence.
+
+**TLE semantics:** TLE is computed from verify-call logprobs only. If LM Studio returns text but no logprobs, `tle` is `null` for that step by design. This affects telemetry quality, not action execution.
+
 **Token-level entropy (TLE) with LM Studio:** The usual OpenAI-compat endpoints (`/v1/completions`, `/v1/chat/completions`) do not return logprobs in LM Studio. For `logprobs=True`, the code uses **`POST /v1/responses`** (LM Studio **0.4.x+**) with `include: ["message.output_text.logprobs"]` and `top_logprobs` (see `inference.lmstudio_top_logprobs` in config, default 5). TLE is Shannon entropy over the **renormalized top-k** distribution per token (approximation vs full vocabulary). vLLM/HF still use top-1 logprobs and the legacy binary-entropy path.
 
 **Step-level observability:** With `logging.save_step_traces: true` (default in `configs/pilot.yaml`), each episode writes `trace_{episode_id}.jsonl` next to the episode JSON: one line per env step with full prompt, full raw model output, observations, and `history_snapshot` (including prior `ACTION: ...` lines so the model cannot “forget” what it did). For Langfuse cloud traces, install `pip install ".[tracing]"`, set `tracing.langfuse_enabled: true`, and export `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (optional `LANGFUSE_HOST` for EU). Phase 1/2 runners pass the same options when enabled in YAML.
+
+### Debug views (`debug_views/`)
+
+After each pilot, Phase 1, or Phase 2 run (and after `run_c1_handoff_gate.py`), the repo writes a **compact JSON summary** under `debug_views/` when `logging.write_debug_views: true` (default). This is a human-readable view of the inference pipeline per environment step — **including truncated prompts and responses** — without opening multi-megabyte `trace_*.jsonl` files.
+
+| File | Purpose |
+|------|---------|
+| `debug_views/run_summary.json` | Run-level index: episode list, step counts, parse-method histogram, empty-action count |
+| `debug_views/episode_{episode_id}.json` | Per-episode `steps[]` with `pipeline` blocks |
+
+Each step’s `pipeline` may include:
+
+- **`primary`** — C0 (or combined prompt/response for the step)
+- **`cot`** / **`verify`** — C1 subcalls (truncated prompt/response, `gen` params, verify `parse` metadata such as `parse_method`, `draft_action`, `fallback_source`)
+- **`vc_followup`** — VC confidence follow-up when present
+- **`c2_samples`** / **`c2_vote`** — C2 self-consistency samples and majority-vote summary
+- **`final`** — parsed action, truncated observations, last few `history_tail` lines
+
+Truncation uses `logging.debug_view_head_chars` and `debug_view_tail_chars` (default 800 each): each string is stored as `{head, tail, length, sha256_prefix, truncated}`.
+
+**Machine truth** remains in `trace_*.jsonl`. Debug views are for inspection and RunPod download review.
+
+Regenerate for an existing run folder:
+
+```bash
+python scripts/build_debug_views.py --run-dir data/results/pilot_<UTC>/
+```
+
+If `write_debug_views` is true but `save_step_traces` is false, runners enable step traces automatically (debug views require trace JSONL as input).
 
 - **Test 1:** Real prompts → measured tokens/s, latency, VRAM (CUDA only).
 - **Tests 2–3:** With a real model, TLE and VC are evaluated on **real generations**; in mock mode they use synthetic/static checks.

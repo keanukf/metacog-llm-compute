@@ -32,6 +32,18 @@ def parse_cot_action(cot_text: str) -> dict[str, str]:
     if matches:
         reasoning_internal = (matches[-1].group(1) or "").strip()
 
+    cmd_match = re.search(r"<command>\s*([\s\S]*?)\s*</command>", t, flags=re.IGNORECASE)
+    if cmd_match:
+        action = normalize_action_line((cmd_match.group(1) or "").strip())
+        if action and not _looks_like_tag_artifact(action):
+            return {
+                "action": action,
+                "status": "parsed",
+                "parse_method": "lmstudio_command_tag",
+                "reasoning_internal": reasoning_internal,
+                "raw": raw,
+            }
+
     close = t.casefold().rfind("</think>")
     if close >= 0:
         after = t[close + len("</think>") :]
@@ -81,6 +93,17 @@ def parse_cot_action(cot_text: str) -> dict[str, str]:
                 "reasoning_internal": reasoning_internal,
                 "raw": raw,
             }
+
+    # Last resort: recover embedded command mentions from verbose reasoning.
+    embedded = normalize_action_line(raw)
+    if embedded and not _looks_like_tag_artifact(embedded):
+        return {
+            "action": embedded,
+            "status": "parsed",
+            "parse_method": "embedded_action_fallback",
+            "reasoning_internal": reasoning_internal,
+            "raw": raw,
+        }
 
     return {
         "action": "",

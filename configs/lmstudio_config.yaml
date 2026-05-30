@@ -7,7 +7,7 @@
 enabled: true
 
 model:
-  name: "qwen/qwen3-4b-instruct-2507-mlx"
+  name: "qwen/qwen3-4b"
   dtype: int4
 
 inference:
@@ -51,7 +51,7 @@ test3_verbalized_confidence:
 test4_textworld:
   num_mini_envs: 3
   max_rooms: 5
-  max_env_steps: 30
+  max_env_steps: 5
 
 tower_of_hanoi:
   pilot_episodes: 1

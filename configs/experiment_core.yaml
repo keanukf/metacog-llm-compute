@@ -44,6 +44,9 @@ logging:
   vc_export_format: json   # json | csv | both — VC follow-up sidecars (*_vc.json)
   vc_subdir: vc
   save_step_traces: false   # true for debugging: trace_{episode_id}.jsonl in checkpoint dir
+  write_debug_views: true   # builds debug_views/ from traces (forces save_step_traces when true)
+  debug_view_head_chars: 800
+  debug_view_tail_chars: 800
 
 tracing:
   langfuse_enabled: true
@@ -62,9 +65,8 @@ domain_prompts:
   textworld:
     prefix: >
       You are playing a parser-based text adventure (interactive fiction). Base each reply on the
-      latest game text shown below. Output exactly one imperative command on a single line—typical
-      forms include movement (go north), looking (look), and object use (take knife, open door).
-      Do not add narration, quotes around the command, role-play, multiple commands, or reasoning.
+      latest game text shown below. Use only parser commands from the templates below (e.g. go north,
+      look, take key). Do not add narration, quotes, role-play, multiple actions, or reasoning.
       
       Command templates (valid forms; do NOT assume an explicit list of allowed commands will be provided):
       - go [north|south|east|west|up|down]
