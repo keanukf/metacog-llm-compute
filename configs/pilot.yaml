@@ -48,6 +48,10 @@ logging:
   vc_subdir: vc   # sidecar folder for VC follow-up distributions (parallel to logprob_subdir)
   # Per-episode JSONL: full prompt + model response per env step (trace_{episode_id}.jsonl)
   save_step_traces: true
+  # Compact JSON pipeline views (truncated prompts/responses) under debug_views/ — always after run
+  write_debug_views: true
+  debug_view_head_chars: 800
+  debug_view_tail_chars: 800
 
 # Optional Langfuse cloud tracing (install: pip install ".[tracing]"). Use env keys, not committed YAML.
 tracing:

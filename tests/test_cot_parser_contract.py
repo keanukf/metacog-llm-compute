@@ -18,6 +18,20 @@ def test_parse_cot_action_legacy_action_prefix_contract() -> None:
     assert out["action"] == "go north"
 
 
+def test_parse_cot_action_lmstudio_command_tag_contract() -> None:
+    out = parse_cot_action("<think>plan</think>\n<reason>ok</reason>\n<command>go north</command>")
+    assert out["action"] == "go north"
+    assert out["parse_method"] == "lmstudio_command_tag"
+
+
+def test_parse_cot_action_embedded_action_fallback_contract() -> None:
+    out = parse_cot_action(
+        '<think>analysis... the correct command should be "go east" for this state.</think>'
+    )
+    assert out["action"] == "go east"
+    assert out["parse_method"] == "embedded_action_fallback"
+
+
 def test_parse_cot_action_unparsed_contract() -> None:
     out = parse_cot_action("<think>only reasoning</think>")
     assert out["status"] == "unparsed"

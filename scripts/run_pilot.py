@@ -67,10 +67,10 @@ from src.utils.step_config import resolve_step_fn_kwargs
 
 def _step_trace_settings(config: dict) -> tuple[bool, Any]:
     """(save_step_traces, trace_hook_or_none). Hook is None unless tracing.langfuse_enabled."""
-    lg = config.get("logging") or {}
-    save = bool(lg.get("save_step_traces", False))
+    from src.utils.trace_debug_view import resolve_step_trace_flags
     from src.utils.tracing import optional_trace_hook_from_config
 
+    save, _, _, _ = resolve_step_trace_flags(config)
     hook = optional_trace_hook_from_config(config, dotenv_info=_DOTENV_INFO)
     return save, hook
 
@@ -1299,6 +1299,12 @@ def _run_pilot_from_args(args: argparse.Namespace) -> None:
             f"Feasibility done — go={feasibility.get('go')} "
             f"passed={feasibility.get('passed')}/{feasibility.get('total')}"
         )
+
+    from src.utils.run_output_layout import finalize_run_debug_views
+
+    dbg = finalize_run_debug_views(output_dir, config)
+    if dbg is not None:
+        log(f"Wrote debug views under {dbg}")
 
     log(f"Pilot done — wall {format_run_elapsed(time.perf_counter() - t_pilot0)} total")
 

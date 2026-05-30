@@ -291,6 +291,12 @@ def main() -> None:
     print(f"Wrote {out_md}")
     print(f"Wrote {trace_path}")
 
+    from src.utils.run_output_layout import finalize_run_debug_views
+
+    dbg = finalize_run_debug_views(output_dir, config)
+    if dbg is not None:
+        print(f"Wrote debug views under {dbg}")
+
 
 if __name__ == "__main__":
     t0 = time.perf_counter()

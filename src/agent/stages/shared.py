@@ -27,12 +27,13 @@ DEFAULT_VC_FOLLOWUP_INSTRUCTION = (
 )
 
 _SINGLE_LINE_OUTPUT_INSTRUCTION: str = (
-    "Output exactly one command on a single line. No reasoning, no tags, no preamble."
+    "Write one valid game action on a single line (examples: go north, take key, inventory). "
+    "Do not explain, add XML tags, or repeat these instructions."
 )
 
 # Shared generation instruction body (reused to keep C0/C1 parity stable over time).
 _C0_GENERATION_INSTRUCTION: str = (
-    "Generate one command directly from <task>, <history>, and <state>."
+    "Choose one valid game action from <task>, <history>, and <state>."
 )
 
 DEFAULT_C1_VERIFY_INSTRUCTION = (
@@ -524,6 +525,8 @@ def _run_vc_followup(
         "max_tokens": int(followup_max_tokens),
         "temperature": float(followup_temperature),
         "enable_thinking": False,
+        # VC prompt asks for a single scalar (0-100). Cut trailing explanations early.
+        "stop": ["\n"],
     }
     if request_logprobs:
         text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
