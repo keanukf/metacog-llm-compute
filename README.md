@@ -34,13 +34,22 @@ Run scripts from the **repository root**.
 
 Requires **Python 3.11+** (`pyproject.toml`; CI uses 3.11).
 
-**Local development / CI:**
+**Local development / CI (macOS or Linux, no vLLM):**
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-**RunPod / cloud GPU (pinned):**
+**Local Mac + LM Studio pilot** (optional; adds inference client deps):
+
+```bash
+pip install -r requirements-local.txt
+# or: pip install lmstudio httpx torch transformers accelerate
+```
+
+Do **not** expect `vllm` to install on macOS — use `--pilot-mode lmstudio` or `mock` locally; vLLM is for RunPod (`--pilot-mode cuda`).
+
+**RunPod / cloud GPU (pinned, includes vLLM on Linux):**
 
 ```bash
 pip install -r requirements.txt

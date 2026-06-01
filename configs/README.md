@@ -23,7 +23,7 @@ YAML configs live here. **Do not commit secrets** — use environment variables 
 | `inference` | `lmstudio_base_url`, `lmstudio_api_key`, `lmstudio_top_logprobs` | LM Studio: `reasoning.effort: none` (off) / `low` (on) on `/v1/responses` |
 | `pilot` | `instances`, `compute_stages`, `runs_per_instance` | `compute_stages`: `3` or `C0` or `C0,C2` |
 | `logging` | `save_logprob_distributions`, `save_step_traces`, `logprob_subdir`, `vc_subdir` | Sidecar volume; off for long runs unless needed |
-| `tracing` | `langfuse_enabled` | Requires `pip install ".[tracing]"` + env keys |
+| `tracing` | `langfuse_enabled` | Requires `pip install ".[tracing]"` (`langfuse>=3`) + env keys |
 | `c1` / `c2` | `cot_*`, `verify_*`, `n_samples` | C1 CoT+verify; C2 self-consistency N |
 | `domain_prompts` | `textworld`, `tower_of_hanoi` | Per-domain action prompts, stops, and optional `cot_max_tokens` (overrides `c1.cot_max_tokens`) |
 | `vc` | `followup_max_tokens`, … | VC follow-up call sizing |

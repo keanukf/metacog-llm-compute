@@ -46,7 +46,9 @@ python scripts/validate_pilot_outputs.py --pilot-dir data/results/pilot_<UTC>/
 
 ## Pilot 1 — LM Studio (lmstudio)
 
-On a Mac or LAN host with LM Studio running, use the responses API path (required for TLE token logprobs):
+On a Mac or LAN host with LM Studio running, use the responses API path (required for TLE token logprobs).
+
+**macOS:** Do not install `vllm` locally (`pip install -r requirements.txt` skips it on Darwin). Use `pip install -r requirements-local.txt` or `pip install -e ".[dev]"` plus the packages below.
 
 ```bash
 pip install lmstudio httpx
@@ -128,7 +130,17 @@ For reproducibility and debugging, C1 uses a strict input/output contract:
 
 **Token-level entropy (TLE) with LM Studio:** The usual OpenAI-compat endpoints (`/v1/completions`, `/v1/chat/completions`) do not return logprobs in LM Studio. For `logprobs=True`, the code uses **`POST /v1/responses`** (LM Studio **0.4.x+**) with `include: ["message.output_text.logprobs"]` and `top_logprobs` (see `inference.lmstudio_top_logprobs` in config, default 5). TLE is Shannon entropy over the **renormalized top-k** distribution per token (approximation vs full vocabulary). vLLM/HF still use top-1 logprobs and the legacy binary-entropy path.
 
-**Step-level observability:** With `logging.save_step_traces: true` (default in `configs/pilot.yaml`), each episode writes `trace_{episode_id}.jsonl` next to the episode JSON: one line per env step with full prompt, full raw model output, observations, and `history_snapshot` (including prior `ACTION: ...` lines so the model cannot “forget” what it did). For Langfuse cloud traces, install `pip install ".[tracing]"`, set `tracing.langfuse_enabled: true`, and export `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (optional `LANGFUSE_HOST` for EU). Phase 1/2 runners pass the same options when enabled in YAML.
+**Step-level observability:** With `logging.save_step_traces: true` (default in `configs/pilot.yaml`), each episode writes `trace_{episode_id}.jsonl` next to the episode JSON: one line per env step with full prompt, full raw model output, observations, and `history_snapshot` (including prior `ACTION: ...` lines so the model cannot “forget” what it did). For Langfuse cloud traces, install `pip install ".[tracing]"` (requires `langfuse>=3`), set `tracing.langfuse_enabled: true`, and export `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (optional `LANGFUSE_HOST` for EU). Phase 1/2 runners pass the same options when enabled in YAML.
+
+**Langfuse observation tree (per env step):**
+
+| Stage | Hierarchy under `step_{n}` |
+|-------|----------------------------|
+| C0 | `action_{n}_C0` → optional `vc_followup_{n}` (sibling under step when VC enabled) |
+| C1 | `cot_{n}_C1` → `verify_{n}_C1` → `vc_followup_{n}` (linear chain; VC only when follow-up runs) |
+| C2 | `sample_{i}_{n}_C2` siblings under step → optional `vc_followup_{n}` under step |
+
+Trace-level fields use `session_id`, `tags`, and `trace_name` (episode id). Step timing lives on the step span; TLE is a numeric **score** on the verify (or action) generation, VC on the VC generation, correctness on the step span. Token counts and temperatures are sent as `usage_details` / `model_parameters` on each generation, not only in metadata.
 
 ### Debug views (`debug_views/`)
 
