@@ -25,7 +25,7 @@ YAML configs live here. **Do not commit secrets** — use environment variables 
 | `logging` | `save_logprob_distributions`, `save_step_traces`, `logprob_subdir`, `vc_subdir` | Sidecar volume; off for long runs unless needed |
 | `tracing` | `langfuse_enabled` | Requires `pip install ".[tracing]"` + env keys |
 | `c1` / `c2` | `cot_*`, `verify_*`, `n_samples` | C1 CoT+verify; C2 self-consistency N |
-| `domain_prompts` | `textworld`, `tower_of_hanoi` | Per-domain action prompts and stops |
+| `domain_prompts` | `textworld`, `tower_of_hanoi` | Per-domain action prompts, stops, and optional `cot_max_tokens` (overrides `c1.cot_max_tokens`) |
 | `vc` | `followup_max_tokens`, … | VC follow-up call sizing |
 | `episode` | `max_steps_per_episode` | Agent cap per episode (separate from game gen limit) |
 

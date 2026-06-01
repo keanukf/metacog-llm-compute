@@ -82,6 +82,7 @@ domain_prompts:
     action_max_tokens: 32
     action_stop: ["\n"]
     include_admissible_commands: false
+    cot_max_tokens: 1024
   tower_of_hanoi:
     prefix: >
       You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty
@@ -92,6 +93,7 @@ domain_prompts:
       - No disk numbers. No explanation. Single line only.
     action_max_tokens: 32
     include_valid_moves: false
+    cot_max_tokens: 2048
 
 # Verbalized confidence: separate short follow-up call (recommended) or parse from action text (inline).
 vc:

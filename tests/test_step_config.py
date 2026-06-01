@@ -90,6 +90,30 @@ def test_textworld_disable_action_stop():
     assert k["action_stop"] is None
 
 
+def test_domain_cot_max_tokens_overrides_global_c1() -> None:
+    cfg = {
+        "inference": {"max_tokens": 128, "temperature": 0.2},
+        "vc": {"mode": "inline"},
+        "c1": {"cot_max_tokens": 1024},
+        "domain_prompts": {
+            "textworld": {"prefix": "tw", "cot_max_tokens": 512},
+            "tower_of_hanoi": {"prefix": "toh", "cot_max_tokens": 2048},
+        },
+    }
+    assert resolve_step_fn_kwargs(cfg, "textworld")["c1_cot_max_tokens"] == 512
+    assert resolve_step_fn_kwargs(cfg, "tower_of_hanoi")["c1_cot_max_tokens"] == 2048
+
+
+def test_domain_without_cot_max_tokens_uses_global_c1() -> None:
+    cfg = {
+        "inference": {"max_tokens": 128, "temperature": 0.2},
+        "vc": {"mode": "inline"},
+        "c1": {"cot_max_tokens": 1024},
+        "domain_prompts": {"tower_of_hanoi": {"prefix": "x"}},
+    }
+    assert resolve_step_fn_kwargs(cfg, "tower_of_hanoi")["c1_cot_max_tokens"] == 1024
+
+
 def test_c1_verify_knobs_from_yaml() -> None:
     cfg = {
         "inference": {"max_tokens": 128, "temperature": 0.2},
