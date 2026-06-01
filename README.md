@@ -73,8 +73,8 @@ python scripts/run_pilot.py --config configs/pilot.yaml --pilot-mode mock --outp
 | | **Unit tests (pytest)** | **Pilot (`run_pilot.py`)** |
 |---|-------------------------|----------------------------|
 | **Purpose** | Code and interfaces (signals, agent loop, logging) | Setup and hardware in a small end-to-end run |
-| **Runs** | Mocks, no GPU | Tests 1–6; `--pilot-mode` mock / hf / cuda / lmstudio |
-| **When** | After every change; in CI | Mock: anywhere; hf: Mac MPS; cuda: RunPod; lmstudio: local API |
+| **Runs** | Mocks, no GPU | Tests 1–6; `--pilot-mode` mock / cuda / lmstudio |
+| **When** | After every change; in CI | Mock: anywhere; lmstudio: Mac/local API; cuda: RunPod vLLM |
 | **Output** | Pass/fail | `pilot_test*.json`, `pilot_feasibility.json`, episode JSONs |
 
 ## Test suite (summary)
@@ -92,7 +92,7 @@ Fixtures: `tests/conftest.py`. Pilot counterparts: [`docs/pilot.md`](docs/pilot.
 
 ## Implementation snapshot
 
-- **Model:** `src/utils/model_wrapper.py` — `VLLMWrapper`, `HFWrapper`, `LMStudioWrapper`
+- **Model:** `src/utils/inference/` — `VLLMWrapper`, `LMStudioWrapper` (responses-only); `model_wrapper.py` re-exports
 - **Pilot:** `scripts/run_pilot.py` → orchestration in `src/pilot/`; config in `configs/pilot.yaml`
 - **Agent:** `src/agent/base_agent.py` facade; compute stages in `src/agent/stages/` (`c0`, `c1`, `c2`; `compute_stages.py` facade)
 - **Phase 1/2:** `scripts/run_phase1.py`, `scripts/run_phase2.py` (checkpointing; use after pilot)

@@ -14,6 +14,7 @@ from src.agent.stages.shared import (
     _resolve_vc,
 )
 from src.signals import token_entropy
+from src.utils.inference.lmstudio.wrapper import collect_step_inference_diagnostics
 
 
 def c0_step_core(
@@ -74,7 +75,9 @@ def c0_step_core(
     lm_calls += extra_calls
 
     lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
-    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, prompt, text, None)
+    diag = collect_step_inference_diagnostics(model)
+    call_detail = {"stage": "C0", "inference_diagnostics": diag} if diag else None
+    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, prompt, text, call_detail)
 
 
 def c0_step(
