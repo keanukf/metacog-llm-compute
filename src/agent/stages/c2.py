@@ -18,6 +18,7 @@ from src.agent.stages.shared import (
     _seeded_rng,
 )
 from src.signals import token_entropy, verbalized_confidence
+from src.utils.inference.lmstudio.wrapper import attach_lmstudio_diagnostics_to_subcalls
 
 
 def majority_vote(
@@ -216,6 +217,25 @@ def c2_step_core(
         for s in samples
     ]
     response_full = "\n\n".join(sample_blocks)
+    subcalls = [
+        {
+            "kind": "sample",
+            "sample_index": int(s.get("sample_index", 0)),
+            "prompt": s.get("prompt") or "",
+            "response": s.get("response") or "",
+            "raw_first_line": s.get("raw_first_line") or "",
+            "action_exec": s.get("action_exec") or "",
+            "action_normalized": s.get("vote_key") or "",
+            "tokens_generated": int(s.get("tokens_generated") or 0),
+            "tle": s.get("tle"),
+            "mean_logprob": s.get("mean_logprob"),
+            "is_winner": bool(
+                winner_index is not None and int(s.get("sample_index") or 0) == int(winner_index)
+            ),
+        }
+        for s in samples
+    ]
+    attach_lmstudio_diagnostics_to_subcalls(model, subcalls)
     call_detail = {
         "stage": "C2",
         "method": "self_consistency_majority_vote",
@@ -228,25 +248,7 @@ def c2_step_core(
         "unique_actions": int(unique_actions),
         "winner_raw_first_line": winner_raw_first,
         "winner_mean_logprob": winner_mean_logprob,
-        "subcalls": [
-            {
-                "kind": "sample",
-                "sample_index": int(s.get("sample_index", 0)),
-                "prompt": s.get("prompt") or "",
-                "response": s.get("response") or "",
-                "raw_first_line": s.get("raw_first_line") or "",
-                "action_exec": s.get("action_exec") or "",
-                "action_normalized": s.get("vote_key") or "",
-                "tokens_generated": int(s.get("tokens_generated") or 0),
-                "tle": s.get("tle"),
-                "mean_logprob": s.get("mean_logprob"),
-                "is_winner": bool(
-                    winner_index is not None
-                    and int(s.get("sample_index") or 0) == int(winner_index)
-                ),
-            }
-            for s in samples
-        ],
+        "subcalls": subcalls,
     }
     return (
         winner_action_exec,

@@ -15,6 +15,7 @@ from src.agent.stages.shared import (
     _resolve_vc,
 )
 from src.signals import token_entropy
+from src.utils.inference.lmstudio.wrapper import attach_lmstudio_diagnostics_to_subcalls
 
 
 def c1_step_core(
@@ -145,7 +146,7 @@ def c1_step_core(
 
     lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
     response_full = f"=== C1 CoT ===\n{cot_text}\n\n=== C1 verify ===\n{final_text}"
-    subcalls = [
+    subcalls: list[dict[str, Any]] = [
         {
             "kind": "cot",
             "prompt": cot_prompt,
@@ -165,6 +166,7 @@ def c1_step_core(
             "fallback_source": verify_fallback_source,
         },
     ]
+    attach_lmstudio_diagnostics_to_subcalls(model, subcalls)
     call_detail = {
         "stage": "C1",
         "draft_action": draft_action,

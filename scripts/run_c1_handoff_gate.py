@@ -73,12 +73,12 @@ def _create_real_model(config: dict, pilot_mode: str) -> Any:
     dtype = model_cfg.get("dtype", "float16")
     from src.utils.model_wrapper import create_wrapper
 
-    if pilot_mode == "hf":
-        return create_wrapper(backend="hf", model_name=model_name, dtype=dtype, device="mps")
+    if pilot_mode in ("hf", "m1"):
+        raise RuntimeError('pilot_mode "hf"/"m1" was removed; use "lmstudio" or "cuda".')
     if pilot_mode == "cuda":
         inf = config.get("inference", {}) or {}
         backend = str(inf.get("backend", "vllm") or "vllm").strip().lower()
-        if backend not in {"vllm", "hf"}:
+        if backend != "vllm":
             backend = "vllm"
         max_model_len = inf.get("max_model_len") or inf.get("vllm_max_model_len") or 8192
         extra = {
@@ -178,7 +178,7 @@ def main() -> None:
     ap.add_argument(
         "--no-timestamp-run", action="store_true", help="Write directly under --output-dir"
     )
-    ap.add_argument("--pilot-mode", default="mock", help="mock|hf|cuda|lmstudio")
+    ap.add_argument("--pilot-mode", default="mock", help="mock|cuda|lmstudio")
     ap.add_argument("--real", action="store_true", help="Require real model (fail if not)")
     ap.add_argument("--domain", choices=["textworld", "tower_of_hanoi"], default="textworld")
     ap.add_argument(

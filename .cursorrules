@@ -18,8 +18,8 @@ Thesis codebase for **metacognitive effort allocation in sequential LM agents**:
 ## Key conventions
 
 1. **Paths:** Repo root is the CWD for scripts. Results go under `data/results/` (or `--output-dir`). Task instances (e.g. TextWorld games) in `data/tasks/`.
-2. **Pilot modes:** `mock` (default), `hf` (HuggingFace on Apple Silicon / MPS), `cuda` (vLLM on GPU), `lmstudio` (LM Studio local OpenAI API). CLI accepts deprecated alias `m1` → `hf`. Use `--real` to auto-detect.
-3. **Model wrapper:** `src/utils/model_wrapper.py` — `create_wrapper(backend, model_name, dtype, ...)`; backends: `hf`, `vllm`. Use wrapper for all inference in pilot/phase scripts.
+2. **Pilot modes:** `mock` (default), `cuda` (vLLM on GPU), `lmstudio` (LM Studio local server, responses-only for TLE). Use `--real` to auto-detect cuda vs lmstudio.
+3. **Model wrapper:** `src/utils/inference/` (`create_wrapper`); backends: `vllm`, `lmstudio`. `model_wrapper.py` re-exports for compatibility.
 4. **Signals:** TLE in `src/signals/token_entropy.py`, VC parsing in `src/signals/verbalized_confidence.py`. Keep signal interfaces stable; tests assert on structure and behaviour.
 5. **Dependencies:** Prefer versions in `requirements.txt` and `pyproject.toml`. Optional extras: `dev`, `full`. Don’t add heavy deps without aligning with blueprints/README.
 
