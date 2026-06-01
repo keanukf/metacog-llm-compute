@@ -119,6 +119,9 @@ def compact_subcall(
     for key in ("fallback_source", "raw_first_line", "action_exec", "action_normalized"):
         if sc.get(key) not in (None, ""):
             base[key] = sc[key]
+    lmstudio = sc.get("lmstudio")
+    if isinstance(lmstudio, dict) and lmstudio:
+        base["lmstudio"] = lmstudio
     return base
 
 
@@ -248,6 +251,10 @@ def compact_step_from_trace(
                 vote_summary[key] = call_detail[key]
         if vote_summary:
             pipeline["c2_vote"] = vote_summary
+
+    inf_diag = call_detail.get("inference_diagnostics")
+    if isinstance(inf_diag, list) and inf_diag:
+        pipeline["inference_diagnostics"] = inf_diag
 
     pipeline["final"] = {
         "action_parsed": row.get("action_parsed"),

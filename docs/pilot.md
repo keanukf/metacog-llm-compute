@@ -9,9 +9,8 @@ The pilot runs Tests 1–6 in sequence and writes benchmark and calibration outp
 | Mode | Flag | Hardware | Backend | Use case |
 |------|------|----------|---------|----------|
 | **Pilot 0** | `--pilot-mode mock` (default) | None | Mock | Quick local sanity; CI; no model download. |
-| **Pilot 1** | `--pilot-mode hf` | Mac M1/M2 (Apple Silicon) | HuggingFace + MPS | Test full pipeline locally before buying GPU. |
-| **Pilot 2** | `--pilot-mode cuda` | NVIDIA GPU (e.g. RunPod) | vLLM (or HF) | Validate GPU setup and throughput before Phase 1/2. |
-| **Pilot 3** | `--pilot-mode lmstudio` | LM Studio host (LAN or localhost) | OpenAI-compatible HTTP | Local or LAN LM Studio (`LM_STUDIO_BASE_URL`, default `http://localhost:1234/v1`). |
+| **Pilot 1** | `--pilot-mode lmstudio` | LM Studio host (LAN or localhost) | `POST /v1/responses` (TLE logprobs) | Local Mac or LAN LM Studio (`LM_STUDIO_BASE_URL`, default `http://localhost:1234/v1`). |
+| **Pilot 2** | `--pilot-mode cuda` | NVIDIA GPU (e.g. RunPod) | vLLM | Validate GPU setup and throughput before Phase 1/2. |
 
 ## Pilot 0 — Mock (default)
 
@@ -45,17 +44,16 @@ Optional validation:
 python scripts/validate_pilot_outputs.py --pilot-dir data/results/pilot_<UTC>/
 ```
 
-## Pilot 1 — HuggingFace on Apple Silicon (hf)
+## Pilot 1 — LM Studio (lmstudio)
 
-On a Mac with M1/M2/M3, run the same pipeline with the real model via HuggingFace on Metal (MPS). No CUDA or vLLM required:
+On a Mac or LAN host with LM Studio running, use the responses API path (required for TLE token logprobs):
 
 ```bash
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode hf
+pip install lmstudio httpx
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode lmstudio
 ```
 
-`--pilot-mode m1` is accepted as a deprecated alias for `hf`. For the same machine, **lmstudio** is often faster because inference runs inside LM Studio instead of raw Transformers.
-
-Requires `transformers`, `torch` with MPS support, and enough RAM/Unified Memory for the model (e.g. Qwen2.5-3B). Slower than Pilot 2 but catches setup and integration errors before spending on cloud GPU.
+`--pilot-mode hf` / `m1` were removed; use **lmstudio** locally. Step traces and `debug_views/` include per-call `lmstudio` diagnostics (`route`, `status`, logprobs presence).
 
 ## Pilot 2 — Real CUDA GPU
 
@@ -87,8 +85,13 @@ Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; def
 1. **Model id** — Use hybrid **`Qwen/Qwen3-4B`** (or LM Studio `qwen/qwen3-4b`), not **`Qwen3-4B-Instruct-2507`** (non-thinking-only snapshot).
 2. **API path** — C1 uses `POST /v1/responses` with `include: message.output_text.logprobs`. If logprobs are empty, the wrapper used to fall back to raw `/v1/completions` (no chat template); check traces for that warning.
 3. **Response shape** — LM Studio often returns `output[].type == "reasoning"` plus `message`, not inline think tags. The wrapper reassembles `` + answer text for the C1 parser.
-4. **`enable_thinking=False`** — On some LM Studio builds, verify still emits a `reasoning` block; toggle **Developer → Inference → Custom Fields → Enable Thinking** off in the app, or set `defaultValue: false` in the model’s `model.yaml` (`enable_thinking` Jinja variable).
-5. **Smoke test** — To check CoT→verify parsing on your endpoint:
+4. **Thinking off (API)** — The wrapper sends:
+   - `reasoning: { "effort": "none" }` on the wire (Open Responses; LM Studio maps to model reasoning **off**)
+   - `enable_thinking: false` and `chat_template_kwargs: { "enable_thinking": false }`
+   For C1 CoT (`enable_thinking=true`): `reasoning.effort: "low"` (not `"medium"` — Qwen3 dev log warns that only model **on**/**off** exist and coerces `medium` → `on`). Do not send `"on"`/`"off"` in JSON; the HTTP API rejects them.
+   Probe: `python scripts/probe_lmstudio_thinking_toggle.py --model qwen/qwen3-4b`
+5. **GUI fallback** — **Developer → Inference → Custom Fields → Enable Thinking** off, or `defaultValue: false` in `model.yaml` for `enableThinking`.
+6. **Smoke test** — To check CoT→verify parsing on your endpoint:
 
 
 ```bash

@@ -19,7 +19,6 @@ import json
 import os
 import sys
 import time
-import warnings
 from pathlib import Path
 from typing import Any
 
@@ -100,19 +99,17 @@ def _only_steps_in_order(selected: frozenset[str]) -> list[str]:
 
 
 def parse_pilot_mode_arg(value: str) -> str:
-    """CLI pilot mode: mock | hf | m1 (deprecated alias for hf) | cuda | lmstudio."""
+    """CLI pilot mode: mock | cuda | lmstudio (hf/m1 removed — use lmstudio locally)."""
     v = (value or "mock").lower().strip()
-    if v == "m1":
-        warnings.warn(
-            '--pilot-mode m1 is deprecated; use "hf" (HuggingFace + MPS on Apple Silicon).',
-            DeprecationWarning,
-            stacklevel=2,
+    if v in ("hf", "m1"):
+        raise argparse.ArgumentTypeError(
+            f'pilot mode {value!r} was removed; use "lmstudio" (LM Studio local server) '
+            'or "cuda" (vLLM on GPU).'
         )
-        v = "hf"
-    allowed = frozenset({"mock", "hf", "cuda", "lmstudio"})
+    allowed = frozenset({"mock", "cuda", "lmstudio"})
     if v not in allowed:
         raise argparse.ArgumentTypeError(
-            f"invalid pilot mode {value!r}; expected one of: mock, hf, m1, cuda, lmstudio"
+            f"invalid pilot mode {value!r}; expected one of: mock, cuda, lmstudio"
         )
     return v
 
@@ -120,8 +117,7 @@ def parse_pilot_mode_arg(value: str) -> str:
 def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str | None]:
     """
     Create real model wrapper for the given pilot mode.
-    mock -> None; hf -> HuggingFace on Apple Silicon (MPS); cuda -> vLLM (or inference.backend);
-    lmstudio -> LM Studio local server (OpenAI-compatible HTTP).
+    mock -> None; cuda -> vLLM (or inference.backend); lmstudio -> LM Studio (responses-only HTTP).
     """
     if pilot_mode == "mock":
         return None, None
@@ -133,10 +129,6 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
     try:
         from src.utils.model_wrapper import create_wrapper
 
-        if pilot_mode == "hf":
-            return create_wrapper(
-                backend="hf", model_name=model_name, dtype=dtype, device="mps"
-            ), None
         if pilot_mode == "cuda":
             backend = (
                 str(config.get("inference", {}).get("backend", "vllm") or "vllm").strip().lower()
@@ -144,7 +136,7 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
             # The YAML config is shared across local (Apple/MLX) and cloud (CUDA/vLLM) runs.
             # For RunPod smoke tests, cuda must never accidentally select a non-CUDA backend
             # like "mlx" — that would create a base ModelWrapper and fail at runtime.
-            if backend not in {"vllm", "hf"}:
+            if backend != "vllm":
                 backend = "vllm"
             inf = config.get("inference", {}) or {}
             # vLLM will default to the model's advertised max_seq_len. Some models (e.g. Qwen3)
@@ -1146,7 +1138,7 @@ def _build_feasibility_report(
 
 
 def _resolve_pilot_mode(args) -> str:
-    """Resolve pilot mode. --real auto-detects hf vs cuda when mode is mock; lmstudio stays explicit."""
+    """Resolve pilot mode. --real auto-detects cuda vs lmstudio when mode is mock."""
     raw = getattr(args, "pilot_mode", None) or os.environ.get("PILOT_MODE") or "mock"
     mode = parse_pilot_mode_arg(raw) if isinstance(raw, str) else "mock"
     if args.real or os.environ.get("USE_REAL_MODEL") == "1":
@@ -1156,13 +1148,10 @@ def _resolve_pilot_mode(args) -> str:
 
                 if torch.cuda.is_available():
                     mode = "cuda"
-                elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-                    mode = "hf"
                 else:
-                    mode = "mock"
-                    print("Warning: --real requested but no CUDA/MPS found; falling back to mock.")
+                    mode = "lmstudio"
             except Exception:
-                mode = "mock"
+                mode = "lmstudio"
     return mode
 
 
@@ -1311,7 +1300,7 @@ def _run_pilot_from_args(args: argparse.Namespace) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run pilot study (Tests 1-6). mock | hf (HF+MPS) | cuda | lmstudio (OpenAI API)."
+        description="Run pilot study (Tests 1-6). mock | cuda (vLLM) | lmstudio (LM Studio server)."
     )
     parser.add_argument("--config", default="configs/pilot.yaml", help="Pilot config YAML")
     parser.add_argument(
@@ -1332,12 +1321,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--pilot-mode",
         type=parse_pilot_mode_arg,
         default="mock",
-        help="mock | hf (HuggingFace+MPS) | m1 (deprecated=hf) | cuda | lmstudio (LM Studio server).",
+        help="mock | cuda (vLLM+CUDA) | lmstudio (LM Studio local server).",
     )
     parser.add_argument(
         "--real",
         action="store_true",
-        help="Use real model; auto-detect hf vs cuda if --pilot-mode is mock",
+        help="Use real model; auto-detect cuda vs lmstudio if --pilot-mode is mock",
     )
     parser.add_argument(
         "--only",
