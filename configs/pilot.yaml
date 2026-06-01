@@ -62,7 +62,7 @@ tracing:
 # verify_temperature defaults to 0.0 to make the verify distribution (and thus TLE) stable.
 c1:
   cot_temperature: 0.5
-  cot_max_tokens: 512
+  cot_max_tokens: 1024
   verify_temperature: 0.0
   # verify_max_tokens: 48
   # verify_stop: ["\n"]

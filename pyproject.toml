@@ -25,12 +25,15 @@ dev = [
     "pre-commit>=4.0.0",
     "types-PyYAML>=6.0",
     "pandas-stubs>=2.0",
+    # Agent stages import LM Studio inference at load time (responses client uses httpx).
+    "httpx>=0.27.0",
 ]
 full = [
     "vllm==0.19.1",
     "transformers==4.56.2",
     "torch==2.4.0",
-    "openai>=1.0.0",
+    "lmstudio>=1.5.0",
+    "httpx>=0.27.0",
     "accelerate",
     "textworld",
 ]
@@ -85,6 +88,14 @@ disable_error_code = ["import-untyped", "import-not-found", "unused-ignore"]
 module = "src.utils.model_wrapper"
 ignore_missing_imports = true
 disable_error_code = ["unused-ignore", "arg-type", "import-not-found"]
+
+[[tool.mypy.overrides]]
+module = [
+    "src.utils.inference.vllm",
+    "src.utils.inference.lmstudio.responses",
+]
+ignore_missing_imports = true
+disable_error_code = ["unused-ignore", "import-not-found", "no-any-return"]
 
 [[tool.mypy.overrides]]
 module = "src.utils.tracing"

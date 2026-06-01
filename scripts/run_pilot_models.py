@@ -32,7 +32,6 @@ import re
 import subprocess
 import sys
 import time
-import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -47,17 +46,14 @@ if str(REPO_ROOT) not in sys.path:
 def parse_pilot_mode_arg(value: str) -> str:
     """Same rules as ``scripts/run_pilot.parse_pilot_mode_arg`` (keep in sync)."""
     v = (value or "mock").lower().strip()
-    if v == "m1":
-        warnings.warn(
-            '--pilot-mode m1 is deprecated; use "hf" (HuggingFace + MPS on Apple Silicon).',
-            DeprecationWarning,
-            stacklevel=2,
+    if v in ("hf", "m1"):
+        raise argparse.ArgumentTypeError(
+            f'pilot mode {value!r} was removed; use "lmstudio" or "cuda".'
         )
-        v = "hf"
-    allowed = frozenset({"mock", "hf", "cuda", "lmstudio"})
+    allowed = frozenset({"mock", "cuda", "lmstudio"})
     if v not in allowed:
         raise argparse.ArgumentTypeError(
-            f"invalid pilot mode {value!r}; expected one of: mock, hf, m1, cuda, lmstudio"
+            f"invalid pilot mode {value!r}; expected one of: mock, cuda, lmstudio"
         )
     return v
 

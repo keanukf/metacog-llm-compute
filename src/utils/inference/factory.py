@@ -1,0 +1,51 @@
+"""Factory for inference wrappers (vLLM, LM Studio)."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from src.utils.inference.base import ModelWrapper
+from src.utils.inference.lmstudio.wrapper import LMStudioWrapper
+from src.utils.inference.vllm import VLLMWrapper
+
+
+def create_wrapper(
+    backend: str = "vllm",
+    model_name: str | None = None,
+    dtype: str = "float16",
+    device: str | None = None,  # noqa: ARG001 — kept for call-site compatibility
+    base_url: str | None = None,
+    **kwargs: Any,
+) -> ModelWrapper:
+    """
+    Create wrapper by backend name.
+
+    - ``vllm`` + ``model_name`` -> :class:`VLLMWrapper` (requires CUDA).
+    - ``lmstudio`` + ``model_name`` -> :class:`LMStudioWrapper` (responses-only HTTP).
+    - Otherwise returns a stub :class:`ModelWrapper` (raises on generate; used in mocks).
+    """
+    if model_name and backend == "vllm":
+        return VLLMWrapper(model_name=model_name, dtype=dtype, **kwargs)
+    if model_name and backend == "lmstudio":
+        url = base_url or kwargs.get("lmstudio_base_url") or "http://localhost:1234/v1"
+        api_key = kwargs.get("lmstudio_api_key") or kwargs.get("api_key")
+        rest = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ("lmstudio_base_url", "lmstudio_api_key", "api_key")
+        }
+        top_k = int(rest.pop("lmstudio_top_logprobs", kwargs.get("lmstudio_top_logprobs", 5)))
+        api_host = rest.pop("api_host", None)
+        return LMStudioWrapper(
+            model_name=model_name,
+            base_url=url,
+            api_key=api_key,
+            lmstudio_top_logprobs=top_k,
+            api_host=api_host,
+            **rest,
+        )
+    if model_name and backend == "hf":
+        raise ValueError(
+            'backend "hf" was removed; use --pilot-mode lmstudio (local) or cuda (vLLM on GPU).'
+        )
+    return ModelWrapper()
