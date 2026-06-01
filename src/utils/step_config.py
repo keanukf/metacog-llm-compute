@@ -49,6 +49,8 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         - ``action_max_tokens`` (int, optional)
         - ``action_temperature`` (float, optional)
         - ``action_stop`` (list[str] | str | null, optional)
+        - ``cot_max_tokens`` (int, optional): C1 CoT generation cap for this domain
+          (overrides top-level ``c1.cot_max_tokens`` when set)
 
     - VC signal extraction (signal-specific):
       ``config["vc"]`` with keys:
@@ -224,7 +226,10 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
     # - verify_temperature defaults to 0.0 (methodologically important; stabilizes TLE distribution)
     # - cot_temperature defaults to None (fallback inside compute_stages retains legacy 0.5 / action_temperature behavior)
     c1_cot_temperature = c1.get("cot_temperature")
-    c1_cot_max_tokens = c1.get("cot_max_tokens")
+    c1_cot_max_tokens_raw = dom_cfg.get("cot_max_tokens") if isinstance(dom_cfg, dict) else None
+    if c1_cot_max_tokens_raw is None:
+        c1_cot_max_tokens_raw = c1.get("cot_max_tokens")
+    c1_cot_max_tokens = c1_cot_max_tokens_raw
     c1_verify_temperature_raw = c1.get("verify_temperature", 0.0)
     c1_verify_max_tokens = c1.get("verify_max_tokens")
     c1_verify_stop_raw = c1.get("verify_stop")

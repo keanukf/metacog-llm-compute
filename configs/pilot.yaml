@@ -62,6 +62,7 @@ tracing:
 # verify_temperature defaults to 0.0 to make the verify distribution (and thus TLE) stable.
 c1:
   cot_temperature: 0.5
+  # Global fallback when a domain omits domain_prompts.<domain>.cot_max_tokens
   cot_max_tokens: 1024
   verify_temperature: 0.0
   # verify_max_tokens: 48
@@ -114,6 +115,8 @@ domain_prompts:
     pin_recipe: true
     # Default off: do not list admissible commands in the observation (methodological control).
     include_admissible_commands: false
+    # C1 CoT budget (generation cap for the planning subcall)
+    cot_max_tokens: 1024
   tower_of_hanoi:
     prefix: >
       You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty
@@ -130,6 +133,8 @@ domain_prompts:
     history_keep_last_pairs: 1000000
     # Default off: do not list legal moves in the observation (methodological control).
     include_valid_moves: false
+    # Hanoi needs more CoT room than TextWorld (multi-step plan before the move line).
+    cot_max_tokens: 2048
 
 vc:
   mode: followup
