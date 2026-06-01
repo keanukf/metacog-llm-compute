@@ -1,0 +1,3 @@
+# macOS / local dev (LM Studio, mock pilot) — no vLLM (CUDA pods only).
+# See README.md Installation and docs/pilot.md.
+-r requirements.txt

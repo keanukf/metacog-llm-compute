@@ -1,11 +1,15 @@
-# Core (blueprint: vLLM, TextWorld, analysis)
+# Core (blueprint: vLLM on Linux GPU pods, TextWorld, analysis)
 # Pin these to keep RunPod installs reproducible. If you update them on the pod, update here too.
-vllm==0.19.1
+#
+# vLLM: Linux/CUDA only (RunPod). On macOS, pip would compile CPU extensions and fail on Apple Clang
+# (e.g. static_assert chained comparisons in cpu_attn_vec.hpp). Local Mac: requirements-local.txt
+# or pip install -e ".[dev]" + --pilot-mode lmstudio.
+vllm==0.19.1; sys_platform == "linux"
 # Qwen3.5+ checkpoints use model_type qwen3_5 (needs transformers >= 5.2)
 transformers==4.56.2
 lmstudio>=1.5.0
 httpx>=0.27.0
-torch==2.4.0
+torch==2.10.0
 accelerate
 textworld
 numpy
@@ -21,4 +25,4 @@ pytest>=7.0.0
 pytest-cov>=4.0.0
 
 # Optional: Langfuse observability (or: pip install ".[tracing]" from pyproject)
-langfuse>=2.0
+langfuse>=3.0
