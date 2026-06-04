@@ -115,8 +115,8 @@ domain_prompts:
     pin_recipe: true
     # Default off: do not list admissible commands in the observation (methodological control).
     include_admissible_commands: false
-    # C1 CoT budget (generation cap for the planning subcall)
-    cot_max_tokens: 1024
+    # C1 CoT budget (generation cap for the planning subcall; raised after RunPod truncation)
+    cot_max_tokens: 2048
   tower_of_hanoi:
     prefix: >
       You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty

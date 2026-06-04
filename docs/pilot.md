@@ -126,6 +126,17 @@ For reproducibility and debugging, C1 uses a strict input/output contract:
    - **Input:** `<task_context>`, `<output_to_judge>`, and confidence instruction.
    - **Output consumed:** first line only (`stop=["\\n"]`) parsed as 0-100 confidence.
 
+
+### C2: Self-Consistency (Majority Vote — not C1×3 + Verifier)
+
+Per [`blueprints/thesis_design.md`](../blueprints/thesis_design.md), **C2 is not** “three CoT+Verify chains with an LLM judge.” It is:
+
+1. **Three parallel action samples** with the same single-line prompt as C0 (`enable_thinking: false`).
+2. **Majority vote** over normalized action keys (`majority_vote` in `src/agent/stages/c2.py`).
+3. **Optional VC follow-up** on the winning action (same modes as C0/C1).
+
+There is **no** separate verify subcall in C2. Inspect traces: `call_detail.method == self_consistency_majority_vote`, three `subcalls` with `kind: sample`, and `c2_vote` in compact debug views.
+
 **TLE semantics:** TLE is computed from verify-call logprobs only. If LM Studio returns text but no logprobs, `tle` is `null` for that step by design. This affects telemetry quality, not action execution.
 
 **Token-level entropy (TLE) with LM Studio:** The usual OpenAI-compat endpoints (`/v1/completions`, `/v1/chat/completions`) do not return logprobs in LM Studio. For `logprobs=True`, the code uses **`POST /v1/responses`** (LM Studio **0.4.x+**) with `include: ["message.output_text.logprobs"]` and `top_logprobs` (see `inference.lmstudio_top_logprobs` in config, default 5). TLE is Shannon entropy over the **renormalized top-k** distribution per token (approximation vs full vocabulary). vLLM/HF still use top-1 logprobs and the legacy binary-entropy path.
