@@ -40,7 +40,9 @@ All entry points live in [`scripts/`](../scripts/). Run from the **repository ro
 | Script | Purpose | When to use | Status |
 |--------|---------|-------------|--------|
 | [`setup_cloud.sh`](../scripts/setup_cloud.sh) | Install pinned `requirements.txt` on pod; optional model pre-download | RunPod pod setup | `cloud` |
-| [`download_runpod_results.sh`](../scripts/download_runpod_results.sh) | `scp` results from pod TCP SSH to local machine | After cloud pilot | `cloud` |
+| [`download_runpod_results.sh`](../scripts/download_runpod_results.sh) | `scp`/rsync results from pod; auto-flattens nested `results/` | After cloud pilot | `cloud` |
+| [`flatten_runpod_download.py`](../scripts/flatten_runpod_download.py) | Repair nested `results/` after manual scp | After cloud pilot download | `cloud` |
+| [`probe_vllm_logprobs.py`](../scripts/probe_vllm_logprobs.py) | One-shot vLLM logprob + TLE probe | RunPod L0.1 sanity before long pilot | `cloud` |
 | [`restore_cursor_plans.sh`](../scripts/restore_cursor_plans.sh) | Restore `.cursor/plans/*.plan.md` from git history (local only) | After merge removed tracked Cursor plans | `dev` |
 
 ## Related docs
