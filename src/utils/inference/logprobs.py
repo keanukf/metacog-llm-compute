@@ -13,6 +13,8 @@ def normalize_logprobs(raw: Any) -> list[dict[str, Any]] | None:
     if not hasattr(raw, "__iter__") or isinstance(raw, (str, bytes)):
         return None
     for x in raw:
+        if x is None:
+            continue
         if isinstance(x, dict):
             lp = x.get("logprob", x.get("logprob_value"))
             if lp is not None:
@@ -58,6 +60,28 @@ def normalize_logprobs(raw: Any) -> list[dict[str, Any]] | None:
         elif isinstance(x, (int, float)):
             out.append({"logprob": float(x)})
     return out if out else None
+
+
+def logprob_token_coverage(records: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Summarize how many normalized logprob records include a ``token`` string."""
+    if not records:
+        return {
+            "n_tokens": 0,
+            "n_with_token": 0,
+            "token_field_rate": 0.0,
+            "first_record": None,
+        }
+    n = len(records)
+    n_tok = sum(
+        1 for r in records if isinstance(r, dict) and isinstance(r.get("token"), str) and r["token"]
+    )
+    first = records[0] if records else None
+    return {
+        "n_tokens": n,
+        "n_with_token": n_tok,
+        "token_field_rate": float(n_tok) / float(n) if n else 0.0,
+        "first_record": first,
+    }
 
 
 def openai_completion_logprobs_to_list(raw_lp: Any) -> list[dict[str, Any]] | None:
