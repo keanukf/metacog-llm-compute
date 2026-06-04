@@ -16,6 +16,13 @@ The pilot with `--real` is designed for **~2 GPU-hours** on an **RTX 3090** (24 
   - **Container Disk** (ephemeral root disk): pick large enough for **one** 7–9B model download/cache at a time (rule of thumb **≥ 50 GB**, “no surprises” **~100 GB**).
   - **Network Volume** (persistent, mounted at `/workspace`): **10 GB is enough for results** (they’re MB-scale).
 
+### Pod lifecycle: Stop vs Terminate
+
+- **Stop** (pause): GPU billing stops; the pod and its **network volume** (`/workspace`) stay attached. You pay only a small storage fee for the volume — useful between sessions when you will return soon.
+- **Terminate**: destroys the **container disk** (ephemeral root). Anything **not** on `/workspace` is lost (SSH keys in `~/.ssh/`, HF cache on container disk, etc.). Code and results under `/workspace/metacog-llm-compute` persist if you cloned there.
+
+Prefer **Stop** when iterating; **Terminate** only when you are done with that pod for good.
+
 ## Step 2 — Connect via SSH (interactive)
 
 Use the SSH command shown in the RunPod UI (gateway SSH is fine for interactive work).
@@ -73,30 +80,75 @@ nano .env   # add HF_TOKEN / LANGFUSE_* exports (or KEY=VALUE lines)
 set -a && source .env && set +a
 ```
 
-## Step 5 — Clone the repo on the pod
+## Step 5 — Get the repo on the pod
 
-This repo is `keanukf/metacog-llm-compute`. On RunPod, the most reliable way is cloning via **GitHub SSH**.
+This repo is `keanukf/metacog-llm-compute`. On RunPod, the most reliable way is **GitHub SSH**.
+
+Use `/workspace` so that code and results live on the network volume and persist across pod restarts.
+
+**SSH key note:** Keys live in `~/.ssh/` on the **container disk** (ephemeral). On a **new pod**, regenerate the key (or restore it from `/workspace`) and add the public key in GitHub → Settings → SSH and GPG keys. The repo clone on `/workspace` persists; the SSH key usually does not.
+
+### SSH setup (once per pod session)
 
 ```bash
 # On the pod:
-cd /workspace
-
-# 1) Create a new SSH key for this pod (one-time per pod)
 ssh-keygen -t ed25519 -C "runpod" -f ~/.ssh/id_ed25519_runpod
 cat ~/.ssh/id_ed25519_runpod.pub
-# 2) Add that public key in GitHub → Settings → SSH and GPG keys
+# Add that public key in GitHub → Settings → SSH and GPG keys
 
-# 3) Sanity check (must say "Hi keanukf!")
+# Sanity check (must say "Hi keanukf!")
 ssh -T -i ~/.ssh/id_ed25519_runpod git@github.com
+```
 
-# 4) Clone using the key explicitly (important: forces the right key)
-GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519_runpod -o IdentitiesOnly=yes' \
-  git clone git@github.com:keanukf/metacog-llm-compute.git metacog-llm-compute
+**Recommended — make Git use this key automatically** (so plain `git pull` works):
 
+```bash
+cat >> ~/.ssh/config << 'EOF'
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_runpod
+  IdentitiesOnly yes
+EOF
+chmod 600 ~/.ssh/config
+```
+
+Without `~/.ssh/config`, prefix Git commands with:
+
+```bash
+export GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519_runpod -o IdentitiesOnly=yes'
+```
+
+### First time — clone
+
+Skip this if `/workspace/metacog-llm-compute` already exists.
+
+```bash
+cd /workspace
+git clone git@github.com:keanukf/metacog-llm-compute.git metacog-llm-compute
 cd /workspace/metacog-llm-compute
 ```
 
-Use `/workspace` so that code and results live on the network volume and persist across pod restarts.
+(If you did not set up `~/.ssh/config`, use `GIT_SSH_COMMAND=... git clone ...` as above.)
+
+### Returning session — pull (repo already on persistent storage)
+
+If you cloned to `/workspace` before, **do not clone again** — update in place:
+
+```bash
+cd /workspace/metacog-llm-compute
+git pull
+```
+
+If Git reports **divergent branches** and you only want the latest remote code (typical on a pod; local commits are not important):
+
+```bash
+cd /workspace/metacog-llm-compute
+git fetch origin
+git reset --hard origin/main
+```
+
+This resets **tracked** files only. Ignored paths such as `data/results/` and `.env` on the pod are **not** removed by `git reset --hard`.
 
 ## Step 6 — Set up the environment on the pod
 
@@ -118,6 +170,30 @@ bash scripts/setup_cloud.sh
 ```
 
 Store the model on the network volume (e.g. under `/workspace`) so it persists.
+
+## Step 6b — Generate TextWorld games (required before TextWorld pilot)
+
+TextWorld story files (`.z8`) are **not** bundled in the repo. Generate them on the pod once per difficulty batch (or after wiping `data/tasks/textworld/`). Each instance needs **`textworld_{i}.z8`** and the matching **`textworld_{i}.json`** game dump from TextWorld — do not delete the `.json` sidecar.
+
+From repo root on the pod (after `setup_cloud.sh`):
+
+```bash
+cd /workspace/metacog-llm-compute
+python scripts/generate_textworld_games.py \
+  --num-rooms 5 \
+  --num-ingredients 2 \
+  --cook \
+  --seed 42 \
+  --num-instances 5
+```
+
+This writes under `data/tasks/textworld/` (see [`docs/textworld.md`](textworld.md)). For a quick smoke test, `--num-instances 5` matches `pilot.instances` in `configs/pilot.yaml`. The final experiment uses 50 instances via [`scripts/build_textworld_manifest.py`](scripts/build_textworld_manifest.py) after difficulty calibration.
+
+Optional sanity check:
+
+```bash
+python scripts/play_textworld.py data/tasks/textworld/textworld_0.z8
+```
 
 ## Step 7 — Hugging Face model-card gate (before burning GPU time)
 
@@ -142,14 +218,28 @@ All tests should pass (run `pytest` locally to see the current count). This conf
 
 ## Step 9 — Run the pilot with real model (GPU workload)
 
-Run the pilot **with real inference** on the pod (Pilot 2):
+Run the pilot **with real inference** on the pod (Pilot 2). Use the persistent results path from Step 3:
 
 ```bash
 cd /workspace/metacog-llm-compute
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir /workspace/metacog-llm-compute/data/results --pilot-mode cuda --real
+export RESULTS_DIR="/workspace/metacog-llm-compute/data/results"
+python scripts/run_pilot.py --config configs/pilot.yaml --output-dir "${RESULTS_DIR}" --pilot-mode cuda --real
 ```
 
 Or use `--real` to auto-detect (on the pod this will select `cuda`).
+
+**Output layout on the pod:**
+
+| Script | Typical output |
+|--------|----------------|
+| `run_pilot.py` | `${RESULTS_DIR}/pilot_YYYYMMDD_HHMMSS/` |
+| `run_prompt_ab.py` | `data/results/runpod_pilot/ab_YYYYMMDD_HHMMSS/` (default `--output-dir`) |
+
+Optional vLLM logprob probe before a long run:
+
+```bash
+python scripts/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode cuda --real
+```
 
 ### Troubleshooting: weird model outputs (blank actions / prompt echo / VC always null)
 
@@ -217,26 +307,36 @@ From your **local machine** (repo root). RunPod shows **two** SSH options in the
 ./scripts/download_runpod_results.sh --tcp root YOUR_IP YOUR_PORT ~/.ssh/id_ed25519
 ```
 
-Or one-liner (note **`scp -P`** cap for port; `root` and path are typical for TCP SSH):
-
-```bash
-mkdir -p data/results/runpod_pilot
-scp -O -i ~/.ssh/id_ed25519 -P YOUR_PORT -r \
-  root@YOUR_IP:/workspace/metacog-llm-compute/data/results/ \
-  ./data/results/runpod_pilot/
-```
+The script copies remote `data/results/` into `data/results/runpod_pilot/` and **flattens** the common `runpod_pilot/results/pilot_*` nesting that plain `scp -r …/results/` creates.
 
 To download **only one run folder** (recommended when iterating):
 
 ```bash
-mkdir -p data/results/runpod_pilot
-scp -O -i ~/.ssh/id_ed25519 -P YOUR_PORT -r \
-  root@YOUR_IP:/workspace/metacog-llm-compute/data/results/pilot_YYYYMMDD_HHMMSS \
-  ./data/results/runpod_pilot/
+./scripts/download_runpod_results.sh --tcp root YOUR_IP YOUR_PORT ~/.ssh/id_ed25519 \
+  --run pilot_YYYYMMDD_HHMMSS
+```
+
+If you already downloaded with an older one-liner and see `data/results/runpod_pilot/results/pilot_*`, repair locally:
+
+```bash
+python scripts/flatten_runpod_download.py data/results/runpod_pilot
+```
+
+**Expected local layout** after download or flatten:
+
+```
+data/results/runpod_pilot/pilot_YYYYMMDD_HHMMSS/run_info.json
+data/results/runpod_pilot/pilot_YYYYMMDD_HHMMSS/pilot_sanity.json
 ```
 
 The gateway URL (`ssh.runpod.io`) is fine for **interactive** `ssh`; for **scp/rsync** use **TCP** or workarounds (HTTP server on the pod, etc.).
 
-After download, look for `run_info.json` and `pilot_*.json` inside the run folder under `data/results/runpod_pilot/`. The pod must be **running** for `scp` to succeed.
+After download, validate locally:
+
+```bash
+python scripts/validate_pilot_outputs.py data/results/runpod_pilot/pilot_YYYYMMDD_HHMMSS
+```
+
+The pod must be **running** (not stopped) for `scp` to succeed.
 
 Then run analysis locally (e.g. ECE on `pilot_calibration.json` via `src/analysis/calibration.py`).
