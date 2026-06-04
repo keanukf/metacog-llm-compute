@@ -335,8 +335,24 @@ After download, validate locally:
 
 ```bash
 python scripts/validate_pilot_outputs.py data/results/runpod_pilot/pilot_YYYYMMDD_HHMMSS
+python scripts/audit_pilot_signals.py data/results/runpod_pilot/pilot_YYYYMMDD_HHMMSS
 ```
 
 The pod must be **running** (not stopped) for `scp` to succeed.
+
+## Gate-1 readiness smoke (checklist)
+
+Run this sequence when validating infrastructure before committing GPU budget to Gate 1 (20 episodes/domain at C0):
+
+1. **Pod:** Start stopped pod (or create new one). Confirm `/workspace/metacog-llm-compute` exists; `git pull` on `feat/runpod-gate1-readiness` or `main` after merge.
+2. **Env:** `bash scripts/setup_cloud.sh` (if deps changed).
+3. **TextWorld:** Step 6b — generate games if `data/tasks/textworld/textworld_0.z8` is missing.
+4. **Unit tests:** `python -m pytest tests/ -v`
+5. **L0.1 probe:** `python scripts/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode cuda --real`
+6. **Pilot:** `python scripts/run_pilot.py --config configs/pilot.yaml --output-dir "${RESULTS_DIR}" --pilot-mode cuda --real`
+7. **Download** (local machine, pod running): `./scripts/download_runpod_results.sh --tcp … [--run pilot_…]`
+8. **Audit** (local): `python scripts/audit_pilot_signals.py data/results/runpod_pilot/pilot_…`
+
+**Pass criteria for this smoke:** `pilot_sanity.json` has `has_logprobs: true`; `audit_pilot_signals` shows C0 `tle_rate >= 0.95`; VC rate `>= 0.80`; C2 traces use `self_consistency_majority_vote` when `compute_stages` includes C2. Gate 1 itself still requires a dedicated 20-episode C0 parseability run per domain (see `blueprints/thesis_dependency_map.html`).
 
 Then run analysis locally (e.g. ECE on `pilot_calibration.json` via `src/analysis/calibration.py`).

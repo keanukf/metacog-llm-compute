@@ -26,6 +26,8 @@ YAML configs live here. **Do not commit secrets** — use environment variables 
 | `tracing` | `langfuse_enabled` | Requires `pip install ".[tracing]"` (`langfuse>=3`) + env keys |
 | `c1` / `c2` | `cot_*`, `verify_*`, `n_samples` | C1 CoT+verify; C2 self-consistency N |
 | `domain_prompts` | `textworld`, `tower_of_hanoi` | Per-domain action prompts, stops, and optional `cot_max_tokens` (overrides `c1.cot_max_tokens`) |
+
+**C1 `cot_max_tokens` (methodology):** Fixed per-domain caps (`domain_prompts.<domain>.cot_max_tokens`, fallback `c1.cot_max_tokens`) bound CoT length for reproducibility. TextWorld and ToH use **2048** in `pilot.yaml` after RunPod smoke showed thinking blocks hitting the previous 1024 cap. Verify calls stay single-line (`action_max_tokens`) with `enable_thinking: false`. Document the chosen caps and any truncation rate from pilot traces in thesis §5 (Methodology).
 | `vc` | `followup_max_tokens`, … | VC follow-up call sizing |
 | `episode` | `max_steps_per_episode` | Agent cap per episode (separate from game gen limit) |
 
