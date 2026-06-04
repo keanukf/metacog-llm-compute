@@ -20,6 +20,7 @@ All entry points live in [`scripts/`](../scripts/). Run from the **repository ro
 | [`run_pilot.py`](../scripts/run_pilot.py) | Pilot Tests 1–6, feasibility JSON, episode outputs | Mock / HF / CUDA / LM Studio sanity | `pilot-core` |
 | [`run_pilot_models.py`](../scripts/run_pilot_models.py) | Full pilot once per model id (subprocess batch) | Model shortlist on LM Studio or RunPod | `pilot-optional` |
 | [`validate_pilot_outputs.py`](../scripts/validate_pilot_outputs.py) | Check pilot folder for TLE/VC/trace integrity | After a pilot run | `pilot-optional` |
+| [`audit_pilot_signals.py`](../scripts/audit_pilot_signals.py) | VC/TLE by stage, C2 trace audit, feasibility summary | After RunPod download | `pilot-optional` |
 | [`summarize_pilot_calibration.py`](../scripts/summarize_pilot_calibration.py) | Aggregate episode JSONs (success, TLE, VC, ECE proxy) | After pilot with episode outputs | `pilot-optional` |
 | [`summarize_pilot_batch.py`](../scripts/summarize_pilot_batch.py) | Summarize `pilot_batch_*` from `run_pilot_models` | After multi-model batch | `pilot-optional` |
 | [`run_c1_handoff_gate.py`](../scripts/run_c1_handoff_gate.py) | Smoke-test C1 CoT→Verify parsing on real backend | Before trusting C1 on LM Studio / CUDA | `pilot-optional` |
