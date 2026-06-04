@@ -56,6 +56,23 @@ def _episode_signal_rates(episode_jsons: list[dict[str, Any]]) -> tuple[float | 
     return vc_rate, tle_rate
 
 
+def _tle_rate_for_stage(episode_jsons: list[dict[str, Any]], stage: str) -> float | None:
+    total = 0
+    nonnull = 0
+    for ep in episode_jsons:
+        stages = ep.get("stage_per_step") or []
+        tles = ep.get("tle_per_step") or []
+        for i, st in enumerate(stages):
+            if str(st) != stage:
+                continue
+            if i >= len(tles):
+                continue
+            total += 1
+            if tles[i] is not None:
+                nonnull += 1
+    return (nonnull / total) if total else None
+
+
 def validate(pilot_dir: Path) -> tuple[bool, list[str]]:
     errors: list[str] = []
 
@@ -67,6 +84,12 @@ def validate(pilot_dir: Path) -> tuple[bool, list[str]]:
         cto = san.get("completion_tokens_observed")
         if not isinstance(cto, int) or cto <= 0:
             errors.append(f"sanity: completion_tokens_observed expected int>0, got {cto!r}")
+        tok_rate = san.get("logprob_token_field_rate")
+        if isinstance(tok_rate, (int, float)) and float(tok_rate) < 0.5:
+            errors.append(
+                f"sanity: logprob_token_field_rate {float(tok_rate):.3f} < 0.5 "
+                "(vLLM may omit decoded_token — action TLE slicing can be null on multi-line outputs)"
+            )
 
     t2_path = pilot_dir / "pilot_test2_tle.json"
     t2 = _read_json(t2_path)
@@ -95,6 +118,9 @@ def validate(pilot_dir: Path) -> tuple[bool, list[str]]:
             errors.append("episodes: tle_rate missing (no tle_per_step data found)")
         elif tle_rate < 0.95:
             errors.append(f"episodes: tle_rate {tle_rate:.3f} < 0.95")
+        c0_tle = _tle_rate_for_stage(ep_jsons, "C0")
+        if c0_tle is not None and c0_tle < 0.95:
+            errors.append(f"episodes: C0-only tle_rate {c0_tle:.3f} < 0.95 (L0.1 gate)")
 
     t5_path = pilot_dir / "pilot_test5_toh.json"
     t5 = _read_json(t5_path)
