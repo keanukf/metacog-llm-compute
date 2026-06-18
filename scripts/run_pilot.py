@@ -159,6 +159,9 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
                     pass
             extra["chat_template"] = bool(inf.get("chat_template", True))
             extra["enable_thinking"] = bool(inf.get("enable_thinking", False))
+            revision = model_cfg.get("revision")
+            if revision:
+                extra["revision"] = str(revision)
             return create_wrapper(
                 backend=backend, model_name=model_name, dtype=dtype, **extra
             ), None

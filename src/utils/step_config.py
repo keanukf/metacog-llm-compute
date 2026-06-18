@@ -222,27 +222,14 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
     else:
         followup_max_context_chars = int(fmc_raw)
 
-    # C1-specific knobs. Defaults are chosen to preserve historical behavior where possible.
-    # - verify_temperature defaults to 0.0 (methodologically important; stabilizes TLE distribution)
-    # - cot_temperature defaults to None (fallback inside compute_stages retains legacy 0.5 / action_temperature behavior)
+    # C1-specific knobs.
     c1_cot_temperature = c1.get("cot_temperature")
     c1_cot_max_tokens_raw = dom_cfg.get("cot_max_tokens") if isinstance(dom_cfg, dict) else None
     if c1_cot_max_tokens_raw is None:
         c1_cot_max_tokens_raw = c1.get("cot_max_tokens")
     c1_cot_max_tokens = c1_cot_max_tokens_raw
-    c1_verify_temperature_raw = c1.get("verify_temperature", 0.0)
-    c1_verify_max_tokens = c1.get("verify_max_tokens")
-    c1_verify_stop_raw = c1.get("verify_stop")
-    c1_verify_instruction_raw = c1.get("verify_instruction")
 
-    c1_verify_stop: list[str] | None = None
-    if c1_verify_stop_raw is None or c1_verify_stop_raw is False:
-        c1_verify_stop = None
-    elif isinstance(c1_verify_stop_raw, (list, tuple)):
-        c1_verify_stop = [str(x) for x in c1_verify_stop_raw] if c1_verify_stop_raw else None
-    elif c1_verify_stop_raw is not None:
-        c1_verify_stop = [str(c1_verify_stop_raw)]
-
+    c2_sample_temperature_raw = c2.get("sample_temperature", 0.7)
     hk_raw = dom_cfg.get("history_keep_last_pairs") if isinstance(dom_cfg, dict) else None
     history_keep_last_pairs: int | None
     if hk_raw is None:
@@ -266,6 +253,7 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         # C2 stage controls (self-consistency / majority vote)
         "c2_n_samples": int(c2.get("n_samples", 3)),
         "c2_tie_break_seed": c2.get("tie_break_seed"),
+        "c2_sample_temperature": float(c2_sample_temperature_raw),
         "vc_mode": mode,
         "prompt_prefix": prompt_prefix,
         "action_max_tokens": action_max_tokens,
@@ -280,16 +268,6 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         # C1 stage controls
         "c1_cot_temperature": float(c1_cot_temperature) if c1_cot_temperature is not None else None,
         "c1_cot_max_tokens": int(c1_cot_max_tokens) if c1_cot_max_tokens is not None else None,
-        "c1_verify_temperature": float(c1_verify_temperature_raw),
-        "c1_verify_max_tokens": int(c1_verify_max_tokens)
-        if c1_verify_max_tokens is not None
-        else None,
-        "c1_verify_stop": c1_verify_stop,
-        "c1_verify_instruction": (
-            str(c1_verify_instruction_raw).strip()
-            if c1_verify_instruction_raw is not None and str(c1_verify_instruction_raw).strip()
-            else None
-        ),
         # History / memory controls (consumed by base_agent.run_episode / run_adaptive_episode).
         # These live under domain_prompts.<domain> so they're experiment-controlled and visible in YAML.
         "history_keep_last_pairs": history_keep_last_pairs,

@@ -128,19 +128,13 @@ def test_c1_deep_chain_parent_ids() -> None:
     step = _RecordedObs(name="step_0", as_type="span", parent=None, recorder=client.observations)
     subcalls = [
         {
-            "kind": "cot",
-            "prompt": "cot in",
-            "response": "cot out",
+            "kind": "reason",
+            "prompt": "reason in",
+            "response": "<think>cot out</think>\ngo north",
             "tokens_generated": 10,
             "temperature": 0.5,
             "max_tokens": 128,
-        },
-        {
-            "kind": "verify",
-            "prompt": "verify in",
-            "response": "go north",
-            "tokens_generated": 4,
-            "temperature": 0.0,
+            "enable_thinking": True,
         },
     ]
     hook.log_step_children(
@@ -158,29 +152,26 @@ def test_c1_deep_chain_parent_ids() -> None:
     )
 
     vc_rows = [o for o in client.observations if "vc_followup" in o["name"]]
-    verify_rows = [o for o in client.observations if o["name"] == "verify_0_C1"]
-    cot_rows = [o for o in client.observations if o["name"] == "cot_0_C1"]
-    assert cot_rows and verify_rows and vc_rows
-    assert vc_rows[0]["parent_id"] == verify_rows[0]["id"]
-    assert verify_rows[0]["parent_id"] == cot_rows[0]["id"]
+    reason_rows = [o for o in client.observations if o["name"] == "reason_0_C1"]
+    assert reason_rows and vc_rows
+    assert vc_rows[0]["parent_id"] == reason_rows[0]["id"]
     chain = _parent_chain(client.observations, vc_rows[0]["id"])
-    assert chain[-3:] == ["cot_0_C1", "verify_0_C1", "vc_followup_0"]
+    assert chain[-2:] == ["reason_0_C1", "vc_followup_0"]
     assert chain[0] == "step_0"
 
 
-def test_c1_verify_gets_usage_and_tle_score() -> None:
+def test_c1_reason_gets_usage_and_tle_score() -> None:
     _reset_registry()
     client = _FakeOtelClient()
     hook = LangfuseTraceHook(client)
     step = _RecordedObs(name="step_0", as_type="span", parent=None, recorder=client.observations)
     subcalls = [
-        {"kind": "cot", "prompt": "a", "response": "b", "tokens_generated": 1},
         {
-            "kind": "verify",
-            "prompt": "c",
-            "response": "d",
+            "kind": "reason",
+            "prompt": "a",
+            "response": "<think>b</think>\nd",
             "tokens_generated": 2,
-            "temperature": 0.0,
+            "temperature": 0.5,
         },
     ]
     hook.log_step_children(
@@ -194,10 +185,10 @@ def test_c1_verify_gets_usage_and_tle_score() -> None:
         metadata={"tle": {"mean_entropy": 0.9}},
         subcalls=subcalls,
     )
-    verify_obs = next(o for o in _OBS_REGISTRY if o.name == "verify_0_C1")
-    assert any(u.get("usage_details") == {"output": 2} for u in verify_obs._updates)
+    reason_obs = next(o for o in _OBS_REGISTRY if o.name == "reason_0_C1")
+    assert any(u.get("usage_details") == {"output": 2} for u in reason_obs._updates)
     assert any(
-        s.get("name") == "tle_mean_entropy" and s.get("value") == 0.9 for s in verify_obs._scores
+        s.get("name") == "tle_mean_entropy" and s.get("value") == 0.9 for s in reason_obs._scores
     )
 
 

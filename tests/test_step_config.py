@@ -20,8 +20,8 @@ def test_tower_of_hanoi_gets_default_prefix_and_action_cap():
     assert k["followup_cot_max_chars"] == 12000
     assert k["vc_raw_completion_max_chars"] == 8000
     assert k["vc_followup_instruction"] == DEFAULT_VC_FOLLOWUP_INSTRUCTION
-    assert k["c1_verify_temperature"] == 0.0
     assert k["c1_cot_temperature"] is None
+    assert k["c2_sample_temperature"] == 0.7
 
 
 def test_vc_followup_instruction_from_yaml():
@@ -114,7 +114,7 @@ def test_domain_without_cot_max_tokens_uses_global_c1() -> None:
     assert resolve_step_fn_kwargs(cfg, "tower_of_hanoi")["c1_cot_max_tokens"] == 1024
 
 
-def test_c1_verify_knobs_from_yaml() -> None:
+def test_c1_and_c2_knobs_from_yaml() -> None:
     cfg = {
         "inference": {"max_tokens": 128, "temperature": 0.2},
         "vc": {"mode": "inline"},
@@ -122,16 +122,11 @@ def test_c1_verify_knobs_from_yaml() -> None:
         "c1": {
             "cot_temperature": 0.7,
             "cot_max_tokens": 222,
-            "verify_temperature": 0.0,
-            "verify_max_tokens": 33,
-            "verify_stop": ["\n\n"],
-            "verify_instruction": "Check availability only.\nOutput one line.",
         },
+        "c2": {"n_samples": 5, "sample_temperature": 0.65},
     }
     k = resolve_step_fn_kwargs(cfg, "tower_of_hanoi")
     assert k["c1_cot_temperature"] == 0.7
     assert k["c1_cot_max_tokens"] == 222
-    assert k["c1_verify_temperature"] == 0.0
-    assert k["c1_verify_max_tokens"] == 33
-    assert k["c1_verify_stop"] == ["\n\n"]
-    assert "availability" in (k["c1_verify_instruction"] or "").lower()
+    assert k["c2_n_samples"] == 5
+    assert k["c2_sample_temperature"] == 0.65
