@@ -1,5 +1,7 @@
 # Redesigned Master Thesis Blueprint (v2 — Refined)
 
+> **Design update (March 2026):** Domain 2 changed from Delayed-Cue Recall to Tower of Hanoi. See `chapters/outline.md` for current design. Rationale: Tower of Hanoi provides a genuinely sequential planning task under full observability, maintaining narrative consistency with the thesis focus on sequential decision-making. H4 now contrasts exploration (TextWorld) vs. planning (Tower of Hanoi) rather than sequential vs. retrieval.
+
 ## Keanu Forthmann — M.Sc. Artificial Intelligence, IU Internationale Hochschule
 
 ---
@@ -40,9 +42,11 @@ Die vorliegende Arbeit erweitert dieses Fundament in eine präzise definierte Ri
 
 ## II. Theoretischer Rahmen
 
+*Kapitelstruktur (Kap. 2):* Zuerst das computationale Problem etablieren (LM als sequentielle Entscheidungssysteme, Allokationsmöglichkeit), dann die theoretische Linse aus der Kognitionspsychologie (Dual-Process, EVC, Metacognition, Temporal Degradation), dann die Brücke zu LMs (CoT, Test-Time Compute, LM-Metacognition, Small LMs). So trägt die Psychologie das Gewicht — jede eingeführte Idee mappt auf eine Designentscheidung, die der Leser bereits erwartet.
+
 ### A. Das Compute-Effort-Problem in LM-Agenten
 
-Wenn ein LM-Agent eine Sequenz von Entscheidungen treffen muss, steht er bei jedem Schritt vor einer impliziten Ressourcen-Allokationsfrage: Soll das System direkt antworten (niedrige Compute-Kosten, schnell, aber fehleranfällig) oder soll es erst deliberieren (Chain-of-Thought, Self-Verification — hohe Compute-Kosten, langsamer, aber potenziell akkurater)?
+Wenn ein LM-Agent eine Sequenz von Entscheidungen treffen muss, steht er bei jedem Schritt vor einer impliziten Ressourcen-Allokationsfrage: Soll das System direkt antworten (niedrige Compute-Kosten, schnell, aber fehleranfällig) oder soll es erst deliberieren (natives Reasoning, mehr Deliberation vor dem Commit; höhere Compute-Kosten, langsamer, aber potenziell akkurater)?
 
 Aktuelle Systeme lösen dieses Problem auf drei unbefriedigende Weisen:
 
@@ -59,13 +63,13 @@ Drei Theorietraditionen sind direkt relevant:
 **Dual-Process Theory (Kahneman, 2011; Evans & Stanovich, 2013):**
 Menschliches Denken operiert in zwei Modi — System 1 (schnell, automatisch, heuristisch) und System 2 (langsam, kontrolliert, deliberativ). Der Wechsel zwischen den Systemen wird durch *Überraschung*, *wahrgenommene Schwierigkeit* und *Fehlererwartung* ausgelöst.
 
-**Metacognition und Monitoring (Nelson & Narens, 1990; Flavell, 1979):**
-Metacognition bezeichnet die Fähigkeit, das eigene Denken zu überwachen und zu steuern. Zentrale Signale sind Feeling of Knowing (FOK), Judgment of Learning (JOL) und Confidence Calibration. Diese Signale sind *informativ aber imperfekt* — Menschen nutzen heuristische Cues (Fluency, Familiarity, Coherence) als Proxy für tatsächliche Korrektheit. Entscheidend: Metacognitive Monitoring-Genauigkeit verschlechtert sich unter erhöhter kognitiver Last (Efklides, 2006) — eine Vorhersage, die direkt auf das agentische Setting übertragbar ist.
-
 **Expected Value of Control (EVC) Theory (Shenhav, Botvinick & Cohen, 2013):**
 Das EVC-Framework formalisiert, wie das Gehirn entscheidet, *wie viel kognitive Kontrolle* in eine Aufgabe investiert wird. Die optimale Kontrollintensität maximiert:
 
     EVC(signal, intensity) = E[Reward(signal, intensity)] − Cost(intensity)
+
+**Metacognition und Monitoring (Nelson & Narens, 1990; Flavell, 1979):**
+Metacognition bezeichnet die Fähigkeit, das eigene Denken zu überwachen und zu steuern. Zentrale Signale sind Feeling of Knowing (FOK), Judgment of Learning (JOL) und Confidence Calibration. Diese Signale sind *informativ aber imperfekt* — Menschen nutzen heuristische Cues (Fluency, Familiarity, Coherence) als Proxy für tatsächliche Korrektheit. Entscheidend: Metacognitive Monitoring-Genauigkeit verschlechtert sich unter erhöhter kognitiver Last (Efklides, 2006) — eine Vorhersage, die direkt auf das agentische Setting übertragbar ist.
 
 ### C. Die Brücke: Metacognitive Signale als Compute-Allokator im Agent-Setting
 
@@ -79,7 +83,7 @@ Der entscheidende Unterschied zu existierenden Ansätzen: Im agentischen Setting
 
 Die Analogie:
 - **System 1** = Direkte Inferenz (1 Forward Pass)
-- **System 2** = Deliberation (CoT + Self-Verification)
+- **System 2** = Deliberation (natives Reasoning / Chain-of-Thought)
 - **Metacognitive Signale** = Entscheidungsmechanismus für den Wechsel
 
 ---
@@ -101,14 +105,14 @@ Die Analogie:
 **H1 (Calibration Hypothesis):** Token-Level Entropy ist ein besser kalibrierter metacognitiver Proxy als verbalisierte Konfidenz, da letztere durch RLHF-Training systematisch überoptimistisch verzerrt ist.
 *Psychologische Grundlage:* Overconfidence-Bias in metakognitiven Urteilen (Fischhoff et al., 1977); in LMs verstärkt durch Reinforcement Learning from Human Feedback.
 
-**H2 (Adaptive Superiority Hypothesis):** Adaptive Compute-Allokation erreicht ≥90% der Performance der Always-Deliberate-Strategie bei ≤50% der Compute-Kosten, weil ein substantieller Anteil der Entscheidungsschritte trivial ist und korrekt von System-1-Inferenz gelöst werden kann.
+**H2 (Adaptive Superiority Hypothesis):** Adaptive Compute-Allokation erreicht eine **Pareto-Verbesserung** gegenüber fixen Strategien: Bei **nicht-inferiorer Episode-Success-Rate** gegenüber der Always-Deliberate-Strategie (C2) erzielt sie **signifikant geringere Output-Tokens pro Episode** (und damit geringere Inferenzkosten), weil ein substantieller Anteil der Entscheidungsschritte trivial ist und korrekt von System-1-Inferenz gelöst werden kann.
 *Psychologische Grundlage:* Pareto-Verteilung kognitiver Anforderungen in natürlichen Umgebungen (Anderson & Schooler, 1991).
 
 **H3 (Temporal Degradation Hypothesis):** Die Kalibrierung metacognitiver Signale nimmt im Verlauf einer Episode ab. Bei späteren Entscheidungsschritten (mit längerem Context-Fenster) ist Token-Level-Entropie weniger prädiktiv für tatsächliche Korrektheit als bei frühen Schritten.
 *Psychologische Grundlage:* Metacognitive Monitoring Accuracy sinkt unter erhöhter kognitiver Last (Efklides, 2006). Der wachsende Prompt-Context ist das LM-Äquivalent kognitiver Auslastung.
 
-**H4 (Domain Modulation Hypothesis):** Metacognitive Signale sind bei gedächtnisintensiven Aufgaben (Delayed Recall) schlechter kalibriert als bei Navigation-Aufgaben, da Memory-Fehler in LMs andere Token-Entropie-Signaturen produzieren als Planungsfehler.
-*Psychologische Grundlage:* Domänenspezifität von FOK-Accuracy (Schwartz & Metcalfe, 2011).
+**H4 (Domain Modulation Hypothesis):** Metacognitive Signalqualität und/oder Allokationsmuster unterscheiden sich zwischen explorationslastiger sequentieller Navigation (TextWorld; partielle Beobachtbarkeit) und kombinatorischer Planung unter vollständiger Beobachtbarkeit (Tower of Hanoi), weil Fehlerquellen und Entropie-Signaturen domänenspezifisch sind.
+*Psychologische Grundlage:* Domänenspezifität von FOK-Accuracy (Schwartz & Metcalfe, 2011); siehe `chapters/outline.md` für die aktuelle Domänenwahl.
 
 ---
 
@@ -119,14 +123,14 @@ Die Analogie:
 Die Studie implementiert ein kontrolliertes Experiment mit einem **2 × 3 × 2 Core-Design**:
 
 - **Faktor 1 — Metacognitives Signal (2 Stufen):** Token-Level Entropy (TLE), Verbalisierte Konfidenz (VC)
-- **Faktor 2 — Compute-Stufe (3 Stufen):** Direct Inference (C0), Chain-of-Thought mit Self-Check (C1), Self-Consistency Sampling / Majority Vote (C2)
-- **Faktor 3 — Task-Domäne (2 Stufen):** Text-Navigation, Delayed-Cue Recall
+- **Faktor 2 — Compute-Stufe (3 Stufen):** Direct Inference (C0), natives Reasoning via Thinking-Toggle (C1), **Self-Consistency Sampling** / **Majority Vote** (C2; Wang et al., 2022)
+- **Faktor 3 — Task-Domäne (2 Stufen):** Text-Navigation (TextWorld), kombinatorische Planung (Tower of Hanoi)
 
 **Vereinfachungen gegenüber v1 und Begründung:**
 
 | v1 | v2 | Begründung |
 |----|-----|-----------|
-| 4 Compute-Stufen (Direct, Short CoT, Deep CoT, Tree Search) | 3 Stufen (Direct, CoT+Verify, Self-Consistency Vote) | CoT-Länge ist bei Instruction-Tuned-Modellen nicht extern steuerbar; Tree Search ersetzt durch Self-Consistency (einfacher, dennoch starke Baseline nach Snell et al., 2024) |
+| 4 Compute-Stufen (Direct, Short CoT, Deep CoT, Tree Search) | 3 Stufen (Direct, Reasoning, **Self-Consistency Sampling**) | Statt prompt-gesteuerter CoT-Länge wird der native Thinking-Toggle des Modells genutzt (C1 = Reasoning an, C0 = Reasoning aus), was Gewichte, Tokenizer und Prompt-Oberfläche konstant hält; Tree Search ersetzt durch **Self-Consistency (Majority Vote)** (Wang et al., 2022): einfach zu implementieren, kein externes Scoring-Signal nötig; Snell et al. (2024) bleibt der Test-Time-Compute-Rahmenanker |
 | 3 Signale (TLE, VC, SC) | 2 Signale Core (TLE, VC) | Semantic Consistency erfordert 5× Sampling pro Step — zu teuer für Core; bleibt Extension |
 | 3 Domänen | 2 Domänen Core | Logical Reasoning bleibt Extension; 2 Domänen reichen für Cross-Domain-Test (RQ4) |
 | 2 Modelle | 1 Modell Core | Zweites Modell bleibt Extension; 1 Modell reicht für Kernhypothesen |
@@ -138,7 +142,50 @@ Das Design hat zwei Phasen:
 
 **Phase 2 — Adaptive Allocation (RQ2, RQ4):** Die metacognitiven Signale steuern einen regelbasierten Allokator. Die Performance wird gegen Baselines verglichen.
 
-### B. Operationalisierung der Metacognitiven Signale
+### B. Prompt- und Strukturschema (XML-Tag-Strukturmarker)
+
+Da die Studie *sequentielle Episoden* mit typischerweise 8–15 Schritten erzeugt, wächst der Prompt über eine Episode stark an (History aus Action+Observation-Paaren, ggf. Reset-Text, plus aktuelle Observation). Eine zentrale Operationalisierungsentscheidung ist daher, wie diese Komponenten im Prompt strukturiert werden. In Vorarbeiten wurde ein XML-Tag-basiertes Schema als primäres Strukturschema gewählt (statt rein visueller Trenner wie `=== HISTORY ===` oder reiner Markdown-Header), um die Prompt-Sektionierung auch bei langen Episoden stabil zu halten und Parsebarkeit für Mess- und Kontrollschritte zu erhöhen.
+
+**Rationale.** Drei Gründe sind in diesem Setup methodisch relevant:
+
+1. **Stabile Sektionszuordnung trotz wachsender History.** Ohne harte Marker müssen Modelle die Grenzen zwischen Reset-Observation, früheren Steps und aktueller Observation aus Fließtext rekonstruieren. Mit zunehmender Kontextlänge steigt das Risiko, dass relevante Information „in der Mitte verloren geht“ (*lost in the middle*; Liu et al., 2023) [VERIFY] oder dass der Agent die falsche Sektion als „current state“ behandelt. Explizite Tags reduzieren diese Ambiguität und verbessern die Replizierbarkeit des Orchestrierungs-Setups.
+
+2. **Messrobustheit für Token-Level-Entropy (TLE).** TLE wird über die Tokens der *committeten* Step-Antwort (Action) berechnet. Ein klar markierter Übergang in eine `<action>`-Sektion reduziert die Wahrscheinlichkeit, dass vor der eigentlichen Action noch Meta-Text (z.B. „Looking at the current state…“) generiert wird, der den Messpunkt kontaminiert (zusätzliche Tokens, andere Logprob-Verteilungen).
+
+3. **Robustheit der C1-Reasoning-Struktur.** In Compute-Stufe C1 erzeugt das Modell zunächst einen nativen Reasoning-Block (Thinking-Modus) und committet anschließend die Action. Tags erlauben, die committete Action sauber als eigene `<action>`-Sektion vom Reasoning-Block zu trennen, sodass der Reasoning-Trace nicht mit der Action oder der Episode-History kollidiert und der TLE-Messpunkt eindeutig bleibt.
+
+**C1-spezifische Messintegritäts-Entscheidung (Reasoning/Action-Trennung).** Da C1 ein einzelner nativer Thinking-Durchlauf ist, wird TLE an der **committeden Action** gemessen, also am selben Extraktionspunkt wie in C0. Der vorausgehende Reasoning-Block ist nicht Teil des TLE-Messfensters und wird ausschließlich trace-intern geloggt. Damit bleibt die Messoberfläche zwischen C0 und C1 identisch, und es variiert allein die Menge des emittierten Reasonings (Toggle-Invarianz: Gewichte, Tokenizer und Prompt-Oberfläche bleiben konstant).
+
+**Konkretes Schema (Referenzformat).** Der Prompt wird in klar getrennte Sektionen gegliedert:
+
+```
+<task_instructions>
+… (task domain prefix, action constraints, output format) …
+</task_instructions>
+
+<episode_history>
+  <reset_observation>…</reset_observation>
+  <step index="1">
+    <action>…</action>
+    <observation>…</observation>
+  </step>
+  …
+</episode_history>
+
+<current_observation>
+… (latest env observation) …
+</current_observation>
+
+<response_format>
+Output exactly one imperative command. No reasoning, no explanation.
+</response_format>
+```
+
+Zwei Designaspekte sind dabei absichtlich enthalten: (i) **Step-Index als Attribut**, um episodenpositionsabhängige Analysen (RQ3/H3) leichter an die Promptstruktur zu koppeln; (ii) **Verschachtelung** von `<step>` mit `<action>` und `<observation>`, um die Paarbeziehung explizit zu machen (reduziert Prompt-Drift bei späteren Steps).
+
+**Wichtige Einschränkung.** Das Strukturschema wird *nicht* mit alternativen Markern gemischt. Ein halb-strukturiertes Prompting (z.B. XML plus zusätzliche `===`-Trenner) erhöht die Komplexität der Konventionen und kann die Modell-Compliance verschlechtern; daher wird das Schema in allen Compute-Stufen konsistent verwendet (C0/C1/C2 sowie VC-Elicitation).
+
+### C. Operationalisierung der Metacognitiven Signale
 
 **Signal 1 — Token-Level Entropy (TLE):**
 Für den initialen Forward Pass (System-1-Response) wird die Entropie der Token-Verteilung über die Antwort-Tokens berechnet:
@@ -152,73 +199,90 @@ Aggregation über die gesamte Antwort via Mean und Max. Hohe Entropie signalisie
 *Abgrenzung zu EAGer:* EAGer nutzt Token-Entropie *innerhalb* eines Generierungsdurchlaufs, um zu entscheiden, wo neue Branches starten (Token-Level, Single-Turn). Wir nutzen die Entropie der *gesamten Step-Antwort* als aggregiertes Signal für die Compute-Stufe des *nächsten* Steps (Step-Level, sequentiell). Verschiedene Granularität, verschiedener Entscheidungsgegenstand.
 
 **Signal 2 — Verbalisierte Konfidenz (VC):**
-Das Modell wird explizit aufgefordert, nach seiner initialen Antwort eine Konfidenz-Einschätzung abzugeben ("Rate your confidence in this decision from 0 to 100"). Die verbalisierte Konfidenz wird als numerischer Wert extrahiert.
+In einem separaten, kurzen Aufruf nach Festlegung der Step-Aktion wird das Modell aufgefordert, die **Wahrscheinlichkeit einzuschätzen, dass die gewählte Aktion in dieser Situation korrekt ist** — nicht eine vage Bewertung von „Angemessenheit“ oder Optimalität. Ausgabe ist **ein einzelner ganzzahliger Score von 0 bis 100**, mit **explizit verankerten Skalenenden** (0 = sicher falsch, 100 = sicher richtig); das entspricht der Probscore-/Likelihood-Elicitation und der empfohlenen Formulierung bei kleinen Sprachmodellen ohne Few-Shot-Zahlbeispiele (Yang, Tsai, & Yamada, 2024). Zur Erhöhung der Format-Compliance kann die Elicitation mit einer abschließenden **`Confidence:`**-Zeile erfolgen (Completion nach festem Marker; Yang et al., 2024; Lin et al., 2022). Deliberatives natives Reasoning liegt **in der Compute-Stufe C1** (Thinking-Modus), nicht als zusätzlicher VC-only-Schritt, damit VC zwischen C0 und C1 vergleichbar zur jeweils committeden Action bleibt.
 
 *Psychologische Analogie:* Feeling of Knowing (FOK) — ein explizites metacognitives Urteil (Koriat, 1993). FOK-Urteile sind informativ, aber systematisch verzerrt.
 
 *Abgrenzung zu MeCo:* MeCo nutzt trainierte Probes auf Hidden-Layer-Aktivierungen (White-Box). Verbalisierte Konfidenz ist ein reines Output-Level-Signal (Gray-Box), das keinen Zugang zu Modell-Internals erfordert und somit modell-agnostisch einsetzbar ist.
 
-### C. Compute-Stufen (Deliberationsintensität)
+### D. Compute-Stufen (Deliberationsintensität)
 
-| Stufe | Beschreibung | Analogie | LM-Calls/Step |
+| Stufe | Beschreibung | Analogie | LM-Calls/Step (tertiär) |
 |-------|-------------|----------|---------------|
 | C0 — Direct | Einzelner Forward Pass, keine Elaboration | System 1 | 1 |
-| C1 — CoT + Verify | Chain-of-Thought-Generierung + Self-Verification-Prompt | Deliberation | 2 |
-| C2 — Self-Consistency (Majority Vote) | N=3 parallele Generierungen + Majority Vote | Exhaustive Analyse | 3 |
+| C1 — Reasoning | Nativer Thinking-Durchlauf: Reasoning-Trace gefolgt von committeter Action (ein Call) | Deliberation | 1 |
+| C2 — Self-Consistency | N=3 Reasoning-Generierungen + Majority Vote | Breadth / Sampling | N |
 
-**Begründung der Vereinfachung:** Die klare Abstufung 1/2/3 LM-Calls pro Step macht den Compute-Kontrast quantifizierbar und reproduzierbar. Self-Consistency (Majority Vote über N Samples) ersetzt Tree Search: einfacher zu implementieren, keine Branching-Logik nötig, und in der aktuellen Literatur als starke Test-Time-Compute-Methode etabliert (Snell et al., 2024).
+**Begründung der Vereinfachung:** Die drei Stufen sind aufsteigende Einstellungen *einer* Achse, der Menge deliberativen Reasonings vor dem Action-Commit (C0 = kein Reasoning, C1 = nativer Reasoning-Durchlauf, C2 = dasselbe Reasoning breitenskaliert). Primäres Compute-Maß sind Output-Tokens pro Episode; der LM-Call-Count dient nur als tertiäre Strukturtransparenz. C1 nutzt den nativen Thinking-Toggle desselben Modells, sodass sich C0 und C1 nur in der Reasoning-Menge unterscheiden (Gewichte, Tokenizer und Prompt-Oberfläche bleiben konstant). C2 ist **Self-Consistency Sampling** (Majority Vote; Wang et al., 2022): einfach zu implementieren, keine Branching-Logik nötig und **kein externes Scoring-Signal** erforderlich. Snell et al. (2024) bleibt als Test-Time-Compute-Rahmenanker für die generelle Idee compute-optimaler Inferenzskalierung.
 
-### D. Adaptiver Allokator (Regelbasiert)
+**Mess-Symmetrie am Action-Punkt.** Über alle Stufen hinweg wird TLE an der committeden Action gemessen und dieselbe **Single-Line-Action-Ausgabeinstruktion** verwendet (einmalig definiert; single source of truth), sodass sich Unterschiede in TLE nicht aus unterschiedlichen Output-Format-Konventionen ergeben, sondern allein aus der vorausgehenden Reasoning-Menge.
+
+### E. Adaptiver Allokator (Regelbasiert)
 
 Der Allokator nutzt das metacognitive Signal s ∈ [0,1] (normalisiert) und zwei Schwellenwerte θ₁ < θ₂:
 
     if s < θ₁:        → C0 (Direct — hohe Konfidenz)
-    elif s < θ₂:      → C1 (CoT + Verify — moderate Unsicherheit)
+    elif s < θ₂:      → C1 (Reasoning — moderate Unsicherheit)
     else:              → C2 (Self-Consistency — hohe Unsicherheit)
 
 Die Schwellenwerte werden auf einem Validierungssplit (10% der Aufgaben pro Domäne) über Grid-Search optimiert.
 
-### E. Task-Domänen
+### F. Task-Domänen
 
 **Domäne 1 — Text-Navigation (TextWorld):**
 Standardisierte TextWorld-Instanzen mit kontrollierter Schwierigkeit. Der Agent muss ein Zielobjekt finden und eine Sequenz von Aktionen ausführen. Episoden haben typischerweise 8–15 Steps. Testet primär sequentielle Planung mit räumlichem Memory.
 
-**Domäne 2 — Delayed-Cue Recall:**
-Aufgaben, bei denen kritische Information früh gegeben wird, gefolgt von Distraktoren, und die Information erst spät benötigt wird. Direkte Operationalisierung des Delayed-Match-to-Sample-Paradigmas aus der kognitiven Psychologie. Testet primär, ob metacognitive Signale Memory-Fehler erkennen — eine Fähigkeit, die in der Single-Turn-Literatur nicht adressiert wird.
+**Domäne 2 — Tower of Hanoi (Planung unter vollständiger Beobachtbarkeit):**
+Klassisches kombinatorisches Puzzle mit vollständig sichtbarem Zustand; legale Züge sind klar definiert, aber optimalität ist nicht trivial. Ergänzt TextWorld durch eine Domäne mit anderer Fehlerstruktur (Planungs- vs. Explorationsfehler) bei gleichzeitig sequentieller Entscheidungsstruktur — konsistent mit RQ4/Cross-Domain in `chapters/outline.md`.
 
-### F. Modellauswahl
+### G. Modellauswahl
 
-**Core:** Qwen2.5-3B-Instruct (oder funktional äquivalentes Modell zum Zeitpunkt der Durchführung)
+**Core:** Qwen3-4B (oder funktional äquivalentes thinking-fähiges Modell zum Zeitpunkt der Durchführung). Das Modell verfügt über einen nativen Thinking-Toggle (`/think` an für C1/C2, `/no_think` für C0), der C0 und C1 am selben Modell ohne Architektur- oder Prompt-Oberflächen-Unterschiede vergleichbar macht (Yang et al., 2025).
 
 **Extension:** Phi-3.5-mini-instruct (3.8B) als zweites Modell für Generalisierbarkeitstest.
 
 Begründung für SLMs: (a) Lokale Inferenz ohne API-Abhängigkeit, (b) Reproduzierbarkeit, (c) Ressourcen-Constraints machen adaptive Allokation *relevanter* als bei großen Modellen, (d) Edge-Deployment-Implikationen.
 
-### G. Abhängige Variablen
+### H. Abhängige Variablen
 
 **Primär:**
 - Task Success Rate (binär pro Episode)
-- Normalized Compute Cost (Anzahl LM-Calls pro Episode)
-- Efficiency Score: Success Rate / Normalized Compute Cost
+- Output Tokens pro Episode (kumuliert; Summe über **alle** Modell-Outputs innerhalb der Episode)
 
 **Sekundär:**
+- Total Tokens Processed pro Episode (Input + Output; berücksichtigt wachsendes Episode-History-Contextfenster)
 - Expected Calibration Error (ECE) der metacognitiven Signale
 - Brier Score für Signalqualität
 - Per-Step Allocation Distribution (wie oft wird C0/C1/C2 gewählt?)
 - Signal Calibration by Episode Position (ECE aufgeschlüsselt nach Step-Index, für RQ3)
 
-### H. Baselines
+**Tertiär (struktureller Reproduzierbarkeitsindikator):**
+- Anzahl Forward-Passes / LM-Calls pro Episode (z.B. C0=1 Call pro Step, C1=1, C2=N+Selector; dient der Strukturtransparenz, aber ist nicht das primäre Compute-Budget-Maß)
+
+**Token-Accounting-Regeln (explizit; einmal definieren, dann überall verwenden):**
+- **Primäre Compute-Achse:** Output-Tokens pro Episode (siehe oben). Der LM-Call-Count ist nur tertiärer Strukturindikator, nicht das Budget-Maß.
+- **C1:** Sowohl die nativen Reasoning-Tokens (Thinking-Trace) als auch die Action-Tokens zählen zum Output-Compute. Es gibt **keinen separaten Verify-Output**; der Compute-Aufwand von C1 gegenüber C0 ist genau die zusätzliche Reasoning-Menge.
+- **C2:** N Kandidaten-Outputs (jeweils Reasoning + Action) plus **Vote-Aggregation-Output** (Majority Vote) werden summiert.
+- **VC-Elicitation (Phase 1):** zusätzlicher VC-Prompt-Output zählt zum Compute (struktureller Compute-Overhead von VC vs. TLE; als Konfound in §5.9 zu nennen).
+- **Failure-Episoden:** Tokens werden bis zum Abbruch summiert; Episode-Success ist 0; Datenpunkt wird im Pareto-Reporting nicht ausgeschlossen.
+
+**Report-Ebene (Episode vs. Step):**
+- Episode-Level Output-Tokens: primäres Outcome für H2 (Pareto: Success vs. Output-Tokens).
+- Step-Level Output-Tokens: deskriptiv für Allokationsanalyse (Compute-Verteilung über Steps).
+- Kumulative Input-Tokens bis Step \(t\): relevant zur H3-Diskussion (wachsender Kontext als Load / Memory-Konfounder; als Limitation/Interpretationspunkt in §5.9 verankern).
+
+### I. Baselines
 
 | Baseline | Beschreibung | Funktion |
 |----------|-------------|----------|
 | Always-C0 | Immer Direct Inference | Lower Bound (Speed) |
-| Always-C2 | Immer C2 Self-Consistency | Upper Bound (Performance) |
+| Always-C2 | Immer Self-Consistency (Majority Vote) | Upper Bound (Performance) |
 | Random-Alloc | Zufällige Compute-Stufe pro Step | Kontrolle für den Effekt *informierter* Allokation |
 | EAGer-Style | Episoden-Level-Allokation: Entropie des ersten Steps bestimmt ein festes Compute-Level für alle Steps der Episode | Kontrolle für den Mehrwert von *Step-Level*- vs. Prompt-Level-Allokation |
 
 Die EAGer-Style-Baseline testet die zentrale Abgrenzung: Wenn Step-Level-Allokation besser abschneidet als Episoden-Level-Allokation, belegt das den Mehrwert der feineren Granularität — und damit den Beitrag dieser Arbeit gegenüber existierenden Ansätzen.
 
-### I. Statistische Analysestrategie
+### J. Statistische Analysestrategie
 
 **Für RQ1 (Kalibrierung):**
 - Expected Calibration Error (ECE) und Brier Scores für TLE und VC pro Domäne
@@ -226,9 +290,14 @@ Die EAGer-Style-Baseline testet die zentrale Abgrenzung: Wenn Step-Level-Allokat
 - Vergleich TLE vs. VC via Permutationstest auf ECE-Differenzen
 
 **Für RQ2 (Adaptive Superiority):**
-- Mixed-Effects-Modell: `Success ~ Strategy × Domain + (1|Task_Instance)`
-- Pairwise Contrasts (Tukey-adjusted) zwischen adaptiver Strategie und Baselines
-- Effektstärken (Cohen's d für Performance, Ratio für Compute)
+- **Primäres Reporting:** Pareto-Plot (Episode Success vs. Output Tokens pro Episode) mit Konfidenzintervallen auf beiden Achsen.
+- **H2-Teststruktur:** kombinierter **Non-Inferiority-plus-Superiority-Test** relativ zu `Always-C2`:
+  - **Non-Inferiority** auf Episode Success vs. `Always-C2` mit a-priori Marge \( \delta \) (in Kapitel 5 spezifiziert).
+  - **Superiority** auf Output Tokens pro Episode (niedriger ist besser) vs. `Always-C2`.
+- Mixed-Effects-Modelle (episodenbasiert), inkl. Domain und Task-Instanz-Random-Effects; **Task Difficulty als Kovariate**:
+  - Tower of Hanoi: Disk-Anzahl.
+  - TextWorld: Difficulty-Tier aus Manifest.
+  - Alternativ/ergänzend: Per-Tier-Reporting der Pareto-Relation.
 
 **Für RQ3 (Temporal Degradation):**
 - `Signal_ECE ~ Step_Position × Domain + (1|Task_Instance)`
@@ -239,7 +308,7 @@ Die EAGer-Style-Baseline testet die zentrale Abgrenzung: Wenn Step-Level-Allokat
 - Signalqualität × Domäne Interaktion im Mixed-Effects-Modell
 - Deskriptiver Vergleich der Allokator-Schwellenwerte zwischen Domänen
 
-### J. Sample Size und Power
+### K. Sample Size und Power
 
 - 50 Task-Instanzen pro Domäne (2 Domänen = 100 Instanzen)
 - 5 Wiederholungen pro Instanz pro Bedingung (Temperature 0.3)
@@ -253,7 +322,7 @@ Für den primären Vergleich (H2: Adaptive-TLE vs. Always-C2) mit erwarteter Eff
 
 ### Core (Muss für Abgabe vorhanden sein)
 
-1. Signal-Kalibrierungsanalyse für TLE und VC auf Text-Navigation und Delayed-Cue Recall mit 1 Modell
+1. Signal-Kalibrierungsanalyse für TLE und VC auf Text-Navigation (TextWorld) und Tower of Hanoi mit 1 Modell
 2. Adaptiver Allokator (TLE-basiert und VC-basiert) vs. 4 Baselines
 3. Temporal Degradation-Analyse (RQ3)
 4. Cross-Domain-Vergleich (RQ4) zwischen den zwei Core-Domänen
@@ -289,23 +358,28 @@ Für den primären Vergleich (H2: Adaptive-TLE vs. Always-C2) mit erwarteter Eff
 
 ## VII. Vorläufige Gliederung
 
+*Mental storyline (Spine):* LM agents make sequential decisions, but waste compute by treating every step equally. Cognitive psychology gives us a principled theory of when organisms invest effort — and a vocabulary (metacognition, EVC, fluency) that maps directly onto signals we can measure in LMs. Once we build that bridge, we can survey what's been tried, identify the gap — no one has tested these signals step-by-step in sequential agents — and fill it.
+
 1. **Introduction**
    1.1 The Compute Allocation Problem in Language Model Agents
    1.2 Research Gap: From Single-Turn to Sequential Settings
-   1.3 Research Questions and Hypotheses
-   1.4 Structure of the Thesis
+   1.3 Structure of the Thesis
 
-2. **Theoretical Background**
-   2.1 Dual-Process Theory and Cognitive Effort Allocation
-       2.1.1 System 1 and System 2: Definitions and Empirical Evidence
-       2.1.2 Expected Value of Control Theory
-       2.1.3 Metacognitive Monitoring and Control
-       2.1.4 Temporal Effects on Metacognitive Accuracy
-   2.2 Language Models as Sequential Decision Systems
-       2.2.1 Transformer Architecture and Token-Level Inference
-       2.2.2 Chain-of-Thought and Deliberative Reasoning
-       2.2.3 Test-Time Compute Scaling: Current Approaches
-   2.3 Small Language Models: Capabilities and Constraints
+2. **Theoretical Background** *(Reihenfolge: Substrat → Theorie → Brücke)*
+   2.1 Language Models as Sequential Decision Systems *(the substrate)*
+       2.1.1 Transformer Architecture and Token-Level Inference
+       2.1.2 Test-Time Compute: Definition, Budget Dimensions, and Scaling Mechanisms
+       2.1.3 The Agent Loop: Action → Observation → Next Decision
+       2.1.4 The Allocation Opportunity: Compute is Variable per Step, but Currently Fixed
+   2.2 Cognitive Effort Allocation: A Framework from Human Cognition *(the theoretical lens)*
+       2.2.1 Dual-Process Theory — System 1/2 as the Allocator Archetype
+       2.2.2 Expected Value of Control — the Formal Cost–Benefit Model for "When to Think Harder"
+       2.2.3 Metacognitive Monitoring and Control — FOK, JOL, Confidence; Fluency
+       2.2.4 Temporal Degradation — Load Degrades Signal Accuracy; Unique to Sequential Settings
+   2.3 Metacognition in Language Models *(the bridge)*
+       2.3.1 Chain-of-Thought and Deliberative Reasoning as Computational System 2
+       2.3.2 LM Metacognitive Capabilities and Their Limits
+       2.3.3 Small Language Models: Capabilities and Constraints
 
 3. **Related Work**
    3.1 Entropy-Based Compute Allocation (EAGer, Entropy Adaptive Decoding)
@@ -315,45 +389,56 @@ Für den primären Vergleich (H2: Adaptive-TLE vs. Always-C2) mit erwarteter Eff
    3.5 Agent Architectures with Variable Reasoning Depth
    3.6 Positioning of the Present Work
 
-4. **Methodology**
-   4.1 Research Design Overview
-   4.2 Operationalization of Metacognitive Signals
-       4.2.1 Token-Level Entropy
-       4.2.2 Verbalized Confidence
-   4.3 Compute Stages and Deliberation Mechanisms
-   4.4 Adaptive Allocation Mechanism
-   4.5 Task Environments
-       4.5.1 Text-Based Navigation
-       4.5.2 Delayed-Cue Recall
-   4.6 Baselines (incl. EAGer-Style)
-   4.7 Model Selection and Infrastructure
-   4.8 Statistical Analysis Plan
-   4.9 Methodological Limitations
+4. **Research Questions and Hypotheses**
+   4.1 Derivation of Research Questions from Theory and Related Work
+       4.1.1 RQ1: Comparative Calibration Quality of Entropy vs. Verbalized Confidence
+       4.1.2 RQ2: Performance-Efficiency Effects of Step-Level Adaptive Allocation
+       4.1.3 RQ3: Temporal Degradation of Signal Quality Across Episode Steps
+       4.1.4 RQ4: Cross-Domain Stability (TextWorld vs. Tower of Hanoi)
+   4.2 Hypotheses and Their Theoretical-Empirical Justification
+       4.2.1 Signal Quality Hypotheses (H1–H2)
+       4.2.2 Allocation and Temporal Dynamics Hypotheses (H3–H4)
+   4.3 Factorial Design, Compute Stages, and Experimental Phases *(Kurzüberblick; Details in Kap. 5)*
 
-5. **Results: Signal Calibration Analysis (Phase 1)**
-   5.1 Overall Calibration of Token-Level Entropy
-   5.2 Overall Calibration of Verbalized Confidence
-   5.3 Temporal Degradation Across Episode Steps
-   5.4 Cross-Domain Comparison of Signal Quality
+5. **Methodology**
+   5.1 Research Design Overview
+   5.2 Operationalization of Metacognitive Signals
+       5.2.1 Token-Level Entropy
+       5.2.2 Verbalized Confidence
+   5.3 Compute Stages and Deliberation Mechanisms
+   5.4 Adaptive Allocation Mechanism
+   5.5 Task Environments
+       5.5.1 Text-Based Navigation
+       5.5.2 Tower of Hanoi (Planning Under Full Observability)
+   5.6 Baselines (incl. EAGer-Style)
+   5.7 Model Selection and Infrastructure
+   5.8 Statistical Analysis Plan
+   5.9 Methodological Limitations
 
-6. **Results: Adaptive Allocation Experiments (Phase 2)**
-   6.1 Performance Comparison Against Baselines
-   6.2 Compute Efficiency Analysis
-   6.3 Step-Level vs. Prompt-Level Allocation (EAGer-Style Comparison)
-   6.4 Allocation Patterns: When Does the Agent Choose to Deliberate?
+6. **Results: Signal Calibration Analysis (Phase 1)**
+   6.1 Overall Calibration of Token-Level Entropy
+   6.2 Overall Calibration of Verbalized Confidence
+   6.3 Temporal Degradation Across Episode Steps
+   6.4 Cross-Domain Comparison of Signal Quality
 
-7. **Discussion**
-   7.1 Interpretation Through the Lens of Dual-Process Theory
-   7.2 Metacognitive Signal Quality in Sequential vs. Single-Turn Settings
-   7.3 Temporal Degradation: What Growing Context Does to Self-Monitoring
-   7.4 Implications for Efficient Agent Design
-   7.5 Limitations
-   7.6 Ethical Considerations
+7. **Results: Adaptive Allocation Experiments (Phase 2)**
+   7.1 Performance Comparison Against Baselines
+   7.2 Compute Efficiency Analysis
+   7.3 Step-Level vs. Prompt-Level Allocation (EAGer-Style Comparison)
+   7.4 Allocation Patterns: When Does the Agent Choose to Deliberate?
 
-8. **Conclusion and Future Work**
-   8.1 Summary of Contributions
-   8.2 Directions for Future Research
-   8.3 Toward Metacognition-Aware AI Agents
+8. **Discussion**
+   8.1 Interpretation Through the Lens of Dual-Process Theory
+   8.2 Metacognitive Signal Quality in Sequential vs. Single-Turn Settings
+   8.3 Temporal Degradation: What Growing Context Does to Self-Monitoring
+   8.4 Implications for Efficient Agent Design
+   8.5 Limitations
+   8.6 Ethical Considerations
+
+9. **Conclusion and Future Work**
+   9.1 Summary of Contributions
+   9.2 Directions for Future Research
+   9.3 Toward Metacognition-Aware AI Agents
 
 ---
 
@@ -385,6 +470,8 @@ Für den primären Vergleich (H2: Adaptive-TLE vs. Always-C2) mit erwarteter Eff
 
 ### Test-Time Compute und Adaptive Inference
 - Snell, C., Lee, J., Xu, K., & Kumar, A. (2024). Scaling LLM test-time compute optimally can be more effective than scaling model parameters. arXiv:2408.03314.
+- Setlur, A., Rajaraman, N., Levine, S., & Kumar, A. (2025). Scaling test-time compute without verification or RL is suboptimal. ICML 2025. arXiv:2502.12118.
+- Wang, X., Wei, J., Schuurmans, D., Le, Q., Chi, E., Narang, S., & Zhou, D. (2022). Self-Consistency Improves Chain of Thought Reasoning in Language Models. NeurIPS 2022.
 - Graves, A. (2016). Adaptive Computation Time for Recurrent Neural Networks. arXiv:1603.08983.
 - Banino, A., et al. (2022). PonderNet: Learning to ponder. ICML 2022.
 - Schuster, T., et al. (2022). Confident adaptive language modeling. NeurIPS 2022.
@@ -392,12 +479,16 @@ Für den primären Vergleich (H2: Adaptive-TLE vs. Always-C2) mit erwarteter Eff
 
 ### LM-Reasoning und Chain-of-Thought
 - Wei, J., et al. (2022). Chain-of-thought prompting elicits reasoning in large language models. NeurIPS 2022.
+- Kojima, T., Gu, S. S., Reid, M., Matsuo, Y., & Iwasawa, Y. (2022). Large language models are zero-shot reasoners. NeurIPS 2022. arXiv:2205.11916.
 - Yao, S., et al. (2023). Tree of Thoughts: Deliberate problem solving with large language models. NeurIPS 2023.
 - Shinn, N., et al. (2023). Reflexion: Language agents with verbal reinforcement learning. NeurIPS 2023.
 - Madaan, A., et al. (2023). Self-Refine: Iterative refinement with self-feedback. NeurIPS 2023.
+- OpenAI. (2024). Learning to reason with LLMs. https://openai.com/index/learning-to-reason-with-llms/
+- DeepSeek-AI. (2025). DeepSeek-R1: Incentivizing reasoning capability in LLMs via reinforcement learning. arXiv:2501.12948.
 
 ### Confidence Calibration in Language Models
 - Kadavath, S., et al. (2022). Language models (mostly) know what they know. arXiv:2207.05221.
+- Yang, D., Tsai, Y.-H. H., & Yamada, M. (2024). On verbalized confidence scores for LLMs. arXiv:2412.14737.
 - Xiong, M., et al. (2024). Can LLMs express their uncertainty? ICLR 2024.
 - Guo, C., et al. (2017). On calibration of modern neural networks. ICML 2017.
 - Lin, S., Hilton, J., & Evans, O. (2022). Teaching models to express their uncertainty in words. TMLR 2022.
@@ -409,6 +500,7 @@ Für den primären Vergleich (H2: Adaptive-TLE vs. Always-C2) mit erwarteter Eff
 ### Small Language Models
 - Abdin, M., et al. (2024). Phi-3 Technical Report. arXiv:2404.14219.
 - Yang, A., et al. (2024). Qwen2.5 Technical Report. arXiv:2412.15115.
+- Yang, A., et al. (2025). Qwen3 Technical Report. arXiv:2505.09388.
 
 ### Environments und Benchmarks
 - Côté, M.-A., et al. (2018). TextWorld: A learning environment for text-based games. AAAI 2018.
