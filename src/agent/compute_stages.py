@@ -1,5 +1,5 @@
 """
-Compute stages facade: C0 (direct + logprobs), C1 (CoT + verify), C2 (self-consistency).
+Compute stages facade: C0 (direct + logprobs), C1 (single reasoning call), C2 (self-consistency).
 
 Implementation in ``src.agent.stages``; this module re-exports the public API for backward compatibility.
 """
@@ -13,7 +13,6 @@ from src.agent.stages.c1 import c1_step, c1_step_core
 from src.agent.stages.c2 import c2_step, c2_step_core, majority_vote
 from src.agent.stages.shared import (
     _SINGLE_LINE_OUTPUT_INSTRUCTION,
-    DEFAULT_C1_VERIFY_INSTRUCTION,
     DEFAULT_VC_FOLLOWUP_INSTRUCTION,
     VC_FOLLOWUP_PROMPT_MARKER,
     StepReturn,
@@ -28,7 +27,6 @@ _c2_step_core = c2_step_core
 _majority_vote = majority_vote
 
 __all__ = [
-    "DEFAULT_C1_VERIFY_INSTRUCTION",
     "DEFAULT_VC_FOLLOWUP_INSTRUCTION",
     "VC_FOLLOWUP_PROMPT_MARKER",
     "StepReturn",
@@ -50,6 +48,7 @@ def get_step_fn(
     save_vc_distributions: bool = False,
     c2_n_samples: int = 3,
     c2_tie_break_seed: str | int | None = None,
+    c2_sample_temperature: float = 0.7,
     vc_mode: str = "inline",
     prompt_prefix: str = "",
     vc_followup_instruction: str | None = None,
@@ -63,10 +62,6 @@ def get_step_fn(
     vc_raw_completion_max_chars: int = 8000,
     c1_cot_temperature: float | None = None,
     c1_cot_max_tokens: int | None = None,
-    c1_verify_temperature: float = 0.0,
-    c1_verify_max_tokens: int | None = None,
-    c1_verify_stop: list[str] | None = None,
-    c1_verify_instruction: str | None = None,
 ):
     """
     Return the step function for stage 'C0', 'C1', or 'C2'.
@@ -116,6 +111,7 @@ def get_step_fn(
                 save_action_logprobs=save_logprob_distributions,
                 tie_break_seed=c2_tie_break_seed,
                 call_index=int(idx),
+                sample_temperature=float(c2_sample_temperature),
                 vc_mode=vc_mode,
                 prompt_prefix=prompt_prefix,
                 vc_followup_instruction=vc_instr,
@@ -153,10 +149,6 @@ def get_step_fn(
                 vc_raw_completion_max_chars=vc_raw_completion_max_chars,
                 c1_cot_temperature=c1_cot_temperature,
                 c1_cot_max_tokens=c1_cot_max_tokens,
-                c1_verify_temperature=c1_verify_temperature,
-                c1_verify_max_tokens=c1_verify_max_tokens,
-                c1_verify_stop=c1_verify_stop,
-                c1_verify_instruction=c1_verify_instruction,
             )
         return fn(
             obs,

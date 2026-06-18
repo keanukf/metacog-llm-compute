@@ -29,6 +29,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.utils.dotenv_loader import load_dotenv_if_present
 from src.utils.errors import BackendError
+from src.utils.inference.logprobs import logprob_token_coverage
 
 _DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 
@@ -158,6 +159,9 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
                     pass
             extra["chat_template"] = bool(inf.get("chat_template", True))
             extra["enable_thinking"] = bool(inf.get("enable_thinking", False))
+            revision = model_cfg.get("revision")
+            if revision:
+                extra["revision"] = str(revision)
             return create_wrapper(
                 backend=backend, model_name=model_name, dtype=dtype, **extra
             ), None
@@ -234,12 +238,15 @@ def _sanity_check_real_inference(config: dict, pilot_mode: str, real_model: Any)
     )
     elapsed = time.perf_counter() - t0
     n_out = len(logprobs) if logprobs else 0
+    coverage = logprob_token_coverage(logprobs)
     return {
         "pilot_mode": pilot_mode,
         "ok": bool((text or "").strip()),
         "latency_s": float(elapsed),
         "completion_tokens_observed": int(n_out),
         "has_logprobs": bool(logprobs),
+        "logprob_token_field_rate": coverage.get("token_field_rate"),
+        "logprob_sample_record": coverage.get("first_record"),
         "sample_text_prefix": (text or "")[:200],
     }
 
