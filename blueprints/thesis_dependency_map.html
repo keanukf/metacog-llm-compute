@@ -64,7 +64,7 @@ h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
 <body>
 
 <h1>Thesis dependency map</h1>
-<p class="subtitle">Metacognitive Effort Allocation — Critical path and gates (March 30, 2026, v2)</p>
+<p class="subtitle">Metacognitive Effort Allocation — Critical path and gates (June 2026, v3)</p>
 
 <div class="legend">
   <div class="legend-item"><span class="status s-critical"></span> Blocker</div>
@@ -75,19 +75,19 @@ h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
 
 <div class="track-label">Layer 0 — Infrastructure + Model Selection</div>
 <div class="node" onclick="toggle(this)">
-  <div><span class="status s-critical"></span><span class="node-id">L0.1</span></div>
+  <div><span class="status s-active"></span><span class="node-id">L0.1</span></div>
   <div class="node-title">Logprobs from vLLM</div>
   <div class="node-deps">Blocks: TLE extraction, all calibration, model selection benchmark</div>
-  <div class="node-detail">vLLM must return per-token logprobs via SamplingParams(logprobs=1). Currently returning empty/null on first smoke test. Must work before any candidate model can be evaluated. Check vLLM version compatibility, test with a minimal prompt, inspect raw output. Without this, TLE is impossible and no model can be selected.</div>
+  <div class="node-detail">vLLM must return per-token logprobs via SamplingParams(logprobs=1). RunPod smoke: partial logprobs/TLE; audit via probe_vllm_logprobs + validate_pilot_outputs. Must reach >95% TLE on C0 before model selection. Check vLLM version compatibility, test with a minimal prompt, inspect raw output. Without this, TLE is impossible and no model can be selected.</div>
 </div>
 <div class="node" onclick="toggle(this)">
-  <div><span class="status s-critical"></span><span class="node-id">L0.2</span></div>
+  <div><span class="status s-done"></span><span class="node-id">L0.2</span></div>
   <div class="node-title">Structured output format</div>
   <div class="node-deps">Blocks: action parsing, VC parsing, model selection benchmark</div>
   <div class="node-detail">Pipeline must handle action parsing and VC extraction generically across model families. System prompt constrains output ("respond with exactly one line: your move"), stop sequences cut off reasoning, post-processing strips think-tags. For models with thinking mode (Qwen3, SmolLM3), enable_thinking=False must be enforced. VC needs a separate short call or enforced two-line format.</div>
 </div>
 <div class="node" onclick="toggle(this)">
-  <div><span class="status s-active"></span><span class="node-id">L0.3</span></div>
+  <div><span class="status s-done"></span><span class="node-id">L0.3</span></div>
   <div class="node-title">Local pipeline validation (M1 + LM Studio)</div>
   <div class="node-deps">Needs: pipeline code ready. Zero GPU cost.</div>
   <div class="node-detail">Test all 7 candidate models (quantized GGUFs) locally via LM Studio's OpenAI-compatible API. Validate: (a) logprobs returned in expected schema, (b) action parsing produces valid moves, (c) VC extraction returns 0–100 values, (d) token_entropy.py computes non-null TLE. Run 3–5 TextWorld episodes per candidate. Absolute signal values will differ from full-precision vLLM, but pipeline mechanics are identical. Also write an integration test asserting the logprobs schema; run it locally against LM Studio, then against vLLM on first cloud session. Candidates: Qwen2.5-3B-Instruct, Qwen3-4B, Qwen3-8B, Llama-3.2-3B-Instruct, Phi-4-mini-instruct, SmolLM3-3B, Gemma-3-4B-IT.</div>
@@ -111,7 +111,7 @@ h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
 <div class="tracks">
   <div class="track">
     <div class="node" onclick="toggle(this)">
-      <div><span class="status s-active"></span><span class="node-id">L1.1</span></div>
+      <div><span class="status s-done"></span><span class="node-id">L1.1</span></div>
       <div class="node-title">TextWorld: LM plays</div>
       <div class="node-deps">Needs: GATE 0 → confirmed model</div>
       <div class="node-detail">Run 10 TextWorld Cooking episodes with the selected model. Check: >80% actions parseable, game state advances, score changes tracked for step-level correctness. Manual play module already works.</div>
@@ -119,7 +119,7 @@ h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
   </div>
   <div class="track">
     <div class="node" onclick="toggle(this)">
-      <div><span class="status s-active"></span><span class="node-id">L1.2</span></div>
+      <div><span class="status s-done"></span><span class="node-id">L1.2</span></div>
       <div class="node-title">Tower of Hanoi: LM plays</div>
       <div class="node-deps">Needs: GATE 0 → confirmed model</div>
       <div class="node-detail">Run 10 ToH episodes (3-disk) with the selected model. Check: >80% moves parseable, legal moves change state, optimal tracking works. Manual play verified. Valid moves listed in observation to help parseability.</div>
@@ -132,18 +132,18 @@ h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
 <div class="tracks">
   <div class="track">
     <div class="node" onclick="toggle(this)">
-      <div><span class="status s-blocked"></span><span class="node-id">L2.1</span></div>
+      <div><span class="status s-active"></span><span class="node-id">L2.1</span></div>
       <div class="node-title">TLE extraction works</div>
       <div class="node-deps">Needs: L0.1 (logprobs arrive) + GATE 0</div>
-      <div class="node-detail">With logprobs fixed and model confirmed, verify compute_tle produces non-null values, that TLE differs between easy and hard prompts, and that per-step TLE values are logged correctly in episode JSONs.</div>
+      <div class="node-detail">RunPod + local: verify compute_tle produces non-null values on C0/C2; C1 may null TLE on verify→draft fallback, that TLE differs between easy and hard prompts, and that per-step TLE values are logged correctly in episode JSONs.</div>
     </div>
   </div>
   <div class="track">
     <div class="node" onclick="toggle(this)">
-      <div><span class="status s-blocked"></span><span class="node-id">L2.2</span></div>
+      <div><span class="status s-done"></span><span class="node-id">L2.2</span></div>
       <div class="node-title">VC extraction works</div>
       <div class="node-deps">Needs: L0.2 (structured output) + GATE 0</div>
-      <div class="node-detail">With clean output format and model confirmed, verify parse_confidence returns values 0–100 reliably. Options: two-line format (move / confidence), separate VC call after action call, or few-shot examples. Must produce non-null VC for >80% of steps.</div>
+      <div class="node-detail">With clean output format and model confirmed, verify parse_confidence returns values 0–100 reliably. Options: two-line format (move / confidence), separate VC call after action call, or few-shot examples. VC followup mode validated locally and on RunPod smoke (>80% parse rate in pilot runs).</div>
     </div>
   </div>
 </div>

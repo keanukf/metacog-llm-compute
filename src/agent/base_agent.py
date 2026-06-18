@@ -251,6 +251,8 @@ def run_episode(
                     "step_wall_time_s": float(step_wall_time_s),
                     "step_start_time_utc": step_start_dt,
                 }
+                if isinstance(call_detail, dict):
+                    lf_meta_base["call_detail"] = call_detail
                 if (
                     trace_hook is not None
                     and step_span is not None
@@ -509,12 +511,9 @@ def run_adaptive_episode(
     vc_followup_instruction: str | None = None,
     c1_cot_temperature: float | None = None,
     c1_cot_max_tokens: int | None = None,
-    c1_verify_temperature: float = 0.0,
-    c1_verify_max_tokens: int | None = None,
-    c1_verify_stop: list[str] | None = None,
-    c1_verify_instruction: str | None = None,
     c2_n_samples: int = 3,
     c2_tie_break_seed: str | int | None = None,
+    c2_sample_temperature: float = 0.7,
     history_keep_last_pairs: int | None = None,
     history_max_obs_chars: int = 0,
     history_current_obs_max_chars: int = 0,
@@ -549,6 +548,7 @@ def run_adaptive_episode(
                     save_vc_distributions=save_vc_distributions,
                     c2_n_samples=int(c2_n_samples),
                     c2_tie_break_seed=c2_tie_break_seed,
+                    c2_sample_temperature=float(c2_sample_temperature),
                     vc_mode=vc_mode,
                     prompt_prefix=prompt_prefix,
                     vc_followup_instruction=vc_followup_instruction,
@@ -562,10 +562,6 @@ def run_adaptive_episode(
                     vc_raw_completion_max_chars=vc_raw_completion_max_chars,
                     c1_cot_temperature=c1_cot_temperature,
                     c1_cot_max_tokens=c1_cot_max_tokens,
-                    c1_verify_temperature=c1_verify_temperature,
-                    c1_verify_max_tokens=c1_verify_max_tokens,
-                    c1_verify_stop=c1_verify_stop,
-                    c1_verify_instruction=c1_verify_instruction,
                 ),
             )
 
@@ -688,6 +684,8 @@ def run_adaptive_episode(
                     "step_wall_time_s": float(step_wall_time_s),
                     "strategy": strategy,
                 }
+                if isinstance(call_detail, dict):
+                    lf_meta_ad["call_detail"] = call_detail
                 if (
                     trace_hook is not None
                     and step_span is not None

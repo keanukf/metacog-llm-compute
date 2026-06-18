@@ -1,17 +1,15 @@
-"""C1: chain-of-thought + verify (two LM calls)."""
+"""C1: single reasoning call with native thinking (one LM call)."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from src.agent.stages.shared import (
-    _SINGLE_LINE_OUTPUT_INSTRUCTION,
     DEFAULT_VC_FOLLOWUP_INSTRUCTION,
     StepReturn,
     _action_generate_kwargs,
     _build_prompt,
     _normalize_action_line,
-    _parse_cot_action,
     _resolve_vc,
 )
 from src.signals import token_entropy
@@ -38,91 +36,40 @@ def c1_step_core(
     vc_raw_completion_max_chars: int,
     c1_cot_temperature: float | None,
     c1_cot_max_tokens: int | None,
-    c1_verify_temperature: float,
-    c1_verify_max_tokens: int | None,
-    c1_verify_stop: list[str] | None,
-    c1_verify_instruction: str | None,
 ) -> StepReturn:
     """
-    C1: two LM calls — (1) chain-of-thought inside <think>...</think> followed by a draft command,
-    (2) verify pass that outputs the final single-line command with logprobs (TLE).
+    C1: one LM call — reason inside <think>...</think>, then commit
+    a final single-line action. TLE is measured on the action tokens only (post-think).
     """
     base_prompt = _build_prompt(observation, history, prompt_prefix)
-    cot_instruction = (
+    reason_instruction = (
         "\n\n"
         "Before answering, briefly reason inside <think>...</think> tags.\n"
-        "Inside <think>, end with <command>YOUR_COMMAND</command>.\n"
         "After </think>, write one valid game action on its own line (e.g. go north)."
     )
-    cot_prompt = f"{base_prompt}{cot_instruction}"
+    reason_prompt = f"{base_prompt}{reason_instruction}"
     act_tok = int(action_max_tokens) if action_max_tokens is not None else 32
-    cot_max_tokens = (
+    reason_max_tokens = (
         int(c1_cot_max_tokens) if c1_cot_max_tokens is not None else max(128, act_tok * 2)
     )
-    if cot_max_tokens <= 0:
-        cot_max_tokens = max(128, act_tok * 2)
-    cot_temp = c1_cot_temperature
-    if cot_temp is None:
-        cot_temp = float(action_temperature) if action_temperature is not None else 0.5
-    cot_kw: dict[str, Any] = {
-        "max_tokens": cot_max_tokens,
-        "temperature": float(cot_temp),
-        # C1-CoT is the only place where we enable model-native thinking.
-        "enable_thinking": True,
-    }
-    cot_text, cot_lp = model.generate(cot_prompt, logprobs=True, **cot_kw)
-    parsed = _parse_cot_action(cot_text or "")
-    draft_action = str(parsed.get("action") or "")
-    draft_status = str(parsed.get("status") or "unparsed")
-    parse_method = str(parsed.get("parse_method") or "none")
-    draft_reasoning_raw = str(parsed.get("reasoning_internal") or "")
-    verify_parts = [base_prompt]
-    # Keep verify prompt compact: if CoT produced a draft action, provide it as optional hint.
-    if draft_action:
-        verify_parts.append(
-            "\n".join(
-                [
-                    f"<draft_action>{draft_action}</draft_action>",
-                    "If draft_action is valid and useful in this state, return it unchanged.",
-                    "Otherwise, return one corrected command.",
-                ]
-            )
-        )
-    verify_parts.append(_SINGLE_LINE_OUTPUT_INSTRUCTION)
-    verify_prompt = "\n\n".join(p for p in verify_parts if p)
-    verify_max_tokens = (
-        c1_verify_max_tokens if c1_verify_max_tokens is not None else action_max_tokens
-    )
-    verify_stop = c1_verify_stop if c1_verify_stop is not None else action_stop
-    gen_kw = _action_generate_kwargs(verify_max_tokens, float(c1_verify_temperature), verify_stop)
-    # Verify must be single-line action; force thinking OFF.
-    gen_kw["enable_thinking"] = False
-    final_text, logprobs = model.generate(verify_prompt, logprobs=True, **gen_kw)
-    verify_text_raw = final_text
-    verify_lp_raw = logprobs
-    action = _normalize_action_line(final_text or "")
+    if reason_max_tokens <= 0:
+        reason_max_tokens = max(128, act_tok * 2)
+    reason_temp = c1_cot_temperature
+    if reason_temp is None:
+        reason_temp = float(action_temperature) if action_temperature is not None else 0.5
+    gen_kw = _action_generate_kwargs(action_max_tokens, float(reason_temp), action_stop)
+    gen_kw["max_tokens"] = reason_max_tokens
+    gen_kw["enable_thinking"] = True
+    text, logprobs = model.generate(reason_prompt, logprobs=True, **gen_kw)
+    action = _normalize_action_line(text or "")
     tokens_used = len(logprobs) if logprobs else 0
-    tokens_used += len(cot_lp) if cot_lp else 0
-    lm_calls = 2
-    verify_fallback_source = None
-    if not action:
-        if draft_action:
-            action = draft_action
-            verify_fallback_source = "draft_action"
-    # If executed action came from CoT fallback, verify logprobs no longer correspond to executed action.
-    if verify_fallback_source == "draft_action":
-        tle = None
-    else:
-        tle = (
-            token_entropy.extract_action_tle_from_response(final_text, logprobs)
-            if logprobs
-            else None
-        )
+    lm_calls = 1
+    tle = token_entropy.extract_action_tle_from_response(text, logprobs) if logprobs else None
 
     vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
         model,
         vc_mode=vc_mode,
-        inline_text=final_text or "",
+        inline_text=text or "",
         observation=observation,
         history=history,
         prompt_prefix=prompt_prefix,
@@ -130,10 +77,11 @@ def c1_step_core(
         action_line=action,
         vc_followup_instruction=vc_followup_instruction,
         raw_action_completion=None,
-        cot_text=cot_text or "",
-        verify_completion=final_text or "",
+        cot_text=text or "",
+        verify_completion=None,
         c2_n_samples=None,
         c2_sample_first_lines=None,
+        c2_winner_completion=None,
         vc_followup_logprobs=vc_followup_logprobs,
         followup_max_tokens=followup_max_tokens,
         followup_temperature=followup_temperature,
@@ -145,34 +93,21 @@ def c1_step_core(
     lm_calls += extra_calls
 
     lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
-    response_full = f"=== C1 CoT ===\n{cot_text}\n\n=== C1 verify ===\n{final_text}"
+    response_full = text or ""
     subcalls: list[dict[str, Any]] = [
         {
-            "kind": "cot",
-            "prompt": cot_prompt,
-            "response": cot_text,
-            "tokens_generated": int(len(cot_lp) if cot_lp else 0),
-            "temperature": float(cot_temp),
-            "max_tokens": int(cot_max_tokens),
-        },
-        {
-            "kind": "verify",
-            "prompt": verify_prompt,
-            "response": verify_text_raw,
-            "tokens_generated": int(len(verify_lp_raw) if verify_lp_raw else 0),
-            "temperature": float(c1_verify_temperature),
-            "max_tokens": int(verify_max_tokens) if verify_max_tokens is not None else None,
-            "stop": list(verify_stop) if isinstance(verify_stop, list) else None,
-            "fallback_source": verify_fallback_source,
+            "kind": "reason",
+            "prompt": reason_prompt,
+            "response": text,
+            "tokens_generated": int(len(logprobs) if logprobs else 0),
+            "temperature": float(reason_temp),
+            "max_tokens": int(reason_max_tokens),
+            "enable_thinking": True,
         },
     ]
     attach_lmstudio_diagnostics_to_subcalls(model, subcalls)
     call_detail = {
         "stage": "C1",
-        "draft_action": draft_action,
-        "draft_status": draft_status,
-        "parse_method": parse_method,
-        "draft_reasoning_raw": draft_reasoning_raw,
         "subcalls": subcalls,
     }
     return (
@@ -183,7 +118,7 @@ def c1_step_core(
         lm_calls,
         lp_out,
         vc_detail,
-        verify_prompt,
+        reason_prompt,
         response_full,
         call_detail,
     )
@@ -194,7 +129,7 @@ def c1_step(
     history: list[str],
     model: Any,
 ) -> tuple[str, dict[str, float] | None, float | None, int, int]:
-    """C1: CoT + self-verify (two action LM calls); VC disabled (legacy helper)."""
+    """C1: single reasoning call; VC disabled (legacy helper)."""
     r = c1_step_core(
         observation,
         history,
@@ -214,9 +149,5 @@ def c1_step(
         vc_raw_completion_max_chars=8000,
         c1_cot_temperature=None,
         c1_cot_max_tokens=None,
-        c1_verify_temperature=0.0,
-        c1_verify_max_tokens=None,
-        c1_verify_stop=None,
-        c1_verify_instruction=None,
     )
     return r[0], r[1], r[2], r[3], r[4]

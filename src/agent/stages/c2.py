@@ -16,6 +16,7 @@ from src.agent.stages.shared import (
     _normalize_vote_key,
     _run_vc_followup,
     _seeded_rng,
+    _strip_think_blocks,
 )
 from src.signals import token_entropy, verbalized_confidence
 from src.utils.inference.lmstudio.wrapper import attach_lmstudio_diagnostics_to_subcalls
@@ -44,6 +45,12 @@ def majority_vote(
     return str(r.choice(tied)), True, dict(counts)
 
 
+def _first_action_line_from_completion(text: str) -> str:
+    """First non-empty line after stripping think blocks (vote key source)."""
+    stripped = _strip_think_blocks(text or "")
+    return _extract_first_line(stripped)
+
+
 def c2_step_core(
     observation: str,
     history: list[str],
@@ -52,6 +59,7 @@ def c2_step_core(
     *,
     tie_break_seed: str | int | None = None,
     call_index: int = 0,
+    sample_temperature: float = 0.7,
     save_action_logprobs: bool,
     vc_mode: str,
     prompt_prefix: str,
@@ -69,18 +77,16 @@ def c2_step_core(
     prompt = (
         f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
     )
-    gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
-    # Force thinking OFF for self-consistency sampling; only C1-CoT uses thinking.
-    gen_kw["enable_thinking"] = False
-    # Per sample: raw_first_line, action_exec, vote_key, raw_text, logprobs
+    gen_kw = _action_generate_kwargs(action_max_tokens, float(sample_temperature), action_stop)
+    # Self-consistency requires thinking + diversity temperature; TLE uses raw_logprobs (T=1.0 scale).
+    gen_kw["enable_thinking"] = True
     samples: list[dict[str, Any]] = []
     total_tokens = 0
     n = max(1, int(n_samples))
-    # Optional backend optimization: vLLM can generate N samples in one call.
     if hasattr(model, "generate_many") and callable(getattr(model, "generate_many")):
         outs = model.generate_many(prompt, n=n, logprobs=True, **gen_kw)
         for i, (text, logprobs) in enumerate(outs):
-            first_raw = _extract_first_line(text)
+            first_raw = _first_action_line_from_completion(text)
             action_exec = _normalize_action_for_execution(first_raw)
             vote_key = _normalize_vote_key(first_raw)
             samples.append(
@@ -100,7 +106,7 @@ def c2_step_core(
     else:
         for i in range(n):
             text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
-            first_raw = _extract_first_line(text)
+            first_raw = _first_action_line_from_completion(text)
             action_exec = _normalize_action_for_execution(first_raw)
             vote_key = _normalize_vote_key(first_raw)
             samples.append(
@@ -133,7 +139,7 @@ def c2_step_core(
     if winner_index is None and samples:
         winner_index = int(samples[0].get("sample_index") or 0)
 
-    # Per-sample metrics (secondary; primary TLE is the winner's).
+    # Per-sample TLE (trace only; allocator signal uses winner sample only).
     for s in samples:
         lp = s.get("logprobs")
         raw_text = str(s.get("response") or "")
@@ -150,25 +156,13 @@ def c2_step_core(
         else:
             s["mean_logprob"] = None
 
-    winner_action_exec = ""
-    winner_raw_first = ""
-    winner_tle: dict[str, float] | None = None
-    winner_mean_logprob: float | None = None
-    for s in samples:
-        if str(s.get("vote_key") or "") == winning_key:
-            winner_action_exec = str(s.get("action_exec") or "")
-            winner_raw_first = str(s.get("raw_first_line") or "")
-            winner_tle = s.get("tle")
-            mlp = s.get("mean_logprob")
-            winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
-            break
-    if not winner_action_exec and samples:
-        s0 = samples[0]
-        winner_action_exec = str(s0.get("action_exec") or "")
-        winner_raw_first = str(s0.get("raw_first_line") or "")
-        winner_tle = s0.get("tle")
-        mlp = s0.get("mean_logprob")
-        winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
+    winner_sample = samples[winner_index] if winner_index is not None and samples else {}
+    winner_action_exec = str(winner_sample.get("action_exec") or "")
+    winner_raw_first = str(winner_sample.get("raw_first_line") or "")
+    winner_tle: dict[str, float] | None = winner_sample.get("tle")
+    mlp = winner_sample.get("mean_logprob")
+    winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
+    winner_completion = str(winner_sample.get("response") or "")
 
     vc: float | None = None
     vc_detail: dict[str, Any] | None = None
@@ -176,12 +170,7 @@ def c2_step_core(
     extra_calls = 0
     mode = (vc_mode or "inline").strip().lower()
     if mode == "inline":
-        for s in samples:
-            if str(s.get("vote_key") or "") == winning_key:
-                vc = verbalized_confidence.parse_confidence(str(s.get("response") or ""))
-                break
-        if vc is None and samples:
-            vc = verbalized_confidence.parse_confidence(str(samples[0].get("response") or ""))
+        vc = verbalized_confidence.parse_confidence(winner_completion)
     elif mode == "none":
         vc = None
     else:
@@ -195,6 +184,7 @@ def c2_step_core(
             vc_followup_instruction=vc_followup_instruction,
             c2_n_samples=n,
             c2_sample_first_lines=[str(s.get("raw_first_line") or "") for s in samples],
+            c2_winner_completion=winner_completion,
             followup_max_tokens=followup_max_tokens,
             followup_temperature=followup_temperature,
             request_logprobs=vc_followup_logprobs,
@@ -206,7 +196,6 @@ def c2_step_core(
     total_tokens += extra_tok
     lm_calls = int(n) + extra_calls
     if save_action_logprobs:
-        # For C2 we keep all samples' action logprobs so posthoc analysis can study agreement vs uncertainty.
         lp_saved = [
             s.get("logprobs") if isinstance(s.get("logprobs"), list) else None for s in samples
         ]
@@ -240,6 +229,8 @@ def c2_step_core(
         "stage": "C2",
         "method": "self_consistency_majority_vote",
         "n_samples": int(n),
+        "enable_thinking": True,
+        "sample_temperature": float(sample_temperature),
         "winner_index": int(winner_index) if winner_index is not None else None,
         "winning_vote_key": winning_key,
         "tie_broken": bool(tie_broken),
