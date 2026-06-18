@@ -1,5 +1,5 @@
 """
-Compute stages: C0 (direct + logprobs), C1 (CoT + verify), C2 (self-consistency / majority vote).
+Compute stages: C0 (direct + logprobs), C1 (single reasoning call), C2 (self-consistency / majority vote).
 """
 
 from __future__ import annotations
@@ -35,20 +35,6 @@ _SINGLE_LINE_OUTPUT_INSTRUCTION: str = (
 _C0_GENERATION_INSTRUCTION: str = (
     "Choose one valid game action from <task>, <history>, and <state>."
 )
-
-DEFAULT_C1_VERIFY_INSTRUCTION = (
-    "You are doing a verification pass over a draft_action.\n"
-    "Use <task>, <history>, and <state> as the only source of truth.\n\n"
-    'If <draft_status> is "parsed":\n'
-    "- Check draft_action against the task constraints and current state.\n"
-    "- If it is valid and useful, output it again unchanged.\n"
-    "- If it is invalid, output a corrected single command.\n\n"
-    'If <draft_status> is "unparsed":\n'
-    "- Ignore draft_action.\n"
-    f"- {_C0_GENERATION_INSTRUCTION}\n\n"
-    f"{_SINGLE_LINE_OUTPUT_INSTRUCTION}\n"
-)
-
 
 _THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
 _THINK_CAPTURE_RE = re.compile(r"<think>([\s\S]*?)</think>", re.IGNORECASE)
@@ -401,6 +387,7 @@ def _build_model_output_to_judge_section(
     verify_completion: str | None,
     c2_n_samples: int | None,
     c2_sample_first_lines: list[str] | None,
+    c2_winner_completion: str | None = None,
     followup_cot_max_chars: int,
     raw_completion_max_chars: int,
 ) -> str:
@@ -417,25 +404,27 @@ def _build_model_output_to_judge_section(
     if tag == "C1":
         cot = (cot_text or "").strip()
         cot_t = _truncate_text(cot, max_chars=followup_cot_max_chars) if cot else "(empty)"
-        ver = (verify_completion or "").strip()
-        ver_cap = max(4000, int(followup_cot_max_chars))
-        ver_t = _truncate_text(ver, max_chars=ver_cap) if ver else ""
-        parts = [
-            "--- Chain-of-thought (your reasoning for this turn) ---",
-            cot_t,
-            f"--- Final command after self-check (executed) ---\n{al}",
-        ]
-        if ver_t:
-            parts.extend(["--- Verify-phase raw completion ---", ver_t])
-        return "\n\n".join(parts)
+        return (
+            "--- Chain-of-thought (your reasoning for this turn) ---\n"
+            f"{cot_t}\n\n"
+            f"--- Final command (executed) ---\n{al}"
+        )
     if tag == "C2":
         n = int(c2_n_samples or 0)
+        winner_c = (c2_winner_completion or cot_text or "").strip()
+        winner_t = (
+            _truncate_text(winner_c, max_chars=followup_cot_max_chars) if winner_c else "(empty)"
+        )
         lines = c2_sample_first_lines or []
         summary = "\n".join(f"  sample {i + 1}: {fl!r}" for i, fl in enumerate(lines))
-        return (
-            f"--- Selected command (majority vote among {n} samples) ---\n{al}\n\n"
-            f"--- Sample first-line commands ---\n{summary}"
-        )
+        parts = [
+            f"--- Selected command (majority vote among {n} samples) ---\n{al}",
+            "--- Reasoning from the winning sample ---",
+            winner_t,
+        ]
+        if summary:
+            parts.append(f"--- All sample first-line commands ---\n{summary}")
+        return "\n\n".join(parts)
     return f"--- Chosen command ---\n{al}"
 
 
@@ -452,6 +441,7 @@ def _build_vc_followup_prompt(
     verify_completion: str | None = None,
     c2_n_samples: int | None = None,
     c2_sample_first_lines: list[str] | None = None,
+    c2_winner_completion: str | None = None,
     followup_cot_max_chars: int = 12000,
     followup_max_context_chars: int | None = None,
     raw_completion_max_chars: int = 8000,
@@ -469,6 +459,7 @@ def _build_vc_followup_prompt(
         verify_completion=verify_completion,
         c2_n_samples=c2_n_samples,
         c2_sample_first_lines=c2_sample_first_lines,
+        c2_winner_completion=c2_winner_completion,
         followup_cot_max_chars=followup_cot_max_chars,
         raw_completion_max_chars=raw_completion_max_chars,
     )
@@ -497,6 +488,7 @@ def _run_vc_followup(
     verify_completion: str | None = None,
     c2_n_samples: int | None = None,
     c2_sample_first_lines: list[str] | None = None,
+    c2_winner_completion: str | None = None,
     followup_max_tokens: int,
     followup_temperature: float,
     request_logprobs: bool,
@@ -517,6 +509,7 @@ def _run_vc_followup(
         verify_completion=verify_completion,
         c2_n_samples=c2_n_samples,
         c2_sample_first_lines=c2_sample_first_lines,
+        c2_winner_completion=c2_winner_completion,
         followup_cot_max_chars=followup_cot_max_chars,
         followup_max_context_chars=followup_max_context_chars,
         raw_completion_max_chars=raw_completion_max_chars,
@@ -559,6 +552,7 @@ def _resolve_vc(
     verify_completion: str | None = None,
     c2_n_samples: int | None = None,
     c2_sample_first_lines: list[str] | None = None,
+    c2_winner_completion: str | None = None,
     vc_followup_logprobs: bool,
     followup_max_tokens: int,
     followup_temperature: float,
@@ -584,6 +578,7 @@ def _resolve_vc(
             verify_completion=verify_completion,
             c2_n_samples=c2_n_samples,
             c2_sample_first_lines=c2_sample_first_lines,
+            c2_winner_completion=c2_winner_completion,
             followup_max_tokens=followup_max_tokens,
             followup_temperature=followup_temperature,
             request_logprobs=vc_followup_logprobs,

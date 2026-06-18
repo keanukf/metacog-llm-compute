@@ -611,156 +611,133 @@ class LangfuseTraceHook:
         ctx: Any | None = None,
     ) -> bool:
         """
-        Log C1 as cot → verify → vc_followup (deep chain).
+        Log C1 as a single reason generation → optional vc_followup.
         Returns True if chain was logged.
         """
-        cot_sc = _subcall_by_kind(subcalls, "cot")
-        verify_sc = _subcall_by_kind(subcalls, "verify")
-        if cot_sc is None and verify_sc is None:
+        reason_sc = _subcall_by_kind(subcalls, "reason") or _subcall_by_kind(subcalls, "cot")
+        if reason_sc is None:
             return False
 
         model = model_name or "unknown"
 
         if self._parent_has_nested_current(step_span):
-            parent: Any = step_span
-            verify_gen: Any = None
-            if cot_sc is not None:
-                with step_span.start_as_current_observation(
-                    as_type="generation",
-                    name=f"cot_{step_index}_{stage}",
-                    model=model,
-                    input=str(cot_sc.get("prompt") or ""),
-                    metadata=_subcall_observation_metadata(
-                        stage, "cot", cot_sc, strategy=strategy, lm_call_index=1
-                    ),
-                ) as cot_gen:
-                    self._update_generation(
-                        cot_gen,
-                        output=str(cot_sc.get("response") or ""),
-                        usage_details=_usage_details_from_subcall(cot_sc),
-                        model_parameters=_model_parameters_from_subcall(cot_sc),
+            with step_span.start_as_current_observation(
+                as_type="generation",
+                name=f"reason_{step_index}_{stage}",
+                model=model,
+                input=str(reason_sc.get("prompt") or ""),
+                metadata=_subcall_observation_metadata(
+                    stage, "reason", reason_sc, strategy=strategy, lm_call_index=1
+                ),
+            ) as reason_gen:
+                self._update_generation(
+                    reason_gen,
+                    output=str(reason_sc.get("response") or ""),
+                    usage_details=_usage_details_from_subcall(reason_sc),
+                    model_parameters=_model_parameters_from_subcall(reason_sc),
+                )
+                self._apply_verify_scores(reason_gen, metadata)
+                if vc_prompt and vc_output:
+                    self._log_vc_under_parent(
+                        reason_gen,
+                        step_index=step_index,
+                        stage=stage,
+                        model_name=model,
+                        vc_prompt=vc_prompt,
+                        vc_output=vc_output,
+                        metadata=metadata,
                     )
-                    parent = cot_gen
-                    if verify_sc is not None:
-                        with parent.start_as_current_observation(
-                            as_type="generation",
-                            name=f"verify_{step_index}_{stage}",
-                            model=model,
-                            input=str(verify_sc.get("prompt") or ""),
-                            metadata=_subcall_observation_metadata(
-                                stage, "verify", verify_sc, strategy=strategy, lm_call_index=2
-                            ),
-                        ) as v_gen:
-                            verify_gen = v_gen
-                            self._update_generation(
-                                v_gen,
-                                output=str(verify_sc.get("response") or ""),
-                                usage_details=_usage_details_from_subcall(verify_sc),
-                                model_parameters=_model_parameters_from_subcall(verify_sc),
-                            )
-                            self._apply_verify_scores(v_gen, metadata)
-                            if vc_prompt and vc_output:
-                                self._log_vc_under_parent(
-                                    v_gen,
-                                    step_index=step_index,
-                                    stage=stage,
-                                    model_name=model,
-                                    vc_prompt=vc_prompt,
-                                    vc_output=vc_output,
-                                    metadata=metadata,
-                                )
-            elif verify_sc is not None:
-                with step_span.start_as_current_observation(
-                    as_type="generation",
-                    name=f"verify_{step_index}_{stage}",
-                    model=model,
-                    input=str(verify_sc.get("prompt") or ""),
-                    metadata=_subcall_observation_metadata(
-                        stage, "verify", verify_sc, strategy=strategy, lm_call_index=2
-                    ),
-                ) as v_gen:
-                    verify_gen = v_gen
-                    self._update_generation(
-                        v_gen,
-                        output=str(verify_sc.get("response") or ""),
-                        usage_details=_usage_details_from_subcall(verify_sc),
-                        model_parameters=_model_parameters_from_subcall(verify_sc),
-                    )
-                    self._apply_verify_scores(v_gen, metadata)
-                    if vc_prompt and vc_output:
-                        self._log_vc_under_parent(
-                            v_gen,
-                            step_index=step_index,
-                            stage=stage,
-                            model_name=model,
-                            vc_prompt=vc_prompt,
-                            vc_output=vc_output,
-                            metadata=metadata,
-                        )
             return True
 
-        # Legacy: parent_observation_id chain (cot → verify → vc)
         if ctx is None:
             return False
-        chain_parent: Any = step_span
-        if cot_sc is not None:
-            cot_gen = self._start_generation_child(
-                parent_span=chain_parent,
+        reason_gen = self._start_generation_child(
+            parent_span=step_span,
+            ctx=ctx,
+            name=f"reason_{step_index}_{stage}",
+            model=model,
+            input_text=str(reason_sc.get("prompt") or ""),
+            output_text=str(reason_sc.get("response") or ""),
+            metadata=_subcall_observation_metadata(
+                stage, "reason", reason_sc, strategy=strategy, lm_call_index=1
+            ),
+            tags=list(self._episode_tags) if self._episode_tags else None,
+            start_time=None,
+            end_time=None,
+            usage_details=_usage_details_from_subcall(reason_sc),
+            model_parameters=_model_parameters_from_subcall(reason_sc),
+        )
+        self._apply_verify_scores(reason_gen, metadata)
+        self._end_observation(reason_gen)
+        if vc_prompt and vc_output:
+            vc_gen = self._start_generation_child(
+                parent_span=reason_gen,
                 ctx=ctx,
-                name=f"cot_{step_index}_{stage}",
+                name=f"vc_followup_{step_index}",
                 model=model,
-                input_text=str(cot_sc.get("prompt") or ""),
-                output_text=str(cot_sc.get("response") or ""),
-                metadata=_subcall_observation_metadata(
-                    stage, "cot", cot_sc, strategy=strategy, lm_call_index=1
-                ),
+                input_text=vc_prompt,
+                output_text=vc_output,
+                metadata={"stage": stage, "kind": "vc_followup"},
                 tags=list(self._episode_tags) if self._episode_tags else None,
                 start_time=None,
                 end_time=None,
-                usage_details=_usage_details_from_subcall(cot_sc),
-                model_parameters=_model_parameters_from_subcall(cot_sc),
             )
-            self._end_observation(cot_gen)
-            chain_parent = cot_gen
-        if verify_sc is not None:
-            verify_gen = self._start_generation_child(
-                parent_span=chain_parent,
-                ctx=ctx,
-                name=f"verify_{step_index}_{stage}",
-                model=model,
-                input_text=str(verify_sc.get("prompt") or ""),
-                output_text=str(verify_sc.get("response") or ""),
-                metadata=_subcall_observation_metadata(
-                    stage, "verify", verify_sc, strategy=strategy, lm_call_index=2
-                ),
-                tags=list(self._episode_tags) if self._episode_tags else None,
-                start_time=None,
-                end_time=None,
-                usage_details=_usage_details_from_subcall(verify_sc),
-                model_parameters=_model_parameters_from_subcall(verify_sc),
-            )
-            self._apply_verify_scores(verify_gen, metadata)
-            self._end_observation(verify_gen)
-            if vc_prompt and vc_output:
-                vc_gen = self._start_generation_child(
-                    parent_span=verify_gen,
-                    ctx=ctx,
-                    name=f"vc_followup_{step_index}",
-                    model=model,
-                    input_text=vc_prompt,
-                    output_text=vc_output,
-                    metadata={"stage": stage, "kind": "vc_followup"},
-                    tags=list(self._episode_tags) if self._episode_tags else None,
-                    start_time=None,
-                    end_time=None,
-                )
-                vc_val = (metadata or {}).get("vc")
-                if isinstance(vc_val, (int, float)):
-                    self._score_observation(
-                        vc_gen, name="vc", value=float(vc_val), data_type="NUMERIC"
-                    )
-                self._end_observation(vc_gen)
+            vc_val = (metadata or {}).get("vc")
+            if isinstance(vc_val, (int, float)):
+                self._score_observation(vc_gen, name="vc", value=float(vc_val), data_type="NUMERIC")
+            self._end_observation(vc_gen)
         return True
+
+    def _log_c2_vote_aggregation(
+        self,
+        step_span: Any,
+        *,
+        step_index: int,
+        stage: str,
+        metadata: dict[str, Any] | None,
+        strategy: str | None,
+    ) -> None:
+        """Log C2 majority-vote summary as a span sibling under the step."""
+        cd = (metadata or {}).get("call_detail")
+        if not isinstance(cd, dict) or str(cd.get("stage") or "") != "C2":
+            return
+        vote_meta: dict[str, Any] = {
+            "stage": stage,
+            "strategy": strategy,
+            "winner_index": cd.get("winner_index"),
+            "winning_vote_key": cd.get("winning_vote_key"),
+            "tie_broken": cd.get("tie_broken"),
+            "vote_counts": cd.get("vote_counts"),
+            "vote_agreement": cd.get("vote_agreement"),
+            "n_samples": cd.get("n_samples"),
+            "sample_temperature": cd.get("sample_temperature"),
+            "enable_thinking": cd.get("enable_thinking"),
+        }
+        subcalls = cd.get("subcalls")
+        if isinstance(subcalls, list):
+            vote_meta["per_sample_tle"] = [
+                {
+                    "sample_index": sc.get("sample_index"),
+                    "tle": sc.get("tle"),
+                    "is_winner": sc.get("is_winner"),
+                }
+                for sc in subcalls
+                if isinstance(sc, dict)
+            ]
+        if self._parent_has_nested_current(step_span):
+            with step_span.start_as_current_observation(
+                as_type="span",
+                name=f"vote_{step_index}_{stage}",
+                metadata=vote_meta,
+            ):
+                pass
+            return
+        vote_span = step_span.start_observation(
+            name=f"vote_{step_index}_{stage}",
+            as_type="span",
+            metadata=vote_meta,
+        )
+        self._end_observation(vote_span)
 
     def _log_c2_samples(
         self,
@@ -912,6 +889,13 @@ class LangfuseTraceHook:
                 ctx=ctx,
             ):
                 did_subcalls = True
+            self._log_c2_vote_aggregation(
+                step_span,
+                step_index=step_index,
+                stage=stage,
+                metadata=metadata,
+                strategy=strategy,
+            )
 
         action_gen: Any | None = None
         if not did_subcalls:
@@ -928,7 +912,7 @@ class LangfuseTraceHook:
                 ctx=ctx,
             )
 
-        # C0 (and C2): VC is sibling under step when not already logged under verify (C1).
+        # C0/C2: VC is sibling under step when not already logged under C1 reason gen.
         if (not did_subcalls) and vc_prompt and vc_output:
             self._log_vc_under_parent(
                 step_span,

@@ -8,6 +8,10 @@ from src.utils.errors import BackendError
 from src.utils.inference.base import ModelWrapper
 from src.utils.inference.logprobs import normalize_logprobs
 
+# TLE assumes temperature-invariant logprobs (as if T=1.0). vLLM V1 default is raw_logprobs;
+# we pin this explicitly so C2 diversity temperature cannot shift the entropy scale.
+_VLLM_LOGPROBS_MODE = "raw_logprobs"
+
 
 class VLLMWrapper(ModelWrapper):
     """
@@ -22,6 +26,7 @@ class VLLMWrapper(ModelWrapper):
         max_model_len: int | None = None,
         chat_template: bool = True,
         enable_thinking: bool = False,
+        revision: str | None = None,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
@@ -29,9 +34,15 @@ class VLLMWrapper(ModelWrapper):
         self._max_model_len = max_model_len
         self._chat_template = bool(chat_template)
         self._enable_thinking = bool(enable_thinking)
+        self._revision = revision
         self._kwargs = kwargs
         self._llm: Any = None
         self._tokenizer: Any = None
+
+    @property
+    def logprobs_mode(self) -> str:
+        """Logprobs mode requested for TLE (temperature-invariant raw distribution)."""
+        return _VLLM_LOGPROBS_MODE
 
     def _ensure_loaded(self) -> None:
         if self._llm is not None:
@@ -42,12 +53,17 @@ class VLLMWrapper(ModelWrapper):
 
         if not torch.cuda.is_available():
             raise BackendError("VLLMWrapper requires CUDA")
-        self._tokenizer = AutoTokenizer.from_pretrained(self._model_name, trust_remote_code=True)
+        tok_kw: dict[str, Any] = {"trust_remote_code": True}
+        llm_kw: dict[str, Any] = {"trust_remote_code": True}
+        if self._revision:
+            tok_kw["revision"] = self._revision
+            llm_kw["revision"] = self._revision
+        self._tokenizer = AutoTokenizer.from_pretrained(self._model_name, **tok_kw)
         self._llm = LLM(
             model=self._model_name,
-            trust_remote_code=True,
             dtype=self._dtype,
             max_model_len=self._max_model_len,
+            **llm_kw,
             **self._kwargs,
         )
 
@@ -99,6 +115,32 @@ class VLLMWrapper(ModelWrapper):
         merged.extend(s for s in default_stop if s and s not in merged)
         return merged or None
 
+    def _sampling_params(
+        self,
+        *,
+        temperature: float,
+        max_tokens: int,
+        logprobs: bool,
+        merged_stop: list[str] | None,
+        extra: dict[str, Any],
+        n: int | None = None,
+    ) -> Any:
+        from vllm import SamplingParams
+
+        base: dict[str, Any] = {
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "logprobs": 1 if logprobs else None,
+            "stop": merged_stop,
+            **extra,
+        }
+        if n is not None:
+            base["n"] = int(n)
+        try:
+            return SamplingParams(**base, logprobs_mode=_VLLM_LOGPROBS_MODE)
+        except TypeError:
+            return SamplingParams(**base)
+
     def generate(
         self,
         prompt: str,
@@ -108,32 +150,30 @@ class VLLMWrapper(ModelWrapper):
         temperature: float = 0.3,
         **kwargs: Any,
     ) -> tuple[str, list[dict[str, Any]] | None]:
-        from vllm import SamplingParams
-
         self._ensure_loaded()
         et = kwargs.pop("enable_thinking", None)
         rendered_prompt = self._maybe_apply_chat_template(prompt, enable_thinking=et)
-        logprobs_param = 1 if logprobs else None
         merged_stop = self._merge_stop(kwargs.get("stop"))
 
-        sampling_params = SamplingParams(
+        extra = {
+            k: v
+            for k, v in kwargs.items()
+            if k
+            not in (
+                "prompt",
+                "logprobs",
+                "max_tokens",
+                "temperature",
+                "stop",
+                "enable_thinking",
+            )
+        }
+        sampling_params = self._sampling_params(
             temperature=temperature,
             max_tokens=max_tokens,
-            logprobs=logprobs_param,
-            stop=merged_stop,
-            **{
-                k: v
-                for k, v in kwargs.items()
-                if k
-                not in (
-                    "prompt",
-                    "logprobs",
-                    "max_tokens",
-                    "temperature",
-                    "stop",
-                    "enable_thinking",
-                )
-            },
+            logprobs=logprobs,
+            merged_stop=merged_stop,
+            extra=extra,
         )
         outputs = self._llm.generate([rendered_prompt], sampling_params)
         if not outputs or not outputs[0].outputs:
@@ -158,7 +198,7 @@ class VLLMWrapper(ModelWrapper):
         **kwargs: Any,
     ) -> list[tuple[str, list[dict[str, Any]] | None]]:
         try:
-            from vllm import SamplingParams
+            from vllm import SamplingParams  # noqa: F401
         except Exception:
             return super().generate_many(
                 prompt,
@@ -172,7 +212,6 @@ class VLLMWrapper(ModelWrapper):
         self._ensure_loaded()
         et = kwargs.pop("enable_thinking", None)
         rendered_prompt = self._maybe_apply_chat_template(prompt, enable_thinking=et)
-        logprobs_param = 1 if logprobs else None
         merged_stop = self._merge_stop(kwargs.get("stop"))
 
         extra = {
@@ -183,13 +222,13 @@ class VLLMWrapper(ModelWrapper):
         }
         nn = max(1, int(n))
         try:
-            sampling_params = SamplingParams(
+            sampling_params = self._sampling_params(
                 temperature=temperature,
                 max_tokens=max_tokens,
-                logprobs=logprobs_param,
-                stop=merged_stop,
+                logprobs=logprobs,
+                merged_stop=merged_stop,
+                extra=extra,
                 n=nn,
-                **extra,
             )
             outputs = self._llm.generate([rendered_prompt], sampling_params)
             if not outputs or not outputs[0].outputs:

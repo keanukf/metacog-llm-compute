@@ -5,8 +5,9 @@
 # configs/lmstudio_config.yaml is deep-merged on top when enabled: true (see that file).
 
 model:
-  #CUDA/vLLM candidate for RunPod pilot validation
-  name: "Qwen/Qwen3-8B"
+  # CUDA/vLLM candidate for RunPod pilot validation (4B)
+  name: "Qwen/Qwen3-4B"
+  revision: "1cfa9a7208912126459214e8b04321603b3df60c"
   dtype: float16
 
 inference:
@@ -58,21 +59,16 @@ tracing:
   langfuse_enabled: true
   # langfuse_host: "https://cloud.langfuse.com"   # EU: https://eu.cloud.langfuse.com
 
-# Compute stage C1 (CoT + verify) — explicitly parameterized for reproducibility.
-# verify_temperature defaults to 0.0 to make the verify distribution (and thus TLE) stable.
+# Compute stage C1 (single reasoning call) — explicitly parameterized for reproducibility.
 c1:
   cot_temperature: 0.5
   # Global fallback when a domain omits domain_prompts.<domain>.cot_max_tokens
   cot_max_tokens: 1024
-  verify_temperature: 0.0
-  # verify_max_tokens: 48
-  # verify_stop: ["\n"]
-  # verify_instruction: |
-  #   (Override the default criteria-based verify instruction)
 
 # Compute stage C2 (Self-Consistency / majority vote).
 c2:
   n_samples: 3
+  sample_temperature: 0.7
 
 # Domain prompting / action-generation settings (environment-specific; not signal extraction).
 domain_prompts:

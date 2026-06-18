@@ -59,11 +59,19 @@ def create_experiment_model(config: dict, use_real: bool) -> Any:
     if not model_name:
         return MockExperimentModel()
     dtype = model_cfg.get("dtype", "float16")
+    revision = model_cfg.get("revision")
     backend = config.get("inference", {}).get("backend", "vllm")
     try:
         from src.utils.model_wrapper import create_wrapper
 
-        return create_wrapper(backend=backend, model_name=model_name, dtype=dtype)
+        extra: dict[str, Any] = {}
+        if revision:
+            extra["revision"] = str(revision)
+        inf = config.get("inference", {}) or {}
+        if backend == "vllm":
+            extra["chat_template"] = bool(inf.get("chat_template", True))
+            extra["enable_thinking"] = bool(inf.get("enable_thinking", False))
+        return create_wrapper(backend=backend, model_name=model_name, dtype=dtype, **extra)
     except Exception:
         return MockExperimentModel()
 
