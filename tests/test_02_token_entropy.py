@@ -11,6 +11,7 @@ from src.signals.token_entropy import (
     extract_action_tle_from_response,
     extract_tle_from_response,
 )
+from src.utils.inference.logprobs import normalize_logprobs
 
 
 def test_compute_tle_returns_mean_and_max():
@@ -115,6 +116,21 @@ def test_extract_action_tle_falls_back_for_single_line_without_tokens():
     a = extract_action_tle_from_response("go north", lp)
     b = extract_tle_from_response("go north", lp)
     assert a == b
+
+
+def test_compute_tle_vllm_normalized_records_use_shannon_path():
+    class _Lp:
+        def __init__(self, lp: float, tok: str) -> None:
+            self.logprob = lp
+            self.decoded_token = tok
+
+    raw = [{10: _Lp(-0.2, "go"), 11: _Lp(-1.5, " stop")}]
+    records = normalize_logprobs(raw, sampled_token_ids=[10])
+    assert records is not None
+    out = compute_tle(records)
+    shannon_only = entropy_shannon_from_top_logprobs(records[0]["top_logprobs"])
+    assert out["mean_entropy"] == shannon_only
+    assert out["mean_entropy"] > 0.01
 
 
 def test_extract_action_tle_slices_first_line_after_think_close():
