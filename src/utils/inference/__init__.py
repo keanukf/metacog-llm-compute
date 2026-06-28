@@ -6,6 +6,7 @@ from src.utils.inference.base import ModelWrapper
 from src.utils.inference.factory import create_wrapper
 from src.utils.inference.lmstudio.parse import parse_lmstudio_responses_json
 from src.utils.inference.lmstudio.wrapper import LMStudioWrapper
+from src.utils.inference.logprob_config import DEFAULT_TOP_LOGPROBS, resolve_top_logprobs
 from src.utils.inference.logprobs import (
     normalize_logprobs,
     openai_completion_logprobs_to_list,
@@ -14,6 +15,7 @@ from src.utils.inference.urls import normalize_openai_base_url
 from src.utils.inference.vllm import VLLMWrapper
 
 __all__ = [
+    "DEFAULT_TOP_LOGPROBS",
     "LMStudioWrapper",
     "ModelWrapper",
     "VLLMWrapper",
@@ -22,4 +24,5 @@ __all__ = [
     "normalize_openai_base_url",
     "openai_completion_logprobs_to_list",
     "parse_lmstudio_responses_json",
+    "resolve_top_logprobs",
 ]

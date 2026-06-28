@@ -14,3 +14,8 @@
 
 - **Decision:** Add `schema_version` to episode JSON writes (`episode.v1` baseline).
 - **Rationale:** Enables safe loader evolution and explicit migration semantics.
+
+## ADR-004: Unified `top_logprobs` across inference backends
+
+- **Decision:** Single config key `inference.top_logprobs` (default 20); vLLM and LM Studio normalize to the same per-token record schema (`token`, `logprob`, `top_logprobs[]`); Shannon TLE stays in `token_entropy.py`.
+- **Rationale:** EAGER-aligned top-k entropy without duplicating normalization or entropy logic per backend; `lmstudio_top_logprobs` remains a deprecated alias.

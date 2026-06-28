@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.signals.token_entropy import compute_tle, extract_action_tle_from_response  # noqa: E402
+from src.utils.inference.logprob_config import resolve_top_logprobs  # noqa: E402
 from src.utils.inference.logprobs import logprob_token_coverage  # noqa: E402
 from src.utils.pilot_config import load_yaml_path  # noqa: E402
 
@@ -66,6 +67,7 @@ def main() -> int:
         return 1
 
     inf = config.get("inference", {}) or {}
+    top_k = resolve_top_logprobs(inf)
     temperature = float(inf.get("temperature", 0.3))
     text, logprobs = model.generate(
         _short_prompt(),
@@ -78,10 +80,14 @@ def main() -> int:
     coverage = logprob_token_coverage(logprobs)
     tle_full = compute_tle(logprobs) if logprobs else None
     tle_action = extract_action_tle_from_response(text or "", logprobs)
+    first_rec = (logprobs or [{}])[0] if logprobs else {}
+    n_top = len(first_rec.get("top_logprobs") or []) if isinstance(first_rec, dict) else 0
 
     report: dict[str, Any] = {
         "pilot_mode": pilot_mode,
         "model": (config.get("model") or {}).get("name"),
+        "top_logprobs_k": top_k,
+        "n_top_logprobs_first_token": n_top,
         "completion_text": text or "",
         "has_logprobs": bool(logprobs),
         "logprob_coverage": coverage,
@@ -94,7 +100,7 @@ def main() -> int:
         print("warning: generate returned no logprobs", file=sys.stderr)
 
     print(json.dumps(report, indent=2, ensure_ascii=False))
-    ok = bool(logprobs) and coverage.get("n_tokens", 0) > 0
+    ok = bool(logprobs) and coverage.get("n_tokens", 0) > 0 and n_top >= 2
     return 0 if ok else 1
 
 

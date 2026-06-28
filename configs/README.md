@@ -20,7 +20,8 @@ YAML configs live here. **Do not commit secrets** — use environment variables 
 |---------|------|-------|
 | `model` | `name`, `dtype` | HF repo id; must match LM Studio API id in lmstudio mode |
 | `inference` | `backend`, `temperature`, `max_tokens`, `max_model_len`, `chat_template`, `enable_thinking` | `chat_template: true` required for instruct models; `max_model_len` lowers VRAM on 24GB GPUs |
-| `inference` | `lmstudio_base_url`, `lmstudio_api_key`, `lmstudio_top_logprobs` | LM Studio: `reasoning.effort: none` (off) / `low` (on) on `/v1/responses` |
+| `inference` | `top_logprobs` | Top-k width for TLE (vLLM + LM Studio; default 20, EAGER-aligned) |
+| `inference` | `lmstudio_base_url`, `lmstudio_api_key` | LM Studio: `reasoning.effort: none` (off) / `low` (on) on `/v1/responses`; `lmstudio_top_logprobs` is a deprecated alias for `top_logprobs` |
 | `pilot` | `instances`, `compute_stages`, `runs_per_instance` | `compute_stages`: `3` or `C0` or `C0,C2` |
 | `logging` | `save_logprob_distributions`, `save_step_traces`, `logprob_subdir`, `vc_subdir` | Sidecar volume; off for long runs unless needed |
 | `tracing` | `langfuse_enabled` | Requires `pip install ".[tracing]"` (`langfuse>=3`) + env keys |

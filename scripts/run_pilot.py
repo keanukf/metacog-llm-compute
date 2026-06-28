@@ -159,6 +159,9 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
                     pass
             extra["chat_template"] = bool(inf.get("chat_template", True))
             extra["enable_thinking"] = bool(inf.get("enable_thinking", False))
+            from src.utils.inference.logprob_config import resolve_top_logprobs
+
+            extra["top_logprobs"] = resolve_top_logprobs(inf)
             revision = model_cfg.get("revision")
             if revision:
                 extra["revision"] = str(revision)
@@ -173,14 +176,15 @@ def _create_real_model(config: dict, pilot_mode: str) -> tuple[Any | None, str |
             api_key = inf.get("lmstudio_api_key") or os.environ.get(
                 "LM_STUDIO_API_KEY", "lm-studio"
             )
-            top_k = int(inf.get("lmstudio_top_logprobs", 5))
+            from src.utils.inference.logprob_config import resolve_top_logprobs
+
             return (
                 create_wrapper(
                     backend="lmstudio",
                     model_name=model_name,
                     base_url=base_url,
                     lmstudio_api_key=api_key,
-                    lmstudio_top_logprobs=top_k,
+                    top_logprobs=resolve_top_logprobs(inf),
                 ),
                 None,
             )

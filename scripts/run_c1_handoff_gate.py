@@ -92,6 +92,9 @@ def _create_real_model(config: dict, pilot_mode: str) -> Any:
                 extra["gpu_memory_utilization"] = float(gmu)
             except Exception:
                 pass
+        from src.utils.inference.logprob_config import resolve_top_logprobs
+
+        extra["top_logprobs"] = resolve_top_logprobs(inf)
         return create_wrapper(backend=backend, model_name=model_name, dtype=dtype, **extra)
     if pilot_mode == "lmstudio":
         inf = config.get("inference", {}) or {}
@@ -99,13 +102,14 @@ def _create_real_model(config: dict, pilot_mode: str) -> Any:
             "LM_STUDIO_BASE_URL", "http://localhost:1234/v1"
         )
         api_key = inf.get("lmstudio_api_key") or os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
-        top_k = int(inf.get("lmstudio_top_logprobs", 5))
+        from src.utils.inference.logprob_config import resolve_top_logprobs
+
         return create_wrapper(
             backend="lmstudio",
             model_name=model_name,
             base_url=base_url,
             lmstudio_api_key=api_key,
-            lmstudio_top_logprobs=top_k,
+            top_logprobs=resolve_top_logprobs(inf),
         )
     raise RuntimeError(f"Unsupported pilot_mode={pilot_mode!r}")
 
