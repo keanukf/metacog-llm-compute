@@ -12,8 +12,8 @@ model:
 
 inference:
   backend: mlx
-  # POST /v1/responses top_logprobs width (Shannon TLE over renormalized top-k)
-  lmstudio_top_logprobs: 5
+  # Top-k logprob width (Shannon TLE over renormalized top-k; EAGER-aligned default)
+  top_logprobs: 20
 
 # Local-only nudge for small transition models: keep it about format, not about solving.
 #domain_prompts:

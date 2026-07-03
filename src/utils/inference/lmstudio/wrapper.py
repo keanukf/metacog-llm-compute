@@ -56,14 +56,19 @@ class LMStudioWrapper(ModelWrapper):
         base_url: str = "http://localhost:1234/v1",
         api_key: str | None = None,
         *,
-        lmstudio_top_logprobs: int = 5,
+        top_logprobs: int = 20,
+        lmstudio_top_logprobs: int | None = None,
         api_host: str | None = None,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
         self._base_url = normalize_openai_base_url(base_url.strip())
         self._api_key = api_key
-        self._top_logprobs = max(1, int(lmstudio_top_logprobs))
+        if lmstudio_top_logprobs is not None:
+            k = int(lmstudio_top_logprobs)
+        else:
+            k = int(top_logprobs)
+        self._top_logprobs = max(1, k)
         self._api_host = api_host
         self._kwargs = kwargs
         self._resolved_api_host: str | None = None

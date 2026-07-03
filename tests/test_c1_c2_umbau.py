@@ -83,6 +83,7 @@ def test_vllm_wrapper_pins_raw_logprobs_mode():
             extra={},
         )
     assert captured.get("logprobs_mode") == "raw_logprobs"
+    assert captured.get("logprobs") == 20
 
 
 def test_c2_winner_tle_and_vc_use_same_winner_index_on_tie():
