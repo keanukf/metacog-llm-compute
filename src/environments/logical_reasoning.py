@@ -1,5 +1,8 @@
 """
 Logical Reasoning tasks — Extension. Stub only.
+
+DEPRECATED — not part of the 2×3×2 design; kept for reference on branch
+``legacy/deprecated-environments`` only.
 """
 
 from __future__ import annotations

@@ -4,8 +4,10 @@
 
 Thesis codebase for **metacognitive effort allocation in sequential LM agents**: pilot tests, agent loop, signal extraction (TLE, VC), and experiment runners (e.g. RunPod). Design and infrastructure are documented in `blueprints/` (thesis_design.md, infrastructureplan_pilot.md).
 
-- **Core idea:** Use metacognitive proxy signals (Token-Level Entropy, Verbalized Confidence) to allocate compute depth (C0 Direct / C1 CoT+Verify / C2 Best-of-N) per step in multi-step agent tasks (TextWorld, Delayed-Cue Recall).
+- **Core idea:** Use metacognitive proxy signals (Token-Level Entropy, Verbalized Confidence) to allocate compute depth per step in multi-step agent tasks. **Compute stages:** C0 = direct inference (1 call, `enable_thinking=false`); C1 = single native thinking pass (1 call, `enable_thinking=true`, action = first non-empty line after `</think>`, no verify call); C2 = Self-Consistency Sampling (N=3 reasoning generations, `enable_thinking=true`, `sample_temperature` for diversity, majority vote over normalized vote keys — not Best-of-N, no verifier).
+- **Domains:** TextWorld Cooking (partial observability, primary H3) and Tower of Hanoi (full observability, primary H4). `delayed_cue` and `logical_reasoning` are deprecated legacy — not part of the 2×3×2 design.
 - **Phases:** Phase 1 = calibration mapping; Phase 2 = adaptive allocation vs baselines. Pilot = small end-to-end run to validate setup and hardware.
+- **Design invariants:** Do not alter axis integrity, Phase 1 vs Phase 2 separation, or frozen thresholds without explicit user request.
 
 ## Tech stack and layout
 
@@ -21,12 +23,13 @@ Thesis codebase for **metacognitive effort allocation in sequential LM agents**:
 2. **Pilot modes:** `mock` (default), `cuda` (vLLM on GPU), `lmstudio` (LM Studio local server, responses-only for TLE). Use `--real` to auto-detect cuda vs lmstudio.
 3. **Model wrapper:** `src/utils/inference/` (`create_wrapper`); backends: `vllm`, `lmstudio`. `model_wrapper.py` re-exports for compatibility.
 4. **Signals:** TLE in `src/signals/token_entropy.py`, VC parsing in `src/signals/verbalized_confidence.py`. Keep signal interfaces stable; tests assert on structure and behaviour.
-5. **Dependencies:** Prefer versions in `requirements.txt` and `pyproject.toml`. Optional extras: `dev`, `full`. Don’t add heavy deps without aligning with blueprints/README.
+5. **TLE:** Extracted at committed-action tokens only; identical measurement window across C0/C1/C2; top-K=20 renormalized Shannon entropy. vLLM `logprobs_mode="raw_logprobs"` (temperature-invariant scale) is load-bearing — do not change without explicit user request.
+6. **Dependencies:** Prefer versions in `requirements.txt` and `pyproject.toml`. Optional extras: `dev`, `full`. Don’t add heavy deps without aligning with blueprints/README.
 
 ## When editing
 
-- **Agent loop / compute stages:** See `src/agent/` (base_agent, compute_stages, allocator). Compute stages are C0 (1 call), C1 (2 calls), C2 (3 calls).
-- **Environments:** `src/environments/` — TextWorld, delayed_cue, logical_reasoning. TextWorld can run stub or real game when `game_file` is provided.
+- **Agent loop / compute stages:** See `src/agent/stages/` (facade: `compute_stages.py`). C0 = 1 call; C1 = 1 call (+ optional VC follow-up); C2 = N sample calls (+ optional VC follow-up).
+- **Environments:** `src/environments/` — `textworld_env`, `tower_of_hanoi` only. TextWorld can run stub or real game when `game_file` is provided.
 - **Analysis:** `src/analysis/` — calibration (ECE, Brier), comparison, visualization. Episode JSONs from pilot/phase1 have defined keys; preserve them when changing schema.
 - **Blueprints:** For design rationale, sample sizes, and infrastructure (GPU hours, RunPod), read `blueprints/thesis_design.md` and `blueprints/infrastructureplan_pilot.md`. Don’t contradict experiment design (e.g. 2×3×2 design, 50 instances per domain) without explicit user request.
 
