@@ -1,10 +1,10 @@
 """
 Token-Level Entropy (TLE) from model logprobs.
 
-- **vLLM / HF (top-1 only):** binary entropy from the chosen token's logprob (legacy).
-- **Top-k distributions** (e.g. LM Studio ``/v1/responses``): Shannon entropy
-  H = -sum_i p_i log2(p_i) over the **renormalized softmax** of the top-k logprobs only.
-  This is an approximation when the full vocabulary distribution is unavailable.
+- **Top-k distributions** (vLLM ``SamplingParams(logprobs=K)``, LM Studio
+  ``/v1/responses``): Shannon entropy H = -sum_i p_i log2(p_i) over the
+  **renormalized softmax** of the top-k logprobs only (approximation vs full vocabulary).
+- **Top-1 only** (legacy / fallback): binary entropy from the chosen token's logprob.
 
 **Scale invariant (cross-stage comparability):** TLE assumes temperature-invariant logprobs
 as if T=1.0. The vLLM wrapper pins ``logprobs_mode="raw_logprobs"`` so C2's diversity

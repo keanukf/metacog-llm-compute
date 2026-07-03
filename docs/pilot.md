@@ -139,7 +139,12 @@ There is **no** separate verify subcall in C2. Inspect traces: `call_detail.meth
 
 **TLE semantics:** TLE is computed from verify-call logprobs only. If LM Studio returns text but no logprobs, `tle` is `null` for that step by design. This affects telemetry quality, not action execution.
 
-**Token-level entropy (TLE) with LM Studio:** The usual OpenAI-compat endpoints (`/v1/completions`, `/v1/chat/completions`) do not return logprobs in LM Studio. For `logprobs=True`, the code uses **`POST /v1/responses`** (LM Studio **0.4.x+**) with `include: ["message.output_text.logprobs"]` and `top_logprobs` (see `inference.lmstudio_top_logprobs` in config, default 5). TLE is Shannon entropy over the **renormalized top-k** distribution per token (approximation vs full vocabulary). vLLM/HF still use top-1 logprobs and the legacy binary-entropy path.
+**Token-level entropy (TLE):** Configure top-k width via `inference.top_logprobs` (default **20**, EAGER-aligned). When `logprobs=True`, both backends return per-token candidate lists; TLE is Shannon entropy over the **renormalized top-k** distribution (approximation vs full vocabulary).
+
+- **LM Studio:** Uses **`POST /v1/responses`** (LM Studio **0.4.x+**) with `include: ["message.output_text.logprobs"]` and `top_logprobs` from config. The usual OpenAI-compat `/v1/completions` and `/v1/chat/completions` endpoints do not return usable logprobs.
+- **vLLM (CUDA):** Uses `SamplingParams(logprobs=K)` with `logprobs_mode="raw_logprobs"` (temperature-invariant scale for cross-stage TLE). Records are normalized to the same schema as LM Studio before `compute_tle`.
+
+If only top-1 logprobs are available, TLE falls back to legacy binary entropy per token.
 
 **Step-level observability:** With `logging.save_step_traces: true` (default in `configs/pilot.yaml`), each episode writes `trace_{episode_id}.jsonl` next to the episode JSON: one line per env step with full prompt, full raw model output, observations, and `history_snapshot` (including prior `ACTION: ...` lines so the model cannot “forget” what it did). For Langfuse cloud traces, install `pip install ".[tracing]"` (requires `langfuse>=3`), set `tracing.langfuse_enabled: true`, and export `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (optional `LANGFUSE_HOST` for EU). Phase 1/2 runners pass the same options when enabled in YAML.
 

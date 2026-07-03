@@ -21,8 +21,8 @@ inference:
   # For pilot-mode lmstudio: LM Studio local server (OpenAI-compatible). URL may be …/v1 or host:port only.
   # lmstudio_base_url: "http://192.168.178.173:1234/v1"
   # lmstudio_api_key: "lm-studio"   # or set env LM_STUDIO_API_KEY / LM_STUDIO_BASE_URL
-  # LM Studio 0.4+: TLE uses POST /v1/responses; width of top-k distribution per token
-  # lmstudio_top_logprobs: 5
+  # Top-k logprob width per token (vLLM SamplingParams.logprobs; LM Studio /v1/responses top_logprobs)
+  top_logprobs: 20
 
 pilot:
   instances: 5 # 5 is default, 2 is for the pilot
@@ -39,7 +39,7 @@ pilot:
 
 # Optional: full per-token top-k logprob distributions (sidecar JSON under logprob_subdir; optional CSV).
 # Default off — size scales with env_steps × completion_tokens × top_k. Episode JSON stays summary-only (TLE mean/max).
-# Stored TLE entropy uses softmax renormalized over the returned top-k only (not full vocabulary).
+# Stored TLE entropy uses softmax renormalized over inference.top_logprobs candidates (not full vocabulary).
 logging:
   save_logprob_distributions: true
   logprob_export_format: json   # json | csv | both

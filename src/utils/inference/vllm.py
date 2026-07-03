@@ -27,6 +27,7 @@ class VLLMWrapper(ModelWrapper):
         chat_template: bool = True,
         enable_thinking: bool = False,
         revision: str | None = None,
+        top_logprobs: int = 20,
         **kwargs: Any,
     ) -> None:
         self._model_name = model_name
@@ -35,6 +36,7 @@ class VLLMWrapper(ModelWrapper):
         self._chat_template = bool(chat_template)
         self._enable_thinking = bool(enable_thinking)
         self._revision = revision
+        self._top_logprobs = max(1, int(top_logprobs))
         self._kwargs = kwargs
         self._llm: Any = None
         self._tokenizer: Any = None
@@ -130,7 +132,7 @@ class VLLMWrapper(ModelWrapper):
         base: dict[str, Any] = {
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "logprobs": 1 if logprobs else None,
+            "logprobs": self._top_logprobs if logprobs else None,
             "stop": merged_stop,
             **extra,
         }
@@ -181,10 +183,11 @@ class VLLMWrapper(ModelWrapper):
         out = outputs[0].outputs[0]
         text = out.text or ""
         raw_lp = getattr(out, "logprobs", None)
+        token_ids = getattr(out, "token_ids", None)
         if raw_lp is None and hasattr(out, "cumulative_logprob"):
             lp_list = None
         else:
-            lp_list = normalize_logprobs(raw_lp) if logprobs else None
+            lp_list = normalize_logprobs(raw_lp, sampled_token_ids=token_ids) if logprobs else None
         return text, lp_list
 
     def generate_many(
@@ -237,7 +240,10 @@ class VLLMWrapper(ModelWrapper):
             for o in outputs[0].outputs:
                 text = o.text or ""
                 raw_lp = getattr(o, "logprobs", None)
-                lp_list = normalize_logprobs(raw_lp) if logprobs else None
+                token_ids = getattr(o, "token_ids", None)
+                lp_list = (
+                    normalize_logprobs(raw_lp, sampled_token_ids=token_ids) if logprobs else None
+                )
                 out.append((text, lp_list))
             return out
         except TypeError:

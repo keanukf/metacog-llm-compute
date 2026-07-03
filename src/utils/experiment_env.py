@@ -71,6 +71,9 @@ def create_experiment_model(config: dict, use_real: bool) -> Any:
         if backend == "vllm":
             extra["chat_template"] = bool(inf.get("chat_template", True))
             extra["enable_thinking"] = bool(inf.get("enable_thinking", False))
+        from src.utils.inference.logprob_config import resolve_top_logprobs
+
+        extra["top_logprobs"] = resolve_top_logprobs(inf)
         return create_wrapper(backend=backend, model_name=model_name, dtype=dtype, **extra)
     except Exception:
         return MockExperimentModel()
