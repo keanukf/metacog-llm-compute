@@ -80,9 +80,9 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/result
 
 Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; default API key is `lm-studio` if unset (`LM_STUDIO_API_KEY`). Requires the `openai` package.
 
-**Thinking mode (C1 only):** This repo forces **model-native thinking ON only for the C1 CoT subcall**; C1 verify, C0, C2, and VC follow-up calls force thinking OFF.
+**Thinking mode:** This repo forces **model-native thinking ON for C1 and C2 sample calls**; **C0** and **VC follow-up** calls force thinking OFF.
 
-**LM Studio + Qwen3 checklist** (if CoT/verify lack `` blocks or verify still “thinks” aloud):
+**LM Studio + Qwen3 checklist** (if reasoning/action parsing lacks `` blocks or thinking leaks into action lines):
 
 1. **Model id** — Use hybrid **`Qwen/Qwen3-4B`** (or LM Studio `qwen/qwen3-4b`), not **`Qwen3-4B-Instruct-2507`** (non-thinking-only snapshot).
 2. **API path** — C1 uses `POST /v1/responses` with `include: message.output_text.logprobs`. If logprobs are empty, the wrapper used to fall back to raw `/v1/completions` (no chat template); check traces for that warning.
@@ -90,10 +90,10 @@ Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; def
 4. **Thinking off (API)** — The wrapper sends:
    - `reasoning: { "effort": "none" }` on the wire (Open Responses; LM Studio maps to model reasoning **off**)
    - `enable_thinking: false` and `chat_template_kwargs: { "enable_thinking": false }`
-   For C1 CoT (`enable_thinking=true`): `reasoning.effort: "low"` (not `"medium"` — Qwen3 dev log warns that only model **on**/**off** exist and coerces `medium` → `on`). Do not send `"on"`/`"off"` in JSON; the HTTP API rejects them.
+   For C1/C2 reasoning (`enable_thinking=true`): `reasoning.effort: "low"` (not `"medium"` — Qwen3 dev log warns that only model **on**/**off** exist and coerces `medium` → `on`). Do not send `"on"`/`"off"` in JSON; the HTTP API rejects them.
    Probe: `python scripts/probe_lmstudio_thinking_toggle.py --model qwen/qwen3-4b`
 5. **GUI fallback** — **Developer → Inference → Custom Fields → Enable Thinking** off, or `defaultValue: false` in `model.yaml` for `enableThinking`.
-6. **Smoke test** — To check CoT→verify parsing on your endpoint:
+6. **Smoke test** — To check single-call C1 action parsing on your endpoint:
 
 
 ```bash
@@ -102,27 +102,18 @@ python scripts/run_c1_handoff_gate.py --config configs/pilot.yaml --pilot-mode l
 
 ### Output handling contract (C1)
 
-For reproducibility and debugging, C1 uses a strict input/output contract:
+For reproducibility and debugging, C1 uses a strict single-call input/output contract:
 
-1. **CoT call (`enable_thinking=true`)**
-   - **Input:** `<task> + <history> + <state>` plus instruction to output one command after `</think>`.
-   - **Preferred CoT format:** include `<command>...</command>` at the end of the think block.
-   - **Output consumed:** `cot_parser.parse_cot_action(...)` extracts:
+1. **Reason call (`enable_thinking=true`)**
+   - **Input:** `<task> + <history> + <state>` plus instruction to reason inside `<think>...</think>` and output one command after `</think>`.
+   - **Preferred format:** include `<command>...</command>` at the end of the think block.
+   - **Output consumed:** `cot_parser.parse_cot_action(...)` / `_normalize_action_line(...)` extracts:
      - `<command>...</command>` (preferred),
      - else first plausible line after `</think>`,
      - else conservative fallbacks.
-   - **Result:** `draft_action`, `draft_status`, `parse_method`.
+   - **Result:** parsed action line; no `<draft_action>` hint, no verify fallback (single LM call only).
 
-2. **Verify call (`enable_thinking=false`)**
-   - **Input:** same base context; optional `<draft_action>` hint when CoT parsed an action.
-   - **Required output:** one valid game action on a single line (see `_SINGLE_LINE_OUTPUT_INSTRUCTION` in `shared.py`).
-   - **Parsing:** `normalize_action_line(...)` strips think blocks, rejects instruction echoes (e.g. `Just the command.`, paraphrases of the footer instruction), then tries conservative embedded-action recovery.
-   - **Fallback policy (minimal):**
-     - primary = parsed verify action
-     - if verify is non-action and `draft_action` exists: use `draft_action`
-     - no extra multi-stage verify retries
-
-3. **VC follow-up (`enable_thinking=false`)**
+2. **VC follow-up (`enable_thinking=false`)**
    - **Input:** `<task_context>`, `<output_to_judge>`, and confidence instruction.
    - **Output consumed:** first line only (`stop=["\\n"]`) parsed as 0-100 confidence.
 
@@ -131,13 +122,13 @@ For reproducibility and debugging, C1 uses a strict input/output contract:
 
 Per [`blueprints/thesis_design.md`](../blueprints/thesis_design.md), **C2 is not** “three CoT+Verify chains with an LLM judge.” It is:
 
-1. **Three parallel action samples** with the same single-line prompt as C0 (`enable_thinking: false`).
+1. **Three parallel reasoning samples** with thinking ON at `c2.sample_temperature` (same action prompt template as C0, but `enable_thinking: true`).
 2. **Majority vote** over normalized action keys (`majority_vote` in `src/agent/stages/c2.py`).
 3. **Optional VC follow-up** on the winning action (same modes as C0/C1).
 
 There is **no** separate verify subcall in C2. Inspect traces: `call_detail.method == self_consistency_majority_vote`, three `subcalls` with `kind: sample`, and `c2_vote` in compact debug views.
 
-**TLE semantics:** TLE is computed from verify-call logprobs only. If LM Studio returns text but no logprobs, `tle` is `null` for that step by design. This affects telemetry quality, not action execution.
+**TLE semantics:** TLE is computed from the **action-token slice** of the stage call — C0/C1: the single stage call; C2: the **winning sample** (`extract_action_tle_from_response` in `src/signals/token_entropy.py`). If LM Studio returns text but no logprobs, `tle` is `null` for that step by design. This affects telemetry quality, not action execution.
 
 **Token-level entropy (TLE):** Configure top-k width via `inference.top_logprobs` (default **20**, EAGER-aligned). When `logprobs=True`, both backends return per-token candidate lists; TLE is Shannon entropy over the **renormalized top-k** distribution (approximation vs full vocabulary).
 
@@ -153,10 +144,10 @@ If only top-1 logprobs are available, TLE falls back to legacy binary entropy pe
 | Stage | Hierarchy under `step_{n}` |
 |-------|----------------------------|
 | C0 | `action_{n}_C0` → optional `vc_followup_{n}` (sibling under step when VC enabled) |
-| C1 | `cot_{n}_C1` → `verify_{n}_C1` → `vc_followup_{n}` (linear chain; VC only when follow-up runs) |
+| C1 | `reason_{n}_C1` → optional `vc_followup_{n}` (VC only when follow-up runs) |
 | C2 | `sample_{i}_{n}_C2` siblings under step → optional `vc_followup_{n}` under step |
 
-Trace-level fields use `session_id`, `tags`, and `trace_name` (episode id). Step timing lives on the step span; TLE is a numeric **score** on the verify (or action) generation, VC on the VC generation, correctness on the step span. Token counts and temperatures are sent as `usage_details` / `model_parameters` on each generation, not only in metadata.
+Trace-level fields use `session_id`, `tags`, and `trace_name` (episode id). Step timing lives on the step span; TLE is a numeric **score** on the action/reason generation, VC on the VC generation, correctness on the step span. Token counts and temperatures are sent as `usage_details` / `model_parameters` on each generation, not only in metadata.
 
 ### Debug views (`debug_views/`)
 
@@ -170,7 +161,7 @@ After each pilot, Phase 1, or Phase 2 run (and after `run_c1_handoff_gate.py`), 
 Each step’s `pipeline` may include:
 
 - **`primary`** — C0 (or combined prompt/response for the step)
-- **`cot`** / **`verify`** — C1 subcalls (truncated prompt/response, `gen` params, verify `parse` metadata such as `parse_method`, `draft_action`, `fallback_source`)
+- **`reason`** — C1 single-call reasoning (truncated prompt/response, `gen` params)
 - **`vc_followup`** — VC confidence follow-up when present
 - **`c2_samples`** / **`c2_vote`** — C2 self-consistency samples and majority-vote summary
 - **`final`** — parsed action, truncated observations, last few `history_tail` lines

@@ -18,17 +18,17 @@ YAML configs live here. **Do not commit secrets** — use environment variables 
 
 | Section | Keys | Notes |
 |---------|------|-------|
-| `model` | `name`, `dtype` | HF repo id; must match LM Studio API id in lmstudio mode |
+| `model` | `name`, `dtype` | HF repo id; must match LM Studio API id in lmstudio mode. **Primary models:** RunPod/Phase 1/2 → `Qwen/Qwen3-8B` ([`experiment_core.yaml`](experiment_core.yaml), [`models_runpod.yaml`](models_runpod.yaml)); local pilot → `Qwen/Qwen3-4B` ([`pilot.yaml`](pilot.yaml)) |
 | `inference` | `backend`, `temperature`, `max_tokens`, `max_model_len`, `chat_template`, `enable_thinking` | `chat_template: true` required for instruct models; `max_model_len` lowers VRAM on 24GB GPUs |
 | `inference` | `top_logprobs` | Top-k width for TLE (vLLM + LM Studio; default 20, EAGER-aligned) |
 | `inference` | `lmstudio_base_url`, `lmstudio_api_key` | LM Studio: `reasoning.effort: none` (off) / `low` (on) on `/v1/responses`; `lmstudio_top_logprobs` is a deprecated alias for `top_logprobs` |
 | `pilot` | `instances`, `compute_stages`, `runs_per_instance` | `compute_stages`: `3` or `C0` or `C0,C2` |
 | `logging` | `save_logprob_distributions`, `save_step_traces`, `logprob_subdir`, `vc_subdir` | Sidecar volume; off for long runs unless needed |
 | `tracing` | `langfuse_enabled` | Requires `pip install ".[tracing]"` (`langfuse>=3`) + env keys |
-| `c1` / `c2` | `cot_*`, `verify_*`, `n_samples` | C1 CoT+verify; C2 self-consistency N |
+| `c1` / `c2` | `cot_*` (C1) / `n_samples`, `sample_temperature` (C2) | C1 single native thinking pass (`cot_*` caps); C2 self-consistency (`n_samples`, `sample_temperature`) |
 | `domain_prompts` | `textworld`, `tower_of_hanoi` | Per-domain action prompts, stops, and optional `cot_max_tokens` (overrides `c1.cot_max_tokens`) |
 
-**C1 `cot_max_tokens` (methodology):** Fixed per-domain caps (`domain_prompts.<domain>.cot_max_tokens`, fallback `c1.cot_max_tokens`) bound CoT length for reproducibility. TextWorld and ToH use **2048** in `pilot.yaml` after RunPod smoke showed thinking blocks hitting the previous 1024 cap. Verify calls stay single-line (`action_max_tokens`) with `enable_thinking: false`. Document the chosen caps and any truncation rate from pilot traces in thesis §5 (Methodology).
+**C1 `cot_max_tokens` (methodology):** Fixed per-domain caps (`domain_prompts.<domain>.cot_max_tokens`, fallback `c1.cot_max_tokens`) bound reasoning length for reproducibility. TextWorld and ToH use **2048** in `pilot.yaml` after RunPod smoke showed thinking blocks hitting the previous 1024 cap. Document the chosen caps and any truncation rate from pilot traces in thesis §5 (Methodology).
 | `vc` | `followup_max_tokens`, … | VC follow-up call sizing |
 | `episode` | `max_steps_per_episode` | Agent cap per episode (separate from game gen limit) |
 
