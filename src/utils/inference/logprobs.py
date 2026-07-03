@@ -105,8 +105,9 @@ def normalize_logprobs(
                 sampled_id = None
 
         if isinstance(x, dict):
-            if x.get("logprob") is not None or x.get("logprob_value") is not None:
-                rec: dict[str, Any] = {"logprob": float(x.get("logprob", x.get("logprob_value")))}
+            lp_val = x.get("logprob", x.get("logprob_value"))
+            if lp_val is not None:
+                rec: dict[str, Any] = {"logprob": float(lp_val)}
                 tok = x.get("token")
                 if isinstance(tok, str) and tok:
                     rec["token"] = tok
