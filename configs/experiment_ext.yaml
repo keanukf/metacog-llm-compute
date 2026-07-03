@@ -11,10 +11,10 @@ second_model:
   enabled: false
   name: "microsoft/Phi-3.5-mini-instruct"
 
-# Third domain: Logical Reasoning
-logical_reasoning:
-  enabled: false
-  instances: 50
+# DEPRECATED — see branch legacy/deprecated-environments
+# logical_reasoning:
+#   enabled: false
+#   instances: 50
 
 paths:
   results_ext: "data/results/extensions"
