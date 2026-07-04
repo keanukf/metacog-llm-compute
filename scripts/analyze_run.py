@@ -138,6 +138,7 @@ def main() -> None:
         run_health,
         stage_mix,
     )
+    from src.analysis.calibration import compare_signal_calibration
     from src.analysis.datasets import load_run_dataset
     from src.analysis.visualization import plot_run_overview
 
@@ -158,6 +159,7 @@ def main() -> None:
         "stage_mix": stage_mix(ds.steps),
         "efficiency_by_group": efficiency_summary(ds.episodes),
         "regret_vs_baselines": regret_vs_baselines(ds.episodes),
+        "signal_calibration": compare_signal_calibration(ds.episodes),
         "figures": figures,
         "run_metadata": ds.run_metadata,
         "run_info": ds.run_info,

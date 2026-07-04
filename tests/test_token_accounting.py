@@ -29,7 +29,8 @@ class _TokenModel:
             if logprobs
             else None
         )
-        return "go north", lp
+        text = "<think>\nthink\n</think>\ngo north" if kwargs.get("enable_thinking") else "go north"
+        return text, lp
 
 
 def test_c0_episode_tokens_match_subcall_sum():
@@ -37,4 +38,15 @@ def test_c0_episode_tokens_match_subcall_sum():
     model = _TokenModel(n_tokens=4)
     step_fn = get_step_fn("C0", vc_mode="none")
     r = run_episode(env, model, "C0", step_fn=step_fn, max_steps=5)
-    assert r["total_tokens_generated"] >= r["steps_detail"][0].get("tokens_generated", 0)
+    step_sum = sum(int(sd.get("tokens_generated") or 0) for sd in r["steps_detail"])
+    assert r["total_tokens_generated"] == step_sum
+
+
+def test_c1_episode_tokens_match_subcall_sum():
+    env = _OneStepEnv()
+    model = _TokenModel(n_tokens=5)
+    step_fn = get_step_fn("C1", vc_mode="none")
+    r = run_episode(env, model, "C1", step_fn=step_fn, max_steps=5)
+    step_sum = sum(int(sd.get("tokens_generated") or 0) for sd in r["steps_detail"])
+    assert r["total_tokens_generated"] == step_sum
+    assert step_sum >= 5

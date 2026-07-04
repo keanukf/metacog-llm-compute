@@ -277,6 +277,13 @@ def main() -> None:
         resumed_from=int(len(completed)),
         repo_root=REPO_ROOT,
     )
+    if args.allow_history_truncation:
+        meta_path = checkpoint_dir / "run_metadata.json"
+        with open(meta_path) as f:
+            meta_obj = json.load(f)
+        meta_obj["history_truncation_allowed"] = True
+        with open(meta_path, "w") as f:
+            json.dump(meta_obj, f, indent=2)
     write_short_run_info(
         checkpoint_dir,
         script="run_phase1.py",

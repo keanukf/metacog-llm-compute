@@ -321,12 +321,15 @@ def main() -> None:
         resumed_from=int(len(completed)),
         repo_root=REPO_ROOT,
     )
-    if policy_artifact_path is not None:
+    if policy_artifact_path is not None or args.allow_history_truncation:
         meta_path = checkpoint_dir / "run_metadata.json"
         with open(meta_path) as f:
             meta_obj = json.load(f)
-        meta_obj["policy_artifact_path"] = policy_artifact_path
-        meta_obj["policy_artifact_sha256"] = policy_artifact_sha256
+        if policy_artifact_path is not None:
+            meta_obj["policy_artifact_path"] = policy_artifact_path
+            meta_obj["policy_artifact_sha256"] = policy_artifact_sha256
+        if args.allow_history_truncation:
+            meta_obj["history_truncation_allowed"] = True
         with open(meta_path, "w") as f:
             json.dump(meta_obj, f, indent=2)
     write_short_run_info(
