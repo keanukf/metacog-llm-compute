@@ -356,6 +356,29 @@ Für den primären Vergleich (H2: Adaptive-TLE vs. Always-C2) mit erwarteter Eff
 
 ---
 
+## VI-b. §5.7 Infrastructure — vLLM logprobs (preregistered)
+
+**Pinned stack:** `vllm==0.19.1` on RunPod (V1 engine only). No version bump required for
+`raw_logprobs`; the mode is an **engine argument** (`LLM(..., logprobs_mode="raw_logprobs")` or
+`vllm serve --logprobs-mode raw_logprobs`), not a `SamplingParams` field.
+
+**Semantics:** `raw_logprobs` = model output **before** logit processors (temperature, top_k, top_p,
+penalties). This satisfies §5.6 fixed measurement temperature across cells while allowing C2 to sample
+at higher diversity temperature: TLE reads the pre-temperature distribution; sampling temperature
+affects which token is drawn, not the entropy scale.
+
+**Validation:**
+
+1. **Startup capability probe** (`VLLMWrapper`): fixed prompt, compare first-token TLE at T=0.3 vs
+   T=1.0; hard-fail if `|dTLE| > 0.05` bits (engine not in raw mode).
+2. **Pre-Phase-1 parity script** (`scripts/verify_backend_parity.py`): K-coverage + per-probe
+   `|dTLE(T_low vs T_high)| ≤ eps`, with Same-T control and scaling-span diagnostics in JSON report.
+
+**Preregistered tolerance:** `eps = max(0.05 bits, 3 × max_probe_same_T |dTLE|)`. Floor `0.05` bits
+from RunPod control run (Qwen3-8B, RTX 4090, 2026-07-04); dynamic term absorbs fp16 request noise.
+
+---
+
 ## VII. Vorläufige Gliederung
 
 *Mental storyline (Spine):* LM agents make sequential decisions, but waste compute by treating every step equally. Cognitive psychology gives us a principled theory of when organisms invest effort — and a vocabulary (metacognition, EVC, fluency) that maps directly onto signals we can measure in LMs. Once we build that bridge, we can survey what's been tried, identify the gap — no one has tested these signals step-by-step in sequential agents — and fill it.

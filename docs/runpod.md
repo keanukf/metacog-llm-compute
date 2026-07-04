@@ -260,6 +260,8 @@ Some models advertise very large context lengths (e.g. 40960). On 24 GB GPUs, vL
 
 **vLLM dtype:** use `model.dtype: float16` in YAML. vLLM 0.19+ does not accept the alias `fp16` when constructing the engine (affects `verify_backend_parity.py`, Phase 1/2 runners, and pilot smoke tests).
 
+**vLLM logprobs mode:** pin `logprobs_mode="raw_logprobs"` on the **engine** (`LLM(...)`), not on `SamplingParams`. V1 default is raw (pre-temperature). Parity gate: `python scripts/verify_backend_parity.py --backend vllm` (TLE tolerance + Same-T diagnostic; see `docs/pilot.md` §5.7).
+
 You should see a new timestamped folder like `data/results/pilot_YYYYMMDD_HHMMSS/` containing at least:
 
 - `run_info.json` — resolved config + model id + pilot mode
