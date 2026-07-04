@@ -59,6 +59,8 @@ def create_experiment_model(config: dict, use_real: bool) -> Any:
     if not model_name:
         return MockExperimentModel()
     dtype = model_cfg.get("dtype", "float16")
+    if str(dtype).lower() == "fp16":
+        dtype = "float16"
     revision = model_cfg.get("revision")
     backend = config.get("inference", {}).get("backend", "vllm")
     try:
@@ -71,6 +73,21 @@ def create_experiment_model(config: dict, use_real: bool) -> Any:
         if backend == "vllm":
             extra["chat_template"] = bool(inf.get("chat_template", True))
             extra["enable_thinking"] = bool(inf.get("enable_thinking", False))
+            # Match run_pilot.py: models may advertise context lengths that do not fit
+            # KV cache on 24 GB GPUs (e.g. Qwen3-8B @ 40960).
+            max_model_len = inf.get("max_model_len") or inf.get("vllm_max_model_len")
+            if max_model_len is None:
+                max_model_len = 8192
+            try:
+                extra["max_model_len"] = int(max_model_len)
+            except (TypeError, ValueError):
+                extra["max_model_len"] = 8192
+            gmu = inf.get("gpu_memory_utilization")
+            if gmu is not None:
+                try:
+                    extra["gpu_memory_utilization"] = float(gmu)
+                except (TypeError, ValueError):
+                    pass
         from src.utils.inference.logprob_config import resolve_top_logprobs
 
         extra["top_logprobs"] = resolve_top_logprobs(inf)
