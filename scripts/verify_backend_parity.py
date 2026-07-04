@@ -15,6 +15,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.signals.token_entropy import entropy_shannon_from_top_logprobs
+from src.utils.inference.logprob_invariance import (
+    TLE_INVARIANCE_EPS_BITS,
+    TLE_INVARIANCE_NOISE_SAFETY_FACTOR,
+    probe_temperature_invariance,
+    resolve_tle_invariance_eps,
+)
 
 
 def _load_probes(path: Path) -> list[dict[str, str]]:
@@ -60,39 +66,64 @@ def _check_backend(
     *,
     label: str,
     min_k: int = 20,
+    t_low: float = 0.3,
+    t_high: float = 1.0,
 ) -> dict[str, Any]:
     k_ok = True
     temp_ok = True
     details: list[dict[str, Any]] = []
+    same_t_dtle_values: list[float] = []
+
     for probe in probes:
         prompt = probe["prompt"]
-        text0, lp0 = model.generate(
-            prompt, logprobs=True, temperature=0.3, enable_thinking=False, max_tokens=8
+        diag = probe_temperature_invariance(
+            model,
+            prompt,
+            t_low=t_low,
+            t_high=t_high,
+            max_tokens=8,
         )
-        text1, lp1 = model.generate(
-            prompt, logprobs=True, temperature=1.0, enable_thinking=False, max_tokens=8
-        )
-        counts0 = _topk_from_logprobs(lp0)
+        same = diag.get("same_t_dtle")
+        if same is not None:
+            same_t_dtle_values.append(float(same))
+
+        counts0 = _topk_from_logprobs(diag.get("logprobs_t_low"))
         if counts0 and min(counts0) < min_k:
             k_ok = False
-        # Temperature invariance on first action-token row
-        if lp0 and lp1 and isinstance(lp0[0], dict) and isinstance(lp1[0], dict):
-            t0 = lp0[0].get("top_logprobs")
-            t1 = lp1[0].get("top_logprobs")
-            if json.dumps(t0, sort_keys=True) != json.dumps(t1, sort_keys=True):
-                temp_ok = False
+
         details.append(
             {
                 "id": probe.get("id"),
-                "n_tokens": len(lp0 or []),
+                "n_tokens": len(diag.get("logprobs_t_low") or []),
                 "min_topk": min(counts0) if counts0 else 0,
-                "entropies": _entropies(lp0),
+                "entropies": _entropies(diag.get("logprobs_t_low")),
+                "temperature_invariance": diag,
             }
         )
+
+    eps = resolve_tle_invariance_eps(same_t_dtle_values)
+    for row in details:
+        inv = row.get("temperature_invariance") or {}
+        cross = inv.get("cross_t_dtle")
+        if cross is None or float(cross) > eps:
+            temp_ok = False
+        inv["pass"] = cross is not None and float(cross) <= eps
+
     return {
         "backend": label,
         "k_coverage_pass": k_ok,
         "temperature_invariance_pass": temp_ok,
+        "temperature_invariance_eps_bits": eps,
+        "temperature_invariance_preregistered_floor_bits": TLE_INVARIANCE_EPS_BITS,
+        "temperature_invariance_noise_safety_factor": TLE_INVARIANCE_NOISE_SAFETY_FACTOR,
+        "temperature_invariance_same_t_dtle_max": (
+            max(same_t_dtle_values) if same_t_dtle_values else None
+        ),
+        "temperature_invariance_note": (
+            "Pass when |dTLE(T_low vs T_high)| <= eps on first-token top-k; "
+            "eps = max(preregistered floor, same-T noise floor * safety factor). "
+            "Same-T control and predicted scaling spans are diagnostic only."
+        ),
         "entropy_equality_pass": "not_applicable",
         "entropy_equality_note": "Cross-backend entropy equality requires identical model+precision",
         "probes": details,
@@ -138,7 +169,10 @@ def main() -> None:
     b0 = report["backends"][0]
     all_pass = b0["k_coverage_pass"] and b0["temperature_invariance_pass"]
     print(f"K-coverage: {'PASS' if b0['k_coverage_pass'] else 'FAIL'}")
-    print(f"Temperature invariance: {'PASS' if b0['temperature_invariance_pass'] else 'FAIL'}")
+    print(
+        f"Temperature invariance: {'PASS' if b0['temperature_invariance_pass'] else 'FAIL'} "
+        f"(eps={b0['temperature_invariance_eps_bits']} bits)"
+    )
     raise SystemExit(0 if all_pass or args.backend == "mock" else 1)
 
 

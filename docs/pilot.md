@@ -133,7 +133,7 @@ There is **no** separate verify subcall in C2. Inspect traces: `call_detail.meth
 **Token-level entropy (TLE):** Configure top-k width via `inference.top_logprobs` (default **20**, EAGER-aligned). When `logprobs=True`, both backends return per-token candidate lists; TLE is Shannon entropy over the **renormalized top-k** distribution (approximation vs full vocabulary).
 
 - **LM Studio:** Uses **`POST /v1/responses`** (LM Studio **0.4.x+**) with `include: ["message.output_text.logprobs"]` and `top_logprobs` from config. The usual OpenAI-compat `/v1/completions` and `/v1/chat/completions` endpoints do not return usable logprobs.
-- **vLLM (CUDA):** Uses `SamplingParams(logprobs=K)` with `logprobs_mode="raw_logprobs"` (temperature-invariant scale for cross-stage TLE). Records are normalized to the same schema as LM Studio before `compute_tle`.
+- **vLLM (CUDA):** Uses `SamplingParams(logprobs=K)` for top-k width; pins `logprobs_mode="raw_logprobs"` on the **engine** (`LLM(...)`) for temperature-invariant TLE. Records are normalized to the same schema as LM Studio before `compute_tle`.
 
 If only top-1 logprobs are available, TLE falls back to legacy binary entropy per token.
 
@@ -215,10 +215,16 @@ Before confirmatory Phase 1 runs on vLLM, run:
 python scripts/verify_backend_parity.py --backend vllm --config configs/experiment_core.yaml
 ```
 
-Production TLE uses vLLM `raw_logprobs` (temperature-invariant). LM Studio `/v1/responses` may use a
+Production TLE uses vLLM **engine** `logprobs_mode="raw_logprobs"` (temperature-invariant:
+logprobs before temperature / top_k / top_p). LM Studio `/v1/responses` may use a
 different logprob scale or quantization (e.g. local MLX 4-bit vs pod float16 8B) — cross-backend entropy
 equality is only required when the **same** model and precision run on both backends. See
 `data/results/backend_parity_*.json`.
+
+**Parity gate (§5.7):** Pass when K-coverage ≥ 20 and first-token `|dTLE(T=0.3 vs T=1.0)| ≤ eps`
+(bits), with `eps = max(0.05, 3 × same-T noise floor)`. The script also records a Same-T control
+(T=1.0 vs T=1.0) and predicted temperature-scaling spans for diagnostics. Bit-identical logprob
+JSON comparison is intentionally **not** used (fp16 non-determinism between separate requests).
 
 **RunPod / vLLM config notes (required for the script above):**
 

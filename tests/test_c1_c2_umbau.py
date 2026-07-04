@@ -59,18 +59,47 @@ def test_c0_c1_tle_same_position_for_matched_action_tokens():
     assert tle_c0["mean_entropy"] == tle_c1["mean_entropy"]
 
 
-def test_vllm_wrapper_pins_raw_logprobs_mode():
+def test_vllm_wrapper_pins_raw_logprobs_mode_on_engine():
     import sys
 
     wrapper = VLLMWrapper(model_name="Qwen/Qwen3-4B")
     assert wrapper.logprobs_mode == "raw_logprobs"
     assert _VLLM_LOGPROBS_MODE == "raw_logprobs"
 
+    engine_captured: dict = {}
+
+    class _FakeLLM:
+        def __init__(self, **kwargs):
+            engine_captured.update(kwargs)
+
+    fake_torch = MagicMock()
+    fake_torch.cuda.is_available.return_value = True
+    fake_tok = MagicMock()
+    fake_transformers = MagicMock()
+    fake_transformers.AutoTokenizer.from_pretrained.return_value = fake_tok
+    fake_vllm = MagicMock()
+    fake_vllm.LLM = _FakeLLM
+    fake_vllm.SamplingParams = MagicMock()
+
+    with patch.dict(
+        sys.modules,
+        {"torch": fake_torch, "transformers": fake_transformers, "vllm": fake_vllm},
+    ):
+        with patch.object(VLLMWrapper, "_verify_logprob_invariance_capability"):
+            wrapper._ensure_loaded()
+
+    assert engine_captured.get("logprobs_mode") == "raw_logprobs"
+
+
+def test_vllm_wrapper_sampling_params_omit_logprobs_mode():
+    wrapper = VLLMWrapper(model_name="Qwen/Qwen3-4B")
     captured: dict = {}
 
     class _FakeSamplingParams:
         def __init__(self, **kwargs):
             captured.update(kwargs)
+
+    import sys
 
     fake_vllm = MagicMock()
     fake_vllm.SamplingParams = _FakeSamplingParams
@@ -82,8 +111,25 @@ def test_vllm_wrapper_pins_raw_logprobs_mode():
             merged_stop=None,
             extra={},
         )
-    assert captured.get("logprobs_mode") == "raw_logprobs"
     assert captured.get("logprobs") == 20
+    assert "logprobs_mode" not in captured
+
+
+def test_vllm_capability_probe_accepts_invariant_mock_responses():
+    wrapper = VLLMWrapper(model_name="Qwen/Qwen3-4B")
+    top = [
+        {"token": "north", "logprob": -0.1},
+        {"token": "south", "logprob": -2.0},
+        {"token": "east", "logprob": -2.5},
+    ]
+
+    def _gen(_prompt, **kwargs):
+        _ = kwargs
+        return "north", [{"token": "north", "logprob": -0.1, "top_logprobs": list(top)}]
+
+    wrapper.generate = _gen  # type: ignore[method-assign]
+    wrapper._verify_logprob_invariance_capability()
+    assert wrapper._logprob_invariance_verified is True
 
 
 def test_c2_winner_tle_and_vc_use_same_winner_index_on_tie():
