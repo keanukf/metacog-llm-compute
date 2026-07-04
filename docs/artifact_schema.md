@@ -2,25 +2,37 @@
 
 ## Episode JSON (`episode.v1`)
 
-Episode files written by `log_episode(...)` now include `schema_version: "episode.v1"`.
-This marks the stable baseline for pilot/phase episode records.
+Episode files written by `log_episode(...)` include `schema_version: "episode.v1"`.
 
-Required high-level keys:
+### Required high-level keys
 
 - `episode_id`
-- `compute_stage`
+- `compute_stage` (Phase 1) or `strategy` (Phase 2)
 - `task_success`
-- `steps_detail` (may be synthesized by loaders for legacy files)
-- `tle_per_step`
-- `vc_per_step`
 
-## Loader Compatibility
+### Analysis fields (Phase 1 / Phase 2)
 
-`src/analysis/datasets.py` performs a minimal structural validation before flattening
-episode artifacts. Records missing required core fields are ignored.
+- `domain`, `instance`, `run`
+- `holdout` (bool) — from task manifest
+- `difficulty_tier` — from task manifest
+- `stage_per_step` (Phase 2 adaptive runs)
+- `tle_per_step`, `vc_per_step`, `step_correctness`
 
-## Migration Notes
+### Compact storage (`compact=True`, default)
 
-- Legacy episodes without `schema_version` are still readable.
-- New writes automatically set `schema_version` to `episode.v1`.
-- Golden fixture: `tests/fixtures/episode_schema_v1.json` captures the expected key contract.
+Full `steps_detail`, `vc_detail_per_step`, and `logprob_raw_per_step` may be omitted from the
+main JSON to save space. **Minimal per-step records** are retained for analysis joins:
+
+- `step_index`, `compute_stage`, `tle`, `vc`, `tokens_generated`, `lm_calls`, `correctness`
+
+Optional sidecars (when `logging.save_*` enabled):
+
+- `logprobs/{episode_id}_logprobs.json`
+- `vc/{episode_id}_vc.json`
+
+### Loader compatibility
+
+`src/analysis/datasets.py` validates core fields and synthesizes `steps_detail` from legacy
+per-step arrays when the full detail list is absent.
+
+Golden fixture: `tests/fixtures/episode_schema_v1.json`.

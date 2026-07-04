@@ -346,8 +346,8 @@ def test_c0_multiline_without_token_text_yields_no_tle():
     assert tle is None
 
 
-def test_c1_vc_followup_includes_chain_of_thought():
-    """C1 VC must judge CoT + final action, not action alone (cross-stage comparability)."""
+def test_c1_vc_followup_includes_chain_of_thought_when_full_mode():
+    """Exploratory ``judged_context=full`` includes CoT in VC prompt."""
 
     class _M:
         vc_prompt: str | None = None
@@ -361,11 +361,29 @@ def test_c1_vc_followup_includes_chain_of_thought():
             ] * 10 if logprobs else None
 
     m = _M()
-    step = get_step_fn("C1", vc_mode="followup")
+    step = get_step_fn("C1", vc_mode="followup", vc_judged_context="full")
     step("obs", [], m)
     assert m.vc_prompt is not None
     assert "Chain-of-thought (your reasoning for this turn)" in m.vc_prompt
     assert "MarkerReasoningUnique42." in m.vc_prompt
+
+
+def test_c1_vc_followup_action_only_default():
+    class _M:
+        vc_prompt: str | None = None
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
+                self.vc_prompt = prompt
+                return "55", None
+            return "<think>hidden</think>\ngo east", [{"logprob": -0.15}] * 3
+
+    m = _M()
+    step = get_step_fn("C1", vc_mode="followup")
+    step("obs", [], m)
+    assert m.vc_prompt is not None
+    assert "[C1] go east" in m.vc_prompt
+    assert "hidden" not in m.vc_prompt
 
 
 def test_c1_single_call_vc_none():

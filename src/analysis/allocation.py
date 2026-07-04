@@ -132,6 +132,8 @@ def efficiency_summary(
     episodes_rows: Iterable[dict[str, Any]], *, group_key: str | None = None
 ) -> list[dict[str, Any]]:
     """
+    Descriptive only; not a thesis decision metric (Pareto: success + tokens separately).
+
     Group episodes and summarize success_rate, mean costs, and efficiency = success_rate / mean_cost.
     """
     rows = [ep for ep in episodes_rows if isinstance(ep, dict)]

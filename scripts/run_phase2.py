@@ -18,6 +18,7 @@ import traceback
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -196,6 +197,11 @@ def main() -> None:
     parser.add_argument(
         "--verbose-steps", action="store_true", help="Log each environment step (very noisy)"
     )
+    parser.add_argument(
+        "--allow-history-truncation",
+        action="store_true",
+        help="Allow history truncation params in config (not valid for confirmatory H3).",
+    )
     args = parser.parse_args()
     config_path = (
         REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
@@ -227,11 +233,13 @@ def main() -> None:
     from src.agent.base_agent import run_adaptive_episode
     from src.utils.checkpointing import list_completed_episodes, save_episode_checkpoint
     from src.utils.experiment_env import create_experiment_model, make_experiment_env
+    from src.utils.history_guard import enforce_full_history_or_exit
     from src.utils.logging_utils import (
         write_logprob_distribution_artifacts,
         write_run_metadata,
         write_vc_distribution_artifacts,
     )
+    from src.utils.manifest import manifest_entry_for_instance
     from src.utils.run_output_layout import write_short_run_info
     from src.utils.run_progress import (
         format_run_elapsed,
@@ -255,6 +263,37 @@ def main() -> None:
     )
     runs = phase2.get("runs_per_condition", 5)
     max_steps = config.get("episode", {}).get("max_steps_per_episode", 20)
+
+    from src.agent.allocation_policy import load_policy, policy_signal_for_strategy
+    from src.agent.allocator import POLICY_REQUIRED_STRATEGIES, allocate
+
+    policy_required = POLICY_REQUIRED_STRATEGIES & {str(s) for s in strategies}
+    policies_by_key: dict[tuple[str, str], Any] = {}
+    policy_artifact_path: str | None = None
+    policy_artifact_sha256: str | None = None
+    if policy_required:
+        artifact_rel = phase2.get("policy_artifact")
+        if not artifact_rel:
+            raise SystemExit(
+                "phase2.policy_artifact is required for strategies: "
+                + ", ".join(sorted(policy_required))
+            )
+        artifact_path = Path(str(artifact_rel))
+        if not artifact_path.is_absolute():
+            artifact_path = REPO_ROOT / artifact_path
+        if not artifact_path.is_file():
+            raise SystemExit(f"policy artifact not found: {artifact_path}")
+        policy_artifact_path = str(artifact_path)
+        policy_artifact_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+        for dom in domains:
+            for strat in policy_required:
+                sig = policy_signal_for_strategy(str(strat))
+                if sig is None:
+                    continue
+                policies_by_key[(str(dom), str(strat))] = load_policy(
+                    artifact_path, domain=str(dom), signal=sig
+                )
+
     progress_every = (
         int(args.progress_every)
         if int(args.progress_every) > 0
@@ -282,6 +321,14 @@ def main() -> None:
         resumed_from=int(len(completed)),
         repo_root=REPO_ROOT,
     )
+    if policy_artifact_path is not None:
+        meta_path = checkpoint_dir / "run_metadata.json"
+        with open(meta_path) as f:
+            meta_obj = json.load(f)
+        meta_obj["policy_artifact_path"] = policy_artifact_path
+        meta_obj["policy_artifact_sha256"] = policy_artifact_sha256
+        with open(meta_path, "w") as f:
+            json.dump(meta_obj, f, indent=2)
     write_short_run_info(
         checkpoint_dir,
         script="run_phase2.py",
@@ -306,6 +353,12 @@ def main() -> None:
     rolling: list[dict] = []
     done_count = 0
     for domain in domains:
+        step_cfg_probe = resolve_step_fn_kwargs(config, domain)
+        enforce_full_history_or_exit(
+            step_cfg_probe,
+            allow_history_truncation=bool(args.allow_history_truncation),
+            script_name="run_phase2.py",
+        )
         log(
             f"Phase 2: domain block — {domain} ({instances_per_domain} instances × {len(strategies)} strategies × {runs} runs)"
         )
@@ -333,12 +386,15 @@ def main() -> None:
                         # For adaptive runs we pass a per-episode seed into C2 so tie-breaking is reproducible.
                         step_cfg = resolve_step_fn_kwargs(config, domain)
                         step_cfg["c2_tie_break_seed"] = ep_id
+                        ep_policy = policies_by_key.get((str(domain), str(strategy)))
                         result = run_adaptive_episode(
                             env,
                             model,
                             strategy,
                             max_steps=max_steps,
                             rng=rng,
+                            policy=ep_policy,
+                            allocate_fn=allocate,
                             on_step=on_step,
                             save_logprob_distributions=save_logprob_distributions,
                             save_vc_distributions=save_vc_distributions,
@@ -359,12 +415,15 @@ def main() -> None:
                             trace_name=ep_id,
                             **step_cfg,
                         )
+                        mentry = manifest_entry_for_instance(domain, inst, config, REPO_ROOT)
                         data = {
                             "episode_id": ep_id,
                             "domain": domain,
                             "instance": inst,
                             "strategy": strategy,
                             "run": run,
+                            "holdout": bool(mentry.get("holdout", False)),
+                            "difficulty_tier": mentry.get("difficulty_tier"),
                             "task_success": result["task_success"],
                             "steps": result["steps"],
                             # Legacy fields kept for backward compatibility

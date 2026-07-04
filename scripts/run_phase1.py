@@ -186,6 +186,11 @@ def main() -> None:
     parser.add_argument(
         "--verbose-steps", action="store_true", help="Log each environment step (very noisy)"
     )
+    parser.add_argument(
+        "--allow-history-truncation",
+        action="store_true",
+        help="Allow history truncation params in config (not valid for confirmatory H3).",
+    )
     args = parser.parse_args()
     config_path = (
         REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
@@ -218,11 +223,13 @@ def main() -> None:
     from src.agent.compute_stages import get_step_fn
     from src.utils.checkpointing import list_completed_episodes, save_episode_checkpoint
     from src.utils.experiment_env import create_experiment_model, make_experiment_env
+    from src.utils.history_guard import enforce_full_history_or_exit
     from src.utils.logging_utils import (
         write_logprob_distribution_artifacts,
         write_run_metadata,
         write_vc_distribution_artifacts,
     )
+    from src.utils.manifest import manifest_entry_for_instance
     from src.utils.run_output_layout import write_short_run_info
     from src.utils.run_progress import (
         format_run_elapsed,
@@ -294,6 +301,12 @@ def main() -> None:
     rolling: list[dict] = []
     done_count = 0
     for domain in domains:
+        step_cfg_probe = resolve_step_fn_kwargs(config, domain)
+        enforce_full_history_or_exit(
+            step_cfg_probe,
+            allow_history_truncation=bool(args.allow_history_truncation),
+            script_name="run_phase1.py",
+        )
         log(
             f"Phase 1: domain block — {domain} ({instances_per_domain} instances × {len(stages)} stages × {runs} runs)"
         )
@@ -362,12 +375,15 @@ def main() -> None:
                             trace_name=ep_id,
                             **history_cfg,
                         )
+                        mentry = manifest_entry_for_instance(domain, inst, config, REPO_ROOT)
                         data = {
                             "episode_id": ep_id,
                             "domain": domain,
                             "instance": inst,
                             "compute_stage": stage,
                             "run": run,
+                            "holdout": bool(mentry.get("holdout", False)),
+                            "difficulty_tier": mentry.get("difficulty_tier"),
                             "task_success": result["task_success"],
                             "steps": result["steps"],
                             # Legacy fields kept for backward compatibility

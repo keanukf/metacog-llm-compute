@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from src.agent.allocation_policy import load_policy
 from src.agent.base_agent import run_adaptive_episode
+
+POLICY = load_policy(
+    Path(__file__).resolve().parent / "fixtures" / "policy_artifact_v1.json",
+    domain="textworld",
+    signal="tle_mean_entropy",
+)
 
 
 class _LoopEnv:
@@ -34,7 +43,7 @@ class _LoopEnv:
 class _StubModel:
     def generate(self, prompt, logprobs=False, **kwargs):
         text = "noop"
-        lp = [{"logprob": -0.5}] * 2 if logprobs else None
+        lp = [{"logprob": -0.5, "top_logprobs": [{"logprob": -0.5}] * 20}] * 2 if logprobs else None
         return text, lp
 
 
@@ -46,11 +55,13 @@ def test_run_adaptive_always_c0_stages():
     assert r["stage_per_step"] == ["C0", "C0", "C0"]
 
 
-def test_run_adaptive_eager_style_cycles_stages():
+def test_run_adaptive_eager_style_episode_fixed_via_policy():
     env = _LoopEnv(n=5)
     model = _StubModel()
-    r = run_adaptive_episode(env, model, "eager_style", max_steps=10)
-    assert r["stage_per_step"] == ["C0", "C1", "C2", "C0", "C1"]
+    r = run_adaptive_episode(env, model, "eager_style", max_steps=10, policy=POLICY, vc_mode="none")
+    assert r["stage_per_step"][0] == "C0"
+    fixed = r["stage_per_step"][1]
+    assert r["stage_per_step"][1:] == [fixed] * (len(r["stage_per_step"]) - 1)
 
 
 def test_run_adaptive_step_correctness_is_detached_copy():

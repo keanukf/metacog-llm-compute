@@ -175,15 +175,15 @@ class TowerOfHanoiEnv:
                 self._error_message = "Move violates disk-size rule or source is empty."
                 state_after = _copy_state(self._state)
             else:
-                expected = self._optimal_solution[0] if self._optimal_solution else None
-                correctness = "optimal" if expected == parsed else "legal"
+                dist_before = len(_shortest_path_to_goal(state_before, self._num_disks))
                 self._state = _apply_move(self._state, parsed)
                 state_after = _copy_state(self._state)
-                if correctness == "optimal":
-                    if self._optimal_solution:
-                        self._optimal_solution = self._optimal_solution[1:]
+                dist_after = len(_shortest_path_to_goal(state_after, self._num_disks))
+                if dist_after == dist_before - 1:
+                    correctness = "optimal"
                 else:
-                    self._optimal_solution = _shortest_path_to_goal(self._state, self._num_disks)
+                    correctness = "legal"
+                self._optimal_solution = _shortest_path_to_goal(self._state, self._num_disks)
 
         self.step_results.append(
             {
