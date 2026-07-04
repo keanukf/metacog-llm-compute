@@ -4,11 +4,14 @@
 model:
   name: "Qwen/Qwen3-8B"
   revision: "b968826d9c46dd6066d109eabc6255188de91218"
-  dtype: fp16
+  # vLLM 0.19+ accepts float16/bfloat16 literals only (not fp16/bf16 aliases).
+  dtype: float16
 
 inference:
   temperature: 0.3
   max_tokens: 256
+  # Qwen3-8B advertises 40960 context; cap for 24 GB GPUs (KV cache OOM otherwise).
+  max_model_len: 16384
   avg_tokens_per_call: 200
   top_logprobs: 20
 

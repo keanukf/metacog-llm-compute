@@ -209,7 +209,21 @@ Defaults: 3 disks, seed 42. Flags: `--num-disks`, `--seed`, `--partial-moves`, `
 
 ## Backend logprob parity (Phase 1 prerequisite)
 
-Before confirmatory Phase 1 runs on vLLM, run `scripts/verify_backend_parity.py`. Production TLE uses
-vLLM `raw_logprobs` (temperature-invariant). LM Studio `/v1/responses` may use a different logprob
-scale or quantization (e.g. local MLX 4-bit vs pod fp16 8B) — cross-backend entropy equality is only
-required when the **same** model and precision run on both backends. See `data/results/backend_parity_*.json`.
+Before confirmatory Phase 1 runs on vLLM, run:
+
+```bash
+python scripts/verify_backend_parity.py --backend vllm --config configs/experiment_core.yaml
+```
+
+Production TLE uses vLLM `raw_logprobs` (temperature-invariant). LM Studio `/v1/responses` may use a
+different logprob scale or quantization (e.g. local MLX 4-bit vs pod float16 8B) — cross-backend entropy
+equality is only required when the **same** model and precision run on both backends. See
+`data/results/backend_parity_*.json`.
+
+**RunPod / vLLM config notes (required for the script above):**
+
+- `model.dtype` must be `float16` (or `bfloat16`). vLLM 0.19+ rejects the alias `fp16` in
+  `LLM(..., dtype=...)`.
+- Set `inference.max_model_len` (e.g. `16384` in `configs/experiment_core.yaml`) on 24 GB GPUs.
+  Qwen3-8B advertises 40960 context; without a cap, vLLM fails at init with a KV-cache OOM.
+  Phase runners use the same keys via `create_experiment_model()` in `src/utils/experiment_env.py`.
