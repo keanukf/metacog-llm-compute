@@ -6,6 +6,11 @@ from typing import Any
 
 from src.utils.errors import BackendError
 from src.utils.inference.base import ModelWrapper
+from src.utils.inference.logprob_invariance import (
+    TLE_INVARIANCE_EPS_BITS,
+    capability_probe_prompt,
+    probe_temperature_invariance,
+)
 from src.utils.inference.logprobs import normalize_logprobs
 
 # TLE assumes temperature-invariant logprobs (as if T=1.0). vLLM V1 default is raw_logprobs;
@@ -40,6 +45,7 @@ class VLLMWrapper(ModelWrapper):
         self._kwargs = kwargs
         self._llm: Any = None
         self._tokenizer: Any = None
+        self._logprob_invariance_verified = False
 
     @property
     def logprobs_mode(self) -> str:
@@ -61,13 +67,47 @@ class VLLMWrapper(ModelWrapper):
             tok_kw["revision"] = self._revision
             llm_kw["revision"] = self._revision
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_name, **tok_kw)
-        self._llm = LLM(
-            model=self._model_name,
-            dtype=self._dtype,
-            max_model_len=self._max_model_len,
-            **llm_kw,
-            **self._kwargs,
+        llm_kw["logprobs_mode"] = _VLLM_LOGPROBS_MODE
+        engine_kwargs = dict(self._kwargs)
+        try:
+            self._llm = LLM(
+                model=self._model_name,
+                dtype=self._dtype,
+                max_model_len=self._max_model_len,
+                **llm_kw,
+                **engine_kwargs,
+            )
+        except TypeError as exc:
+            raise BackendError(
+                "vLLM LLM() must accept logprobs_mode="
+                f"{_VLLM_LOGPROBS_MODE!r} as an engine argument (see vLLM engine args)"
+            ) from exc
+        self._verify_logprob_invariance_capability()
+
+    def _verify_logprob_invariance_capability(self) -> None:
+        """One-shot startup probe: raw logprobs must be invariant to sampling temperature."""
+        if self._logprob_invariance_verified:
+            return
+        diag = probe_temperature_invariance(
+            self,
+            capability_probe_prompt(),
+            t_low=0.3,
+            t_high=1.0,
+            max_tokens=4,
         )
+        cross = diag.get("cross_t_dtle")
+        same = diag.get("same_t_dtle")
+        if cross is None:
+            raise BackendError(
+                "vLLM logprob capability probe failed: missing first-token TLE at T=0.3/T=1.0"
+            )
+        if cross > TLE_INVARIANCE_EPS_BITS:
+            raise BackendError(
+                "vLLM logprob capability probe failed: first-token |dTLE(0.3 vs 1.0)|="
+                f"{cross:.4f} bits exceeds eps={TLE_INVARIANCE_EPS_BITS} "
+                f"(same-T noise floor={same}); logprobs may not be raw_logprobs"
+            )
+        self._logprob_invariance_verified = True
 
     def _maybe_apply_chat_template(
         self, prompt: str, *, enable_thinking: bool | None = None
@@ -138,10 +178,7 @@ class VLLMWrapper(ModelWrapper):
         }
         if n is not None:
             base["n"] = int(n)
-        try:
-            return SamplingParams(**base, logprobs_mode=_VLLM_LOGPROBS_MODE)
-        except TypeError:
-            return SamplingParams(**base)
+        return SamplingParams(**base)
 
     def generate(
         self,

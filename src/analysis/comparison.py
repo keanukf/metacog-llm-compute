@@ -121,7 +121,7 @@ def compare_strategies_phase2(
     metric:
       - 'task_success' (binary -> mean success rate)
       - 'normalized_compute_cost' (float -> mean cost)
-      - 'efficiency' (derived: success_rate / mean_cost; computed per group)
+      - 'efficiency' (descriptive only — not a thesis decision metric; use Pareto DVs)
     """
     by_dom: dict[str, list[dict[str, Any]]] = {}
     for ep in episodes:

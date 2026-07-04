@@ -1,0 +1,22 @@
+[
+  {
+    "id": "tw_short",
+    "prompt": "You are in a kitchen. Exits: north.\n\nChoose one valid game action on a single line."
+  },
+  {
+    "id": "toh_short",
+    "prompt": "Tower of Hanoi state:\nPeg A: [3, 2, 1]\nPeg B: []\nPeg C: []\n\nOutput one move A->C format only."
+  },
+  {
+    "id": "minimal_1",
+    "prompt": "Reply with one word: north"
+  },
+  {
+    "id": "minimal_2",
+    "prompt": "Single line action: look"
+  },
+  {
+    "id": "minimal_3",
+    "prompt": "Action: inventory"
+  }
+]

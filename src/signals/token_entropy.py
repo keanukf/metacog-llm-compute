@@ -7,8 +7,10 @@ Token-Level Entropy (TLE) from model logprobs.
 - **Top-1 only** (legacy / fallback): binary entropy from the chosen token's logprob.
 
 **Scale invariant (cross-stage comparability):** TLE assumes temperature-invariant logprobs
-as if T=1.0. The vLLM wrapper pins ``logprobs_mode="raw_logprobs"`` so C2's diversity
-sampling temperature does not inflate entropy relative to C0/C1.
+as if T=1.0. The vLLM wrapper pins ``logprobs_mode="raw_logprobs"`` on the **engine**
+(``LLM(...)``), not on ``SamplingParams`` — raw logprobs are returned before temperature /
+top_k / top_p processing, so C2 diversity sampling temperature does not inflate entropy
+relative to C0/C1.
 """
 
 from __future__ import annotations

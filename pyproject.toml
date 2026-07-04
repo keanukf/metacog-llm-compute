@@ -38,6 +38,12 @@ full = [
     "textworld",
 ]
 tracing = ["langfuse>=3.0"]
+analysis = [
+    "statsmodels>=0.14",
+    "scikit-learn>=1.3",
+    "pingouin>=0.5",
+    "netcal>=1.3",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -123,6 +129,11 @@ module = [
     "src.utils.dotenv_loader",
 ]
 disable_error_code = ["unused-ignore"]
+
+[[tool.mypy.overrides]]
+module = "src.analysis.inference"
+ignore_missing_imports = true
+disable_error_code = ["import-not-found", "unused-ignore"]
 
 [tool.coverage.run]
 source = ["src"]

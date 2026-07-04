@@ -264,6 +264,8 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         "followup_max_context_chars": followup_max_context_chars,
         "followup_cot_max_chars": int(vc.get("followup_cot_max_chars", 12000)),
         "vc_raw_completion_max_chars": int(vc.get("vc_raw_completion_max_chars", 8000)),
+        "vc_judged_context": str(vc.get("judged_context", "action_only")),
+        "vc_retry_on_parse_failure": bool(vc.get("retry_on_parse_failure", True)),
         "vc_followup_instruction": vc_followup_instruction,
         # C1 stage controls
         "c1_cot_temperature": float(c1_cot_temperature) if c1_cot_temperature is not None else None,

@@ -26,11 +26,8 @@ def test_compact_episode_drops_verbose_keys():
         "tle_per_step": [{"mean_entropy": 0.1}],
     }
     c = compact_episode_for_storage(d)
-    assert (
-        "steps_detail" not in c
-        and "vc_detail_per_step" not in c
-        and "logprob_raw_per_step" not in c
-    )
+    assert "vc_detail_per_step" not in c and "logprob_raw_per_step" not in c
+    assert c["steps_detail"] == [{"step_index": 0}]
     assert c["tle_per_step"] == [{"mean_entropy": 0.1}]
 
 
