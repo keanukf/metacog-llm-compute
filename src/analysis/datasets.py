@@ -6,10 +6,9 @@ This module converts a run folder (pilot / phase1 / phase2) into:
 - a step-level table (one row per environment step)
 
 Design goals:
-- Works with compact episode JSONs (no `steps_detail` stored) by synthesizing minimal step rows.
-- Provides a consistent step-level correctness label for calibration:
-  primary policy is `optimal_only` (optimal=1, legal/illegal=0).
-- Detects presence of optional sidecar artifacts (logprobs / vc) without requiring them.
+- Works with compact episode JSONs (minimal ``steps_detail`` or synthesized rows).
+- Step-level labels: ``y_optimal`` and ``y_legal_or_optimal`` precomputed; analyses select via ``collapse_policy``.
+- ``position_norm`` = t / T_e with t = step_index, T_e = max(episode_length - 1, 1) (§5.8 primary).
 """
 
 from __future__ import annotations
@@ -242,6 +241,8 @@ def load_run_dataset(
                 "efficiency_score",
                 "timestamp_utc",
                 "wall_clock_time",
+                "holdout",
+                "difficulty_tier",
                 "_steps_detail_synthesized",
             ):
                 row[k] = ep.get(k)
@@ -256,12 +257,27 @@ def load_run_dataset(
             except (TypeError, ValueError):
                 continue
             row["step_index"] = step_index
-            row["relative_step_position"] = float(step_index) / denom
+            ep_len_steps = int(ep.get("episode_length_steps") or ep_len or 1)
+            t_e = max(ep_len_steps - 1, 1)
+            row["relative_step_position"] = float(step_index) / float(denom)
+            row["position_norm"] = float(step_index) / float(t_e)
+            dom = str(ep.get("domain", ""))
+            inst = ep.get("instance")
+            row["instance_key"] = f"{dom}:{inst}" if inst is not None else dom
 
-            # Correctness label (primary)
+            # Correctness labels (both policies precomputed)
             corr_raw = sd.get("correctness")
             row["step_correctness_raw"] = corr_raw
-            row["step_correct_optimal"] = _step_correct_optimal(corr_raw, correctness_policy)
+            row["y_optimal"] = _step_correct_optimal(corr_raw, "optimal_only")
+            row["y_legal_or_optimal"] = _step_correct_optimal(corr_raw, "legal_or_optimal")
+            row["step_correct_optimal"] = (
+                row["y_optimal"]
+                if correctness_policy == "optimal_only"
+                else row["y_legal_or_optimal"]
+            )
+
+            row["tokens_step"] = sd.get("tokens_generated") or sd.get("tokens_step")
+            row["lm_calls_step"] = sd.get("lm_calls") or sd.get("lm_calls_this_step")
 
             # Unnest TLE convenience fields
             tle = sd.get("tle")

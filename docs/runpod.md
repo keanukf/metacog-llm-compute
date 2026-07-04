@@ -256,7 +256,11 @@ python scripts/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode c
 
 **If vLLM fails during model init with a KV-cache / max-seq-len error (common on 24 GB GPUs):**
 
-Some models advertise very large context lengths (e.g. 40960). On 24 GB GPUs, vLLM may fail with a message like “KV cache needed … larger than available …”. In that case set a smaller `inference.max_model_len` in `configs/pilot.yaml` (e.g. `8192` or `16384`) and rerun.
+Some models advertise very large context lengths (e.g. 40960). On 24 GB GPUs, vLLM may fail with a message like “KV cache needed … larger than available …”. Set a smaller `inference.max_model_len` (e.g. `8192` or `16384`) in `configs/pilot.yaml` and `configs/experiment_core.yaml`, then rerun.
+
+**vLLM dtype:** use `model.dtype: float16` in YAML. vLLM 0.19+ does not accept the alias `fp16` when constructing the engine (affects `verify_backend_parity.py`, Phase 1/2 runners, and pilot smoke tests).
+
+**vLLM logprobs mode:** pin `logprobs_mode="raw_logprobs"` on the **engine** (`LLM(...)`), not on `SamplingParams`. V1 default is raw (pre-temperature). Parity gate: `python scripts/verify_backend_parity.py --backend vllm` (TLE tolerance + Same-T diagnostic; see `docs/pilot.md` §5.7).
 
 You should see a new timestamped folder like `data/results/pilot_YYYYMMDD_HHMMSS/` containing at least:
 

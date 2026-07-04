@@ -33,3 +33,12 @@ YAML configs live here. **Do not commit secrets** — use environment variables 
 | `episode` | `max_steps_per_episode` | Agent cap per episode (separate from game gen limit) |
 
 See [`docs/pilot.md`](../docs/pilot.md) for CLI flags and [`blueprints/infrastructureplan_pilot.md`](../blueprints/infrastructureplan_pilot.md) for pilot design rationale.
+
+## `experiment_core.yaml` — Phase 1/2 RunPod keys
+
+| Section | Keys | Notes |
+|---------|------|-------|
+| `model` | `name`, `revision`, `dtype` | Primary confirmatory model (`Qwen/Qwen3-8B`). Use `dtype: float16` — vLLM 0.19+ rejects `fp16`. |
+| `inference` | `max_model_len`, `top_logprobs` | Cap context on 24 GB GPUs (default in file: `16384`). Required for `verify_backend_parity.py` and phase runners. |
+
+Phase scripts and `scripts/verify_backend_parity.py` load this file via `create_experiment_model()`; vLLM memory kwargs match `run_pilot.py` behaviour.

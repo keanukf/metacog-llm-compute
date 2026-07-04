@@ -59,6 +59,8 @@ def create_experiment_model(config: dict, use_real: bool) -> Any:
     if not model_name:
         return MockExperimentModel()
     dtype = model_cfg.get("dtype", "float16")
+    if str(dtype).lower() == "fp16":
+        dtype = "float16"
     revision = model_cfg.get("revision")
     backend = config.get("inference", {}).get("backend", "vllm")
     try:
@@ -71,6 +73,21 @@ def create_experiment_model(config: dict, use_real: bool) -> Any:
         if backend == "vllm":
             extra["chat_template"] = bool(inf.get("chat_template", True))
             extra["enable_thinking"] = bool(inf.get("enable_thinking", False))
+            # Match run_pilot.py: models may advertise context lengths that do not fit
+            # KV cache on 24 GB GPUs (e.g. Qwen3-8B @ 40960).
+            max_model_len = inf.get("max_model_len") or inf.get("vllm_max_model_len")
+            if max_model_len is None:
+                max_model_len = 8192
+            try:
+                extra["max_model_len"] = int(max_model_len)
+            except (TypeError, ValueError):
+                extra["max_model_len"] = 8192
+            gmu = inf.get("gpu_memory_utilization")
+            if gmu is not None:
+                try:
+                    extra["gpu_memory_utilization"] = float(gmu)
+                except (TypeError, ValueError):
+                    pass
         from src.utils.inference.logprob_config import resolve_top_logprobs
 
         extra["top_logprobs"] = resolve_top_logprobs(inf)
@@ -106,18 +123,40 @@ def make_experiment_env(
         )
     if domain == "tower_of_hanoi":
         from src.environments.tower_of_hanoi import TowerOfHanoiEnv, generate_instances
+        from src.utils.manifest import load_manifest, manifest_entry_for_instance
 
         cfg = config.get("tower_of_hanoi", {})
         num_disks_range = cfg.get("num_disks_range", [3, 4])
         partial_start_range = cfg.get("partial_start_range", [0, 3])
-        base_seed = int(cfg.get("task_generation_seed", 42))
-        seed = base_seed + instance * 10007
-        task_instance = generate_instances(
-            1,
-            seed=seed,
-            num_disks_range=(int(num_disks_range[0]), int(num_disks_range[1])),
-            partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
-        )[0]
+        manifest = manifest_entry_for_instance(domain, instance, config, repo_root)
+        if manifest or load_manifest(domain, config, repo_root):
+            base_seed = int(
+                manifest.get("task_generation_seed") or cfg.get("task_generation_seed", 42)
+            )
+            all_manifest = load_manifest(domain, config, repo_root)
+            n_inst = len(all_manifest) if all_manifest else max(50, instance + 1)
+            task_instance = generate_instances(
+                n_inst,
+                seed=base_seed,
+                num_disks_range=(int(num_disks_range[0]), int(num_disks_range[1])),
+                partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
+            )[instance]
+        else:
+            import warnings
+
+            warnings.warn(
+                f"No ToH manifest for instance {instance}; using legacy per-instance seed.",
+                UserWarning,
+                stacklevel=2,
+            )
+            base_seed = int(cfg.get("task_generation_seed", 42))
+            seed = base_seed + instance * 10007
+            task_instance = generate_instances(
+                1,
+                seed=seed,
+                num_disks_range=(int(num_disks_range[0]), int(num_disks_range[1])),
+                partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
+            )[0]
         include_vm = bool(dom_cfg.get("include_valid_moves", False)) if dom_cfg else False
         return TowerOfHanoiEnv(
             task=task_instance, max_steps=max_steps, include_valid_moves=include_vm

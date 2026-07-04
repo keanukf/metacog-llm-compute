@@ -382,6 +382,7 @@ def _build_model_output_to_judge_section(
     stage_tag: str,
     action_line: str,
     *,
+    judged_context: str = "action_only",
     raw_action_completion: str | None,
     cot_text: str | None,
     verify_completion: str | None,
@@ -391,9 +392,12 @@ def _build_model_output_to_judge_section(
     followup_cot_max_chars: int,
     raw_completion_max_chars: int,
 ) -> str:
-    """Text block for VC: must reflect what the model actually produced this turn (stage-dependent)."""
+    """Text block for VC follow-up (stage-dependent when ``judged_context=full``)."""
     al = (action_line or "").strip()
     tag = (stage_tag or "C0").strip().upper()
+    mode = (judged_context or "action_only").strip().lower()
+    if mode == "action_only":
+        return f"[{tag}] {al}"
     if tag == "C0":
         raw = (raw_action_completion or "").strip()
         raw_t = _truncate_text(raw, max_chars=raw_completion_max_chars) if raw else ""
@@ -436,6 +440,7 @@ def _build_vc_followup_prompt(
     stage_tag: str,
     action_line: str,
     instruction: str,
+    judged_context: str = "action_only",
     raw_action_completion: str | None = None,
     cot_text: str | None = None,
     verify_completion: str | None = None,
@@ -454,6 +459,7 @@ def _build_vc_followup_prompt(
     judged = _build_model_output_to_judge_section(
         stage_tag,
         action_line,
+        judged_context=judged_context,
         raw_action_completion=raw_action_completion,
         cot_text=cot_text,
         verify_completion=verify_completion,
@@ -483,6 +489,8 @@ def _run_vc_followup(
     stage_tag: str,
     action_line: str,
     vc_followup_instruction: str,
+    judged_context: str = "action_only",
+    retry_on_parse_failure: bool = True,
     raw_action_completion: str | None = None,
     cot_text: str | None = None,
     verify_completion: str | None = None,
@@ -504,6 +512,7 @@ def _run_vc_followup(
         stage_tag=stage_tag,
         action_line=action_line,
         instruction=vc_followup_instruction,
+        judged_context=judged_context,
         raw_action_completion=raw_action_completion,
         cot_text=cot_text,
         verify_completion=verify_completion,
@@ -518,22 +527,38 @@ def _run_vc_followup(
         "max_tokens": int(followup_max_tokens),
         "temperature": float(followup_temperature),
         "enable_thinking": False,
-        # VC prompt asks for a single scalar (0-100). Cut trailing explanations early.
         "stop": ["\n"],
     }
-    if request_logprobs:
-        text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
-    else:
-        text, logprobs = model.generate(prompt, logprobs=False, **gen_kw)
-    detail = verbalized_confidence.extract_vc_from_followup(prompt, text, logprobs)
+
+    def _one_call(temp: float) -> tuple[str, Any, dict[str, Any]]:
+        kw = dict(gen_kw)
+        kw["temperature"] = float(temp)
+        if request_logprobs:
+            text, logprobs = model.generate(prompt, logprobs=True, **kw)
+        else:
+            text, logprobs = model.generate(prompt, logprobs=False, **kw)
+        detail = verbalized_confidence.extract_vc_from_followup(prompt, text, logprobs)
+        return text, logprobs, detail
+
+    text, _logprobs, detail = _one_call(followup_temperature)
     vc_val = detail.get("vc_value")
+    retry_used = False
+    extra_calls = 1
+    extra_tokens = int(detail.get("vc_tokens_used") or 0)
+    if vc_val is None and retry_on_parse_failure:
+        _text2, _logprobs2, detail_retry = _one_call(0.0)
+        detail = dict(detail_retry)
+        retry_used = True
+        extra_calls = 2
+        extra_tokens += int(detail_retry.get("vc_tokens_used") or 0)
+        vc_val = detail.get("vc_value")
+    detail["retry_used"] = retry_used
     vc_f: float | None
     if isinstance(vc_val, (int, float)):
         vc_f = float(vc_val)
     else:
         vc_f = None
-    extra_tokens = int(detail.get("vc_tokens_used") or 0)
-    return vc_f, detail, extra_tokens, 1
+    return vc_f, detail, extra_tokens, extra_calls
 
 
 def _resolve_vc(
@@ -547,6 +572,8 @@ def _resolve_vc(
     stage_tag: str,
     action_line: str,
     vc_followup_instruction: str,
+    judged_context: str = "action_only",
+    retry_on_parse_failure: bool = True,
     raw_action_completion: str | None = None,
     cot_text: str | None = None,
     verify_completion: str | None = None,
@@ -573,6 +600,8 @@ def _resolve_vc(
             stage_tag=stage_tag,
             action_line=action_line,
             vc_followup_instruction=vc_followup_instruction,
+            judged_context=judged_context,
+            retry_on_parse_failure=retry_on_parse_failure,
             raw_action_completion=raw_action_completion,
             cot_text=cot_text,
             verify_completion=verify_completion,

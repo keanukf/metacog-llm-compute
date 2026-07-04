@@ -489,6 +489,7 @@ def run_adaptive_episode(
     max_steps: int = 20,
     rng: random.Random | None = None,
     allocate_fn: Callable[..., str] | None = None,
+    policy: Any | None = None,
     step_fn_for_stage: Callable[[str], StepFn] | None = None,
     on_step: Callable[[dict[str, Any]], None] | None = None,
     save_logprob_distributions: bool = False,
@@ -508,6 +509,8 @@ def run_adaptive_episode(
     followup_max_context_chars: int | None = None,
     followup_cot_max_chars: int = 12000,
     vc_raw_completion_max_chars: int = 8000,
+    vc_judged_context: str = "action_only",
+    vc_retry_on_parse_failure: bool = True,
     vc_followup_instruction: str | None = None,
     c1_cot_temperature: float | None = None,
     c1_cot_max_tokens: int | None = None,
@@ -527,7 +530,10 @@ def run_adaptive_episode(
     Run an episode where each step's compute stage comes from ``allocate_fn`` (default: allocator.allocate).
 
     The signal passed into allocate is built from the *previous* step's TLE / VC; the first step uses
-    ``signal=None`` so adaptive strategies default to C0 until a signal exists.
+    ``signal=None`` so adaptive strategies default to C0 until a signal exists (preregistered §5.4).
+
+    For ``eager_style`` (Table 5.1): step 0 is a C0 probe; the step-0 signal maps via ``policy.stage()``
+    to a fixed stage for all subsequent steps. Probe cost counts toward baseline totals.
     on_step: Optional callback after each env step (same keys as ``run_episode``, plus ``strategy``).
 
     Returns:
@@ -560,6 +566,8 @@ def run_adaptive_episode(
                     followup_max_context_chars=followup_max_context_chars,
                     followup_cot_max_chars=followup_cot_max_chars,
                     vc_raw_completion_max_chars=vc_raw_completion_max_chars,
+                    vc_judged_context=vc_judged_context,
+                    vc_retry_on_parse_failure=vc_retry_on_parse_failure,
                     c1_cot_temperature=c1_cot_temperature,
                     c1_cot_max_tokens=c1_cot_max_tokens,
                 ),
@@ -583,6 +591,7 @@ def run_adaptive_episode(
     stage_per_step: list[str] = []
     steps_detail: list[dict[str, Any]] = []
     signal: dict[str, Any] | None = None
+    episode_fixed_stage: str | None = None
 
     trace_path: Path | None = None
     if save_step_traces:
@@ -623,7 +632,14 @@ def run_adaptive_episode(
                 head_ratio=history_obs_head_ratio,
             )
             history_snapshot = list(history)
-            stage = alloc(signal, strategy, steps, rng)
+            stage = alloc(
+                signal,
+                strategy,
+                steps,
+                rng,
+                policy=policy,
+                episode_fixed_stage=episode_fixed_stage,
+            )
             stage_per_step.append(stage)
             step_fn = resolve(stage)
 
@@ -824,6 +840,12 @@ def run_adaptive_episode(
             )
             steps += 1
             signal = _signal_for_next_step(tle, vc)
+            if strategy == "eager_style" and episode_fixed_stage is None and signal is not None:
+                from src.agent.allocator import eager_fixed_stage_from_signal
+
+                fixed = eager_fixed_stage_from_signal(signal, policy=policy)
+                if fixed is not None:
+                    episode_fixed_stage = fixed
             if on_step is not None:
                 on_step(
                     {

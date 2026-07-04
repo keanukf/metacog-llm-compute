@@ -7,9 +7,14 @@ Per-step records in ``step_results`` mirror TowerOfHanoiEnv (``step_index``, ``a
 ``action_parsed``, ``correctness``, ``state_before``, ``state_after``) plus optional
 ``reward``, ``score_*`` when the engine exposes them. TextWorld uses ``correctness`` in
 ``{"optimal", "legal", "illegal"}`` with score-based progress:
-- optimal: score increased
+- optimal: score increased (primary label for calibration)
 - legal: admissible/no parser error, score unchanged
 - illegal: parser error or unrecognized action
+
+Labeling edge cases (preregistered):
+- Illegal detection uses the **pre-step** admissible-command cache plus parser-feedback heuristics.
+- ``score_delta < 0`` (if the engine reports it) is labeled **legal**, not optimal; thesis defines
+  optimal only via score increase.
 """
 
 from __future__ import annotations

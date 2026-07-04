@@ -4,11 +4,14 @@
 model:
   name: "Qwen/Qwen3-8B"
   revision: "b968826d9c46dd6066d109eabc6255188de91218"
-  dtype: fp16
+  # vLLM 0.19+ accepts float16/bfloat16 literals only (not fp16/bf16 aliases).
+  dtype: float16
 
 inference:
   temperature: 0.3
   max_tokens: 256
+  # Qwen3-8B advertises 40960 context; cap for 24 GB GPUs (KV cache OOM otherwise).
+  max_model_len: 16384
   avg_tokens_per_call: 200
   top_logprobs: 20
 
@@ -22,6 +25,8 @@ phase1:
 phase2:
   domains: ["textworld", "tower_of_hanoi"]
   instances_per_domain: 50
+  # Required for adaptive_tle, adaptive_vc, eager_style (hard-fail if missing).
+  # policy_artifact: "data/results/phase1/threshold_artifact.json"
   strategies:
     - adaptive_tle
     - adaptive_vc
@@ -34,6 +39,9 @@ phase2:
 
 paths:
   tasks_dir: "data/tasks"
+  task_manifests:
+    textworld: "data/tasks/textworld/difficulty_manifest.json"
+    tower_of_hanoi: "data/tasks/tower_of_hanoi/difficulty_manifest.json"
   results_phase1: "data/results/phase1"
   results_phase2: "data/results/phase2"
 
@@ -85,6 +93,12 @@ domain_prompts:
     action_stop: ["\n"]
     include_admissible_commands: false
     cot_max_tokens: 1024
+    # Full episode history (H3 confound control) — explicit off
+    history_keep_last_pairs: null
+    history_max_obs_chars: 0
+    history_current_obs_max_chars: 0
+    history_obs_head_ratio: 0.15
+    pin_recipe: false
   tower_of_hanoi:
     prefix: >
       You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty
@@ -96,12 +110,22 @@ domain_prompts:
     action_max_tokens: 32
     include_valid_moves: false
     cot_max_tokens: 2048
+    history_keep_last_pairs: null
+    history_max_obs_chars: 0
+    history_current_obs_max_chars: 0
+    history_obs_head_ratio: 0.15
+    pin_recipe: false
 
 # Verbalized confidence: separate short follow-up call (recommended) or parse from action text (inline).
 vc:
   mode: followup
+  judged_context: action_only   # action_only | full (exploratory)
+  retry_on_parse_failure: true
   followup_max_tokens: 4
   followup_temperature: 0.2
+  followup_max_context_chars: null
+  followup_cot_max_chars: 12000
+  raw_completion_max_chars: 8000
   followup_instruction: |
     How likely is the chosen action to be correct in this situation?
     Respond with only a single integer between 0 and 100,
@@ -117,3 +141,4 @@ episode:
 tower_of_hanoi:
   num_disks_range: [3, 4]
   partial_start_range: [0, 3]
+  task_generation_seed: 42

@@ -206,6 +206,7 @@ def compute_auprc(scores: Sequence[float], labels: Sequence[int]) -> float:
 
 
 def compute_efficiency(success_rate: float, normalized_compute_cost: float) -> float | None:
+    """Descriptive only; thesis reports Pareto (success and tokens as separate DVs)."""
     """Efficiency score: success_rate / normalized_compute_cost. Returns None if cost is 0."""
     if normalized_compute_cost <= 0:
         return None
@@ -367,7 +368,12 @@ def calibration_by_step_position(
     return out
 
 
-def signal_discrimination_report(episodes: list[dict[str, Any]], signal: str) -> dict[str, Any]:
+def signal_discrimination_report(
+    episodes: list[dict[str, Any]],
+    signal: str,
+    *,
+    collapse_policy: CorrectnessPolicy = "optimal_only",
+) -> dict[str, Any]:
     """
     Compute signal discrimination on step-level correctness.
 
@@ -382,7 +388,7 @@ def signal_discrimination_report(episodes: list[dict[str, Any]], signal: str) ->
             if not isinstance(sd, dict):
                 continue
             corr = sd.get("correctness")
-            y01 = _label_from_correctness(corr, "optimal_only")
+            y01 = _label_from_correctness(corr, collapse_policy)
             if y01 is None:
                 continue
             if signal == "tle":
@@ -416,13 +422,31 @@ def signal_discrimination_report(episodes: list[dict[str, Any]], signal: str) ->
         "mean_signal_incorrect": float(mean_incorrect),
         "cohens_d": d,
         "n_steps": int(len(scores)),
+        "collapse_policy": collapse_policy,
     }
+
+
+def compare_signal_calibration(
+    episodes: list[dict[str, Any]],
+    *,
+    signals: tuple[str, ...] = ("tle", "vc"),
+    collapse_policies: tuple[CorrectnessPolicy, ...] = ("optimal_only", "legal_or_optimal"),
+) -> dict[str, Any]:
+    """Run confirmatory + sensitivity calibration reports for each signal."""
+    out: dict[str, Any] = {}
+    for pol in collapse_policies:
+        out[pol] = {
+            sig: signal_discrimination_report(episodes, sig, collapse_policy=pol) for sig in signals
+        }
+    return out
 
 
 def compute_strategy_efficiency(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
-    Group episodes by strategy (Phase 2) or compute_stage (Phase 1) and compute
-    success_rate, avg normalized compute, and efficiency_score.
+    Descriptive group summaries only — not a confirmatory decision metric.
+
+    Groups by strategy (Phase 2) or compute_stage (Phase 1).
+    Thesis primary reporting uses separate success and token DVs (Pareto).
     """
     # Detect group key
     group_key = "strategy" if any("strategy" in ep for ep in episodes) else "compute_stage"

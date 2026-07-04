@@ -35,6 +35,8 @@ def c0_step_core(
     followup_max_context_chars: int | None,
     followup_cot_max_chars: int,
     vc_raw_completion_max_chars: int,
+    vc_judged_context: str = "action_only",
+    vc_retry_on_parse_failure: bool = True,
 ) -> StepReturn:
     prompt = (
         f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
@@ -59,6 +61,8 @@ def c0_step_core(
         stage_tag="C0",
         action_line=action,
         vc_followup_instruction=vc_followup_instruction,
+        judged_context=vc_judged_context,
+        retry_on_parse_failure=vc_retry_on_parse_failure,
         raw_action_completion=text,
         cot_text=None,
         verify_completion=None,
