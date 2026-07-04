@@ -34,6 +34,8 @@ def c1_step_core(
     followup_max_context_chars: int | None,
     followup_cot_max_chars: int,
     vc_raw_completion_max_chars: int,
+    vc_judged_context: str = "action_only",
+    vc_retry_on_parse_failure: bool = True,
     c1_cot_temperature: float | None,
     c1_cot_max_tokens: int | None,
 ) -> StepReturn:
@@ -76,6 +78,8 @@ def c1_step_core(
         stage_tag="C1",
         action_line=action,
         vc_followup_instruction=vc_followup_instruction,
+        judged_context=vc_judged_context,
+        retry_on_parse_failure=vc_retry_on_parse_failure,
         raw_action_completion=None,
         cot_text=text or "",
         verify_completion=None,

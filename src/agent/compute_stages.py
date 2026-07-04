@@ -60,6 +60,8 @@ def get_step_fn(
     followup_max_context_chars: int | None = None,
     followup_cot_max_chars: int = 12000,
     vc_raw_completion_max_chars: int = 8000,
+    vc_judged_context: str = "action_only",
+    vc_retry_on_parse_failure: bool = True,
     c1_cot_temperature: float | None = None,
     c1_cot_max_tokens: int | None = None,
 ):
@@ -124,6 +126,8 @@ def get_step_fn(
                 followup_max_context_chars=followup_max_context_chars,
                 followup_cot_max_chars=followup_cot_max_chars,
                 vc_raw_completion_max_chars=vc_raw_completion_max_chars,
+                vc_judged_context=vc_judged_context,
+                vc_retry_on_parse_failure=vc_retry_on_parse_failure,
             )
 
         return _w2
@@ -147,6 +151,8 @@ def get_step_fn(
                 followup_max_context_chars=followup_max_context_chars,
                 followup_cot_max_chars=followup_cot_max_chars,
                 vc_raw_completion_max_chars=vc_raw_completion_max_chars,
+                vc_judged_context=vc_judged_context,
+                vc_retry_on_parse_failure=vc_retry_on_parse_failure,
                 c1_cot_temperature=c1_cot_temperature,
                 c1_cot_max_tokens=c1_cot_max_tokens,
             )
@@ -167,6 +173,8 @@ def get_step_fn(
             followup_max_context_chars=followup_max_context_chars,
             followup_cot_max_chars=followup_cot_max_chars,
             vc_raw_completion_max_chars=vc_raw_completion_max_chars,
+            vc_judged_context=vc_judged_context,
+            vc_retry_on_parse_failure=vc_retry_on_parse_failure,
         )
 
     return _w

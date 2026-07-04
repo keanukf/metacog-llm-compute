@@ -73,6 +73,8 @@ def c2_step_core(
     followup_max_context_chars: int | None,
     followup_cot_max_chars: int,
     vc_raw_completion_max_chars: int,
+    vc_judged_context: str = "action_only",
+    vc_retry_on_parse_failure: bool = True,
 ) -> StepReturn:
     prompt = (
         f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
@@ -182,6 +184,8 @@ def c2_step_core(
             stage_tag="C2",
             action_line=winner_action_exec,
             vc_followup_instruction=vc_followup_instruction,
+            judged_context=vc_judged_context,
+            retry_on_parse_failure=vc_retry_on_parse_failure,
             c2_n_samples=n,
             c2_sample_first_lines=[str(s.get("raw_first_line") or "") for s in samples],
             c2_winner_completion=winner_completion,

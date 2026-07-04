@@ -120,8 +120,7 @@ def test_c2_winner_tle_and_vc_use_same_winner_index_on_tie():
     assert tle is not None
     assert vc == 80.0
     assert m.vc_prompt is not None
-    winner_reason = "reason A" if action == "go north" else "reason B"
-    assert winner_reason in m.vc_prompt
+    assert action in m.vc_prompt
     assert isinstance(call_detail, dict)
     wi = call_detail.get("winner_index")
     assert wi is not None

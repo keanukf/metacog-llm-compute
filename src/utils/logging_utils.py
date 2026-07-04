@@ -18,18 +18,49 @@ from pathlib import Path
 from typing import Any
 
 # Omitted from main episode JSON when ``compact=True`` — full detail lives in logprob / VC sidecars.
-_EPISODE_STORAGE_DETAIL_KEYS = frozenset(
-    {"steps_detail", "vc_detail_per_step", "logprob_raw_per_step"}
+_EPISODE_STORAGE_STRIP_KEYS = frozenset({"vc_detail_per_step", "logprob_raw_per_step"})
+_MINIMAL_STEP_KEYS = frozenset(
+    {
+        "step_index",
+        "compute_stage",
+        "tle",
+        "vc",
+        "tokens_generated",
+        "lm_calls",
+        "lm_calls_this_step",
+        "correctness",
+    }
 )
+
+
+def _minimal_steps_detail(steps_detail: list[Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for sd in steps_detail:
+        if not isinstance(sd, dict):
+            continue
+        row: dict[str, Any] = {}
+        for k in _MINIMAL_STEP_KEYS:
+            if k in sd:
+                row[k] = sd[k]
+        if "lm_calls" not in row and "lm_calls_this_step" in row:
+            row["lm_calls"] = row["lm_calls_this_step"]
+        if "step_index" in row:
+            out.append(row)
+    return out
 
 
 def compact_episode_for_storage(data: dict[str, Any]) -> dict[str, Any]:
     """
     Drop per-step verbose fields meant for sidecar files only.
 
+    Retains a minimal ``steps_detail`` for analysis joins (signal, label, tokens, stage).
     Keeps summary vectors like ``tle_per_step``, ``vc_per_step``, ``step_correctness``.
     """
-    return {k: v for k, v in data.items() if k not in _EPISODE_STORAGE_DETAIL_KEYS}
+    out = {k: v for k, v in data.items() if k not in _EPISODE_STORAGE_STRIP_KEYS}
+    raw_sd = data.get("steps_detail")
+    if isinstance(raw_sd, list):
+        out["steps_detail"] = _minimal_steps_detail(raw_sd)
+    return out
 
 
 def log_episode(
@@ -49,8 +80,8 @@ def log_episode(
         total_lm_calls, tokens, wall_clock_time.
         path: Directory or full file path; if directory, file is path / f"{episode_id}.json".
         tracker: Reserved for optional hooks; ignored by this function (file write only).
-        compact: If True (default), omit ``steps_detail``, ``vc_detail_per_step``, and
-            ``logprob_raw_per_step`` — use sidecar JSONs under ``logprobs/`` / ``vc/`` for those.
+        compact: If True (default), omit ``vc_detail_per_step`` and ``logprob_raw_per_step``;
+            ``steps_detail`` is reduced to minimal join fields (see ``compact_episode_for_storage``).
 
     Returns:
         Path to the written file.
