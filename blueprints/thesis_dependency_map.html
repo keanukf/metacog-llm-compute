@@ -78,7 +78,7 @@ h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
   <div><span class="status s-active"></span><span class="node-id">L0.1</span></div>
   <div class="node-title">Logprobs from vLLM</div>
   <div class="node-deps">Blocks: TLE extraction, all calibration, model selection benchmark</div>
-  <div class="node-detail">vLLM must return per-token logprobs via SamplingParams(logprobs=1). RunPod smoke: partial logprobs/TLE; audit via probe_vllm_logprobs + validate_pilot_outputs. Must reach >95% TLE on C0 before model selection. Check vLLM version compatibility, test with a minimal prompt, inspect raw output. Without this, TLE is impossible and no model can be selected.</div>
+  <div class="node-detail">vLLM must return per-token logprobs in <code>raw_logprobs</code> mode (T=1 scale) via SamplingParams(logprobs=K). RunPod smoke: partial logprobs/TLE; audit via probe_vllm_logprobs + validate_pilot_outputs + verify_backend_parity (TLE invariant to stage decoding temps 0.3/0.5/0.7). Must reach >95% TLE on C0 before model selection. Without this, TLE is impossible and no model can be selected.</div>
 </div>
 <div class="node" onclick="toggle(this)">
   <div><span class="status s-done"></span><span class="node-id">L0.2</span></div>
@@ -143,7 +143,7 @@ h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
       <div><span class="status s-done"></span><span class="node-id">L2.2</span></div>
       <div class="node-title">VC extraction works</div>
       <div class="node-deps">Needs: L0.2 (structured output) + GATE 0</div>
-      <div class="node-detail">With clean output format and model confirmed, verify parse_confidence returns values 0–100 reliably. Options: two-line format (move / confidence), separate VC call after action call, or few-shot examples. VC followup mode validated locally and on RunPod smoke (>80% parse rate in pilot runs).</div>
+      <div class="node-detail">VC follow-up after committed action: judged context = action line only (identical C0/C1/C2). First follow-up at T=0.2; one reparse at T=0 with identical prompt if parse fails. Retry tokens count toward compute. Target &gt;80% parse rate in pilot runs.</div>
     </div>
   </div>
 </div>
@@ -190,7 +190,7 @@ h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
   <div><span class="status s-blocked"></span><span class="node-id">L5</span></div>
   <div class="node-title">Phase 1 analysis + threshold optimization</div>
   <div class="node-deps">Needs: L4 data</div>
-  <div class="node-detail">ECE, Brier scores, reliability diagrams, step-position calibration curves, cross-domain comparison. Grid search θ₁, θ₂ on 10% validation split.</div>
+  <div class="node-detail">AUROC, Brier scores, reliability diagrams (ECE descriptive), step-position calibration curves. Grid search θ₁, θ₂ on Phase 1 holdout (5 instances/domain, quantiles 0.1–0.9, 36 pairs); objective <code>step_level_proxy_v1</code> with stage-matched step proxy, fallback cascade (exact → mean over runs → nearest position), and Pareto front on mean step correctness vs. summed step tokens; step 0 → C0; ECDF reference frozen for Phase 2. RQ1 contrasts via cluster bootstrap on ΔAUROC/ΔBrier (not ECE permutation). H3: GEE on signal×<code>position_norm</code> with <code>position_norm</code> = t/max(episode_length−1, 1).</div>
 </div>
 
 <div class="connector">↓</div>
@@ -213,7 +213,7 @@ h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
   <div><span class="status s-blocked"></span><span class="node-id">L7</span></div>
   <div class="node-title">Phase 2 analysis</div>
   <div class="node-deps">Needs: L6 data + analysis code</div>
-  <div class="node-detail">Success rates, compute efficiency, mixed-effects models, pairwise contrasts, effect sizes, allocation patterns.</div>
+  <div class="node-detail">Success rates, compute efficiency, paired cluster bootstrap for H2 (NI on episode success + superiority on output tokens), allocation patterns. Threshold derivation limitations: holdout size, counterfactual stage transfer, step-level proxy (not episode success).</div>
 </div>
 
 <div class="connector" style="margin: 12px 0 4px;">↓ ↓</div>

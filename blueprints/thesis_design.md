@@ -134,7 +134,7 @@ Die Studie implementiert ein kontrolliertes Experiment mit einem **2 × 3 × 2 C
 | 3 Signale (TLE, VC, SC) | 2 Signale Core (TLE, VC) | Semantic Consistency erfordert 5× Sampling pro Step — zu teuer für Core; bleibt Extension |
 | 3 Domänen | 2 Domänen Core | Logical Reasoning bleibt Extension; 2 Domänen reichen für Cross-Domain-Test (RQ4) |
 | 2 Modelle | 1 Modell Core | Zweites Modell bleibt Extension; 1 Modell reicht für Kernhypothesen |
-| 30 Runs pro Bedingung | 5 Runs | Bei Temperature 0.3 ist Varianz gering; 5 Runs liefern stabile Mittelwerte |
+| 30 Runs pro Bedingung | 5 Runs | Stufenspezifisch fixierte Decoding-Temperaturen (C0 0.3, C1 0.5, C2 0.7); TLE aus `raw_logprobs`; 5 Runs liefern stabile Mittelwerte |
 
 Das Design hat zwei Phasen:
 
@@ -192,14 +192,14 @@ Für den initialen Forward Pass (System-1-Response) wird die Entropie der Token-
 
     H(t) = -Σ p(x_i) log p(x_i)
 
-Aggregation über die gesamte Antwort via Mean und Max. Hohe Entropie signalisiert Unsicherheit.
+Aggregation über die gesamte Antwort via Mean und Max (Top-$K$ Renormalisierung, $K=20$; Phase-0-Sensitivität über $\{5,10,20\}$ vor Hauptdatenerhebung). TLE wird aus `raw_logprobs` auf der $T=1$-Skala berechnet; Decoding-Temperaturen sind stufenspezifisch (C0 0.3, C1 0.5, C2 0.7), die Entropie-Messung bleibt davon invariant. Hohe Entropie signalisiert Unsicherheit.
 
 *Psychologische Analogie:* Processing Fluency als metacognitives Cue (Alter & Oppenheimer, 2009). Hohe Token-Entropie ist das computationale Äquivalent niedriger kognitiver Fluency.
 
 *Abgrenzung zu EAGer:* EAGer nutzt Token-Entropie *innerhalb* eines Generierungsdurchlaufs, um zu entscheiden, wo neue Branches starten (Token-Level, Single-Turn). Wir nutzen die Entropie der *gesamten Step-Antwort* als aggregiertes Signal für die Compute-Stufe des *nächsten* Steps (Step-Level, sequentiell). Verschiedene Granularität, verschiedener Entscheidungsgegenstand.
 
 **Signal 2 — Verbalisierte Konfidenz (VC):**
-In einem separaten, kurzen Aufruf nach Festlegung der Step-Aktion wird das Modell aufgefordert, die **Wahrscheinlichkeit einzuschätzen, dass die gewählte Aktion in dieser Situation korrekt ist** — nicht eine vage Bewertung von „Angemessenheit“ oder Optimalität. Ausgabe ist **ein einzelner ganzzahliger Score von 0 bis 100**, mit **explizit verankerten Skalenenden** (0 = sicher falsch, 100 = sicher richtig); das entspricht der Probscore-/Likelihood-Elicitation und der empfohlenen Formulierung bei kleinen Sprachmodellen ohne Few-Shot-Zahlbeispiele (Yang, Tsai, & Yamada, 2024). Zur Erhöhung der Format-Compliance kann die Elicitation mit einer abschließenden **`Confidence:`**-Zeile erfolgen (Completion nach festem Marker; Yang et al., 2024; Lin et al., 2022). Deliberatives natives Reasoning liegt **in der Compute-Stufe C1** (Thinking-Modus), nicht als zusätzlicher VC-only-Schritt, damit VC zwischen C0 und C1 vergleichbar zur jeweils committeden Action bleibt.
+In einem separaten Follow-up-Aufruf nach Festlegung der Step-Aktion wird das Modell aufgefordert, die **Wahrscheinlichkeit einzuschätzen, dass die gewählte Aktion in dieser Situation korrekt ist** — nicht eine vage Bewertung von „Angemessenheit“ oder Optimalität. Der **judged context** ist die committete Aktionszeile, identisch über C0/C1/C2. Ausgabe ist **ein einzelner ganzzahliger Score von 0 bis 100**, mit **explizit verankerten Skalenenden** (0 = sicher falsch, 100 = sicher richtig); das entspricht der Probscore-/Likelihood-Elicitation und der empfohlenen Formulierung bei kleinen Sprachmodellen ohne Few-Shot-Zahlbeispiele (Yang, Tsai, & Yamada, 2024). Zur Erhöhung der Format-Compliance kann die Elicitation mit einer abschließenden **`Confidence:`**-Zeile erfolgen (Completion nach festem Marker; Yang et al., 2024; Lin et al., 2022). Bei Parse-Fehler: genau ein Reparse mit identischem Prompt bei Temperatur 0 (Erstversuch bei 0.2). Deliberatives natives Reasoning liegt **in der Compute-Stufe C1** (Thinking-Modus), nicht als zusätzlicher VC-only-Schritt, damit VC zwischen C0 und C1 vergleichbar zur jeweils committeden Action bleibt.
 
 *Psychologische Analogie:* Feeling of Knowing (FOK) — ein explizites metacognitives Urteil (Koriat, 1993). FOK-Urteile sind informativ, aber systematisch verzerrt.
 
@@ -219,13 +219,15 @@ In einem separaten, kurzen Aufruf nach Festlegung der Step-Aktion wird das Model
 
 ### E. Adaptiver Allokator (Regelbasiert)
 
-Der Allokator nutzt das metacognitive Signal s ∈ [0,1] (normalisiert) und zwei Schwellenwerte θ₁ < θ₂:
+Der Allokator nutzt das metacognitive Signal s ∈ [0,1] (über ECDF auf dem Phase-1-Holdout normalisiert) und zwei Schwellenwerte θ₁ < θ₂:
 
     if s < θ₁:        → C0 (Direct — hohe Konfidenz)
     elif s < θ₂:      → C1 (Reasoning — moderate Unsicherheit)
     else:              → C2 (Self-Consistency — hohe Unsicherheit)
 
-Die Schwellenwerte werden auf einem Validierungssplit (10% der Aufgaben pro Domäne) über Grid-Search optimiert.
+Schritt 0 ist fest auf C0 ohne vorheriges Signal; ab Schritt 1 steuert das Signal des vorherigen Steps die Allocation. Die Holdout-ECDF-Referenz wird nach der Schwellenwertsuche eingefroren und in Phase 2 identisch deployt.
+
+Die Schwellenwerte werden einmalig auf fünf Holdout-Instanzen pro Domäne (im Task-Manifest markiert) per Grid-Search über Quantile 0.1–0.9 (θ₁ < θ₂; 36 Kandidatenpaare) optimiert. Zielgröße ist `step_level_proxy_v1`: pro Holdout-Step Stage-Matching gegen Phase-1-Zelloutcomes mit Fallback-Kaskade (exact → Mean über Runs → nearest position); Pareto-Front aus mittlerer Step-Korrektheit vs. summierten Step-Tokens, Tie-Break token-effizientester Punkt.
 
 ### F. Task-Domänen
 
@@ -285,33 +287,33 @@ Die EAGer-Style-Baseline testet die zentrale Abgrenzung: Wenn Step-Level-Allokat
 ### J. Statistische Analysestrategie
 
 **Für RQ1 (Kalibrierung):**
-- Expected Calibration Error (ECE) und Brier Scores für TLE und VC pro Domäne
-- Reliability Diagrams (Calibration Plots)
-- Vergleich TLE vs. VC via Permutationstest auf ECE-Differenzen
+- AUROC (Diskrimination) und Brier Score nach Logit-Mapping für TLE (Kalibrierung) pro Domäne
+- Reliability Diagrams und ECE (deskriptiv, nicht primär inferentiell)
+- Vergleich TLE vs. VC via Cluster-Bootstrap auf ΔAUROC (H1a) und ΔBrier (H1b); Holm-Korrektur innerhalb der Hypothesenfamilien
 
 **Für RQ2 (Adaptive Superiority):**
 - **Primäres Reporting:** Pareto-Plot (Episode Success vs. Output Tokens pro Episode) mit Konfidenzintervallen auf beiden Achsen.
 - **H2-Teststruktur:** kombinierter **Non-Inferiority-plus-Superiority-Test** relativ zu `Always-C2`:
   - **Non-Inferiority** auf Episode Success vs. `Always-C2` mit a-priori Marge \( \delta \) (in Kapitel 5 spezifiziert).
   - **Superiority** auf Output Tokens pro Episode (niedriger ist besser) vs. `Always-C2`.
-- Mixed-Effects-Modelle (episodenbasiert), inkl. Domain und Task-Instanz-Random-Effects; **Task Difficulty als Kovariate**:
+- Paired Cluster-Bootstrap über Task-Instanzen; Mixed-Effects-Modelle als Fallback; **Task Difficulty als Kovariate**:
   - Tower of Hanoi: Disk-Anzahl.
   - TextWorld: Difficulty-Tier aus Manifest.
   - Alternativ/ergänzend: Per-Tier-Reporting der Pareto-Relation.
 
 **Für RQ3 (Temporal Degradation):**
-- `Signal_ECE ~ Step_Position × Domain + (1|Task_Instance)`
-- Visualisierung: Calibration Curve frühe Steps vs. späte Steps
+- Clustered logistic / GEE: $Y_{e,t} \sim z_{\mathrm{signal}} \times \mathrm{position\_norm} + \mathrm{position\_norm}$ mit $\mathrm{position\_norm} = t / \max(\mathrm{episode\_length} - 1, 1)$; roher `step_index` als Sensitivität
+- Visualisierung: Kalibrierungs- und Diskriminationskurven nach Step-Position
 - *Kostet null zusätzliche GPU-Stunden* — Daten fallen in Phase 1 ohnehin an
 
 **Für RQ4 (Cross-Domain):**
-- Signalqualität × Domäne Interaktion im Mixed-Effects-Modell
+- Difference-in-differences auf ΔAUROC (TLE − VC) zwischen Domänen; Cluster-Bootstrap
 - Deskriptiver Vergleich der Allokator-Schwellenwerte zwischen Domänen
 
 ### K. Sample Size und Power
 
 - 50 Task-Instanzen pro Domäne (2 Domänen = 100 Instanzen)
-- 5 Wiederholungen pro Instanz pro Bedingung (Temperature 0.3)
+- 5 Wiederholungen pro Instanz pro Bedingung (stufenspezifische Decoding-Temperaturen: C0 0.3, C1 0.5, C2 0.7)
 - 1 Modell im Core
 
 Für den primären Vergleich (H2: Adaptive-TLE vs. Always-C2) mit erwarteter Effektstärke d = 0.5 ergibt eine Power-Analyse (α = .05, Power = .80) ~34 Instanzen pro Bedingung. Mit 50 Instanzen pro Domäne ist die Studie ausreichend gepowert.
@@ -363,9 +365,7 @@ Für den primären Vergleich (H2: Adaptive-TLE vs. Always-C2) mit erwarteter Eff
 `vllm serve --logprobs-mode raw_logprobs`), not a `SamplingParams` field.
 
 **Semantics:** `raw_logprobs` = model output **before** logit processors (temperature, top_k, top_p,
-penalties). This satisfies §5.6 fixed measurement temperature across cells while allowing C2 to sample
-at higher diversity temperature: TLE reads the pre-temperature distribution; sampling temperature
-affects which token is drawn, not the entropy scale.
+penalties). Stage-specific decoding temperatures (C0 0.3, C1 0.5, C2 0.7) therefore do not confound TLE when `raw_logprobs` is active: TLE reads the pre-temperature distribution; sampling temperature affects which token is drawn, not the entropy scale (§5.2.1, §5.3).
 
 **Validation:**
 
@@ -540,9 +540,9 @@ from RunPod control run (Qwen3-8B, RTX 4090, 2026-07-04); dynamic term absorbs f
 
 | Schwäche im Original | Lösung im Redesign v2 |
 |---------------------|----------------------|
-| Fehlende statistische Analysestrategie | Mixed-Effects-Modelle, ECE, Brier Scores, Permutationstests |
+| Fehlende statistische Analysestrategie | Cluster-Bootstrap (AUROC, Brier, H2-Pareto), GEE/mixed logit (H3), Holm/BH-Multiplicity; ECE deskriptiv |
 | Keine Power-Analyse | 50 Instanzen/Domäne, 5 Runs, Power >.80 für d=0.5 |
-| "Regime Transition" vage definiert | Ersetzt durch "Temporal Degradation" (ECE als Funktion der Step-Position) |
+| "Regime Transition" vage definiert | Ersetzt durch "Temporal Degradation" (signal×`position_norm`-Interaktion; `position_norm` = $t/\max(\mathrm{episode\_length}-1,1)$) |
 | Keine gerichteten Hypothesen | 4 Hypothesen mit psychologischer Herleitung |
 | Feasibility-Risiko | Kompaktes 2×3×2 Core-Design; ~108 GPU-Stunden, ~€22 |
 | "Hyperparameter-Tuning"-Angriffsfläche | Theoriegeleitete Hypothesen + explizite Abgrenzung zu EAGer/MeCo |
