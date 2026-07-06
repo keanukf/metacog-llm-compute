@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.analysis.thresholds import build_ecdf_ref, grid_search_thresholds
+from src.analysis.thresholds import _match_proxy, build_ecdf_ref, grid_search_thresholds
 from src.utils.logging_utils import compact_episode_for_storage
 
 
@@ -38,6 +38,38 @@ def test_grid_search_returns_36_candidates():
     assert out["theta1"] is not None
     assert len(out["grid_table"]) == 36
     assert out["objective_definition"] == "step_level_proxy_v1"
+
+
+def test_match_proxy_exact():
+    pool = {
+        (1, 0, 2, "C1"): [{"y": 1.0, "tokens": 20.0, "step_index": 2}],
+    }
+    y, tokens, level = _match_proxy(pool, instance=1, run=0, step_index=2, stage="C1")
+    assert level == "exact"
+    assert y == 1.0
+    assert tokens == 20.0
+
+
+def test_match_proxy_mean_run():
+    pool = {
+        (1, 0, 2, "C0"): [{"y": 0.0, "tokens": 10.0, "step_index": 2}],
+        (1, 1, 2, "C0"): [{"y": 1.0, "tokens": 30.0, "step_index": 2}],
+    }
+    y, tokens, level = _match_proxy(pool, instance=1, run=2, step_index=2, stage="C0")
+    assert level == "mean_run"
+    assert y == 0.5
+    assert tokens == 20.0
+
+
+def test_match_proxy_nearest_position_prefers_smaller_step_index_on_tie():
+    pool = {
+        (0, 0, 1, "C0"): [{"y": 0.0, "tokens": 10.0, "step_index": 1}],
+        (0, 0, 3, "C0"): [{"y": 1.0, "tokens": 30.0, "step_index": 3}],
+    }
+    y, tokens, level = _match_proxy(pool, instance=0, run=0, step_index=2, stage="C0")
+    assert level == "nearest_position"
+    assert y == 0.0
+    assert tokens == 10.0
 
 
 def test_compact_episode_keeps_minimal_steps_detail():

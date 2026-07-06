@@ -1,6 +1,8 @@
-# Consistency check — 2026-07-03
+# Consistency log
 
-Verifikationsaufgaben aus dem Thesis–Code-Abgleich (Stand rev. 2026-07-03).
+Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
+
+## 2026-07-03 — Thesis–Code-Abgleich (rev. 2026-07-03)
 
 | # | Prüfpunkt | Ergebnis |
 |---|-----------|----------|
