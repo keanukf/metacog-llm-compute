@@ -1,0 +1,359 @@
+{
+  "episode_id": "ep_textworld_0_C1_0",
+  "domain": "textworld",
+  "instance": 0,
+  "compute_stage": "C1",
+  "run": 0,
+  "holdout": true,
+  "difficulty_tier": "medium",
+  "task_success": false,
+  "steps": 10,
+  "lm_calls": 10,
+  "tokens": 20,
+  "episode_length_steps": 10,
+  "total_lm_calls": 30,
+  "total_tokens_generated": 20,
+  "normalized_compute_cost": 1.0,
+  "efficiency_score": 0.0,
+  "timestamp_utc": "2026-07-06T19:08:06.070636+00:00",
+  "wall_clock_time": 2.5992801124230027,
+  "tle_per_step": [
+    {
+      "mean_entropy": 8.624729356365533e-05,
+      "max_entropy": 0.00016534662940677884
+    },
+    {
+      "mean_entropy": 0.0001549371423613181,
+      "max_entropy": 0.0003062305838104514
+    },
+    {
+      "mean_entropy": 0.00024351039360647497,
+      "max_entropy": 0.0004837102779880696
+    },
+    {
+      "mean_entropy": 0.000280612354187166,
+      "max_entropy": 0.0005578518276953333
+    },
+    {
+      "mean_entropy": 0.00018399244312949822,
+      "max_entropy": 0.0003637135098667708
+    },
+    {
+      "mean_entropy": 0.00023720982422406852,
+      "max_entropy": 0.00047021107645286954
+    },
+    {
+      "mean_entropy": 0.00019986897553646453,
+      "max_entropy": 0.00039615448366267454
+    },
+    {
+      "mean_entropy": 0.00022450176370120817,
+      "max_entropy": 0.0004442233747272868
+    },
+    {
+      "mean_entropy": 0.0001943135276016559,
+      "max_entropy": 0.0003850022120849895
+    },
+    {
+      "mean_entropy": 0.00017435683891166195,
+      "max_entropy": 0.0003434172036974458
+    }
+  ],
+  "vc_per_step": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "steps_detail": [
+    {
+      "tle": {
+        "mean_entropy": 8.624729356365533e-05,
+        "max_entropy": 0.00016534662940677884
+      },
+      "compute_stage": "C1",
+      "step_index": 0,
+      "tokens_generated": 2,
+      "vc": null,
+      "lm_calls_this_step": 3,
+      "correctness": "illegal",
+      "lm_calls": 3
+    },
+    {
+      "tle": {
+        "mean_entropy": 0.0001549371423613181,
+        "max_entropy": 0.0003062305838104514
+      },
+      "compute_stage": "C1",
+      "step_index": 1,
+      "tokens_generated": 2,
+      "vc": null,
+      "lm_calls_this_step": 3,
+      "correctness": "illegal",
+      "lm_calls": 3
+    },
+    {
+      "tle": {
+        "mean_entropy": 0.00024351039360647497,
+        "max_entropy": 0.0004837102779880696
+      },
+      "compute_stage": "C1",
+      "step_index": 2,
+      "tokens_generated": 2,
+      "vc": null,
+      "lm_calls_this_step": 3,
+      "correctness": "illegal",
+      "lm_calls": 3
+    },
+    {
+      "tle": {
+        "mean_entropy": 0.000280612354187166,
+        "max_entropy": 0.0005578518276953333
+      },
+      "compute_stage": "C1",
+      "step_index": 3,
+      "tokens_generated": 2,
+      "vc": null,
+      "lm_calls_this_step": 3,
+      "correctness": "illegal",
+      "lm_calls": 3
+    },
+    {
+      "tle": {
+        "mean_entropy": 0.00018399244312949822,
+        "max_entropy": 0.0003637135098667708
+      },
+      "compute_stage": "C1",
+      "step_index": 4,
+      "tokens_generated": 2,
+      "vc": null,
+      "lm_calls_this_step": 3,
+      "correctness": "illegal",
+      "lm_calls": 3
+    },
+    {
+      "tle": {
+        "mean_entropy": 0.00023720982422406852,
+        "max_entropy": 0.00047021107645286954
+      },
+      "compute_stage": "C1",
+      "step_index": 5,
+      "tokens_generated": 2,
+      "vc": null,
+      "lm_calls_this_step": 3,
+      "correctness": "illegal",
+      "lm_calls": 3
+    },
+    {
+      "tle": {
+        "mean_entropy": 0.00019986897553646453,
+        "max_entropy": 0.00039615448366267454
+      },
+      "compute_stage": "C1",
+      "step_index": 6,
+      "tokens_generated": 2,
+      "vc": null,
+      "lm_calls_this_step": 3,
+      "correctness": "illegal",
+      "lm_calls": 3
+    },
+    {
+      "tle": {
+        "mean_entropy": 0.00022450176370120817,
+        "max_entropy": 0.0004442233747272868
+      },
+      "compute_stage": "C1",
+      "step_index": 7,
+      "tokens_generated": 2,
+      "vc": null,
+      "lm_calls_this_step": 3,
+      "correctness": "illegal",
+      "lm_calls": 3
+    },
+    {
+      "tle": {
+        "mean_entropy": 0.0001943135276016559,
+        "max_entropy": 0.0003850022120849895
+      },
+      "compute_stage": "C1",
+      "step_index": 8,
+      "tokens_generated": 2,
+      "vc": null,
+      "lm_calls_this_step": 3,
+      "correctness": "illegal",
+      "lm_calls": 3
+    },
+    {
+      "tle": {
+        "mean_entropy": 0.00017435683891166195,
+        "max_entropy": 0.0003434172036974458
+      },
+      "compute_stage": "C1",
+      "step_index": 9,
+      "tokens_generated": 2,
+      "vc": null,
+      "lm_calls_this_step": 3,
+      "correctness": "illegal",
+      "lm_calls": 3
+    }
+  ],
+  "step_correctness": [
+    {
+      "step_index": 0,
+      "action_raw": "<think>",
+      "action_parsed": "<think>",
+      "correctness": "illegal",
+      "state_before": "\n\n\n\n                    ________  ________  __    __  ________        \n                   |        \\|        \\|  \\  |  \\|        \\       \n                    \\$$$$$$$$| $$$$$$$$| $$  | $$ \\$$$$$$$$       \n                      | $$   | $$__     \\$$\\/  $$   | $$          \n                      | $$   | $$  \\     >$$  $$    | $$          \n                      | $$   | $$$$$    /  $$$$\\    | $$          \n                      | $$   | $$_____ |  $$ \\$$\\   | $$          \n                      | $$   | $$     \\| $$  | $$   | $$          \n                       \\$$    \\$$$$$$$$ \\$$   \\$$    \\$$          \n              __       __   ______   _______   __        _______  \n             |  \\  _  |  \\ /      \\ |       \\ |  \\      |       \\ \n             | $$ / \\ | $$|  $$$$$$\\| $$$$$$$\\| $$      | $$$$$$$\\\n             | $$/  $\\| $$| $$  | $$| $$__| $$| $$      | $$  | $$\n             | $$  $$$\\ $$| $$  | $$| $$    $$| $$      | $$  | $$\n             | $$ $$\\$$\\$$| $$  | $$| $$$$$$$\\| $$      | $$  | $$\n             | $$$$  \\$$$$| $$__/ $$| $$  | $$| $$_____ | $$__/ $$\n             | $$$    \\$$$ \\$$    $$| $$  | $$| $$     \\| $$    $$\n              \\$$      \\$$  \\$$$$$$  \\$$   \\$$ \\$$$$$$$$ \\$$$$$$$ \n\nYou are hungry! Let's cook a delicious meal. Check the cookbook in the kitchen for the recipe. Once done, enjoy your meal!\n\n-= Bedroom =-\nYou arrive in an ordinary kind of place. That is to say, you're in a bedroom. You begin looking for stuff.\n\nYou can see a bed. Unfortunately, there isn't a thing on it.\n\nThere is an exit to the north.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "state_after": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "reward": 0.0,
+      "score_before": 0.0,
+      "score_after": 0.0,
+      "score_delta": 0.0,
+      "won": false,
+      "lost": false,
+      "walkthrough_step_hint": "inventory"
+    },
+    {
+      "step_index": 1,
+      "action_raw": "<think>",
+      "action_parsed": "<think>",
+      "correctness": "illegal",
+      "state_before": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "state_after": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "reward": 0.0,
+      "score_before": 0.0,
+      "score_after": 0.0,
+      "score_delta": 0.0,
+      "won": false,
+      "lost": false,
+      "walkthrough_step_hint": "go north"
+    },
+    {
+      "step_index": 2,
+      "action_raw": "<think>",
+      "action_parsed": "<think>",
+      "correctness": "illegal",
+      "state_before": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "state_after": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "reward": 0.0,
+      "score_before": 0.0,
+      "score_after": 0.0,
+      "score_delta": 0.0,
+      "won": false,
+      "lost": false,
+      "walkthrough_step_hint": "go east"
+    },
+    {
+      "step_index": 3,
+      "action_raw": "<think>",
+      "action_parsed": "<think>",
+      "correctness": "illegal",
+      "state_before": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "state_after": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "reward": 0.0,
+      "score_before": 0.0,
+      "score_after": 0.0,
+      "score_delta": 0.0,
+      "won": false,
+      "lost": false,
+      "walkthrough_step_hint": "go east"
+    },
+    {
+      "step_index": 4,
+      "action_raw": "<think>",
+      "action_parsed": "<think>",
+      "correctness": "illegal",
+      "state_before": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "state_after": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "reward": 0.0,
+      "score_before": 0.0,
+      "score_after": 0.0,
+      "score_delta": 0.0,
+      "won": false,
+      "lost": false,
+      "walkthrough_step_hint": "examine cookbook"
+    },
+    {
+      "step_index": 5,
+      "action_raw": "<think>",
+      "action_parsed": "<think>",
+      "correctness": "illegal",
+      "state_before": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "state_after": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "reward": 0.0,
+      "score_before": 0.0,
+      "score_after": 0.0,
+      "score_delta": 0.0,
+      "won": false,
+      "lost": false,
+      "walkthrough_step_hint": "drop red tuna"
+    },
+    {
+      "step_index": 6,
+      "action_raw": "<think>",
+      "action_parsed": "<think>",
+      "correctness": "illegal",
+      "state_before": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "state_after": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "reward": 0.0,
+      "score_before": 0.0,
+      "score_after": 0.0,
+      "score_delta": 0.0,
+      "won": false,
+      "lost": false,
+      "walkthrough_step_hint": "drop green apple"
+    },
+    {
+      "step_index": 7,
+      "action_raw": "<think>",
+      "action_parsed": "<think>",
+      "correctness": "illegal",
+      "state_before": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "state_after": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "reward": 0.0,
+      "score_before": 0.0,
+      "score_after": 0.0,
+      "score_delta": 0.0,
+      "won": false,
+      "lost": false,
+      "walkthrough_step_hint": "cook lettuce with stove"
+    },
+    {
+      "step_index": 8,
+      "action_raw": "<think>",
+      "action_parsed": "<think>",
+      "correctness": "illegal",
+      "state_before": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "state_after": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "reward": 0.0,
+      "score_before": 0.0,
+      "score_after": 0.0,
+      "score_delta": 0.0,
+      "won": false,
+      "lost": false,
+      "walkthrough_step_hint": "cook red apple with stove"
+    },
+    {
+      "step_index": 9,
+      "action_raw": "<think>",
+      "action_parsed": "<think>",
+      "correctness": "illegal",
+      "state_before": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "state_after": "\nThat's not a verb I recognise.\n\n>                                                                                                                                -= Bedroom =-0/1",
+      "reward": 0.0,
+      "score_before": 0.0,
+      "score_after": 0.0,
+      "score_delta": 0.0,
+      "won": false,
+      "lost": false,
+      "walkthrough_step_hint": "prepare meal"
+    }
+  ],
+  "schema_version": "episode.v1"
+}
