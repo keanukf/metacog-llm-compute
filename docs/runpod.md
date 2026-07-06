@@ -228,6 +228,21 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir "${RESULTS_
 
 Or use `--real` to auto-detect (on the pod this will select `cuda`).
 
+**Inference contract (load-bearing for model selection):**
+
+- **Thinking is stage-forced**, not controlled by a single global default. C0 and VC follow-up calls force `enable_thinking=false`; **C1 reason calls and C2 samples force `enable_thinking=true`** regardless of `inference.enable_thinking` in YAML. See [`docs/pilot.md`](pilot.md) § “Thinking mode” and “Output handling contract (C1)”.
+- **VC sizing** for RunPod gates and Phase 1/2 is defined in [`configs/experiment_core.yaml`](../configs/experiment_core.yaml) (`vc.followup_max_tokens: 4`, `followup_temperature: 0.2`, prompt ending with `Confidence:`). Do **not** use the pilot-only `followup_max_tokens: 24` from `configs/pilot.yaml` when judging VC readiness.
+- **C1 format compliance** is evaluated with thinking **ON**. Before trusting C1 on a new shortlist model, run the handoff gate (both domains if possible):
+
+```bash
+python scripts/run_c1_handoff_gate.py --config configs/experiment_core.yaml --pilot-mode cuda --real \
+  --output-dir "${RESULTS_DIR}" --domain textworld --n-episodes 3 --max-steps 5
+python scripts/run_c1_handoff_gate.py --config configs/experiment_core.yaml --pilot-mode cuda --real \
+  --output-dir "${RESULTS_DIR}" --domain tower_of_hanoi --n-episodes 3 --max-steps 5
+```
+
+Inspect `c1_handoff_gate_*.md` and `debug_views/` for `parse_method: post_think` vs fallbacks/unparsed.
+
 **Output layout on the pod:**
 
 | Script | Typical output |
@@ -241,18 +256,19 @@ Optional vLLM logprob probe before a long run:
 python scripts/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode cuda --real
 ```
 
-### Troubleshooting: weird model outputs (blank actions / prompt echo / VC always null)
+### Troubleshooting: weird model outputs (blank actions / prompt echo / VC always null / C1 parse failures)
 
 - **Model outputs empty actions (0 tokens) / stops immediately**
-  - Ensure `configs/pilot.yaml` has `inference.chat_template: true` (required for instruct/chat models like Qwen3).
-  - For TextWorld, avoid stopping on a single newline: use `domain_prompts.textworld.action_stop: ["\n\n"]` (or remove `action_stop` entirely).
+  - Ensure `inference.chat_template: true` (required for instruct/chat models like Qwen3). Set explicitly in `configs/pilot.yaml` if missing; `experiment_core.yaml` defaults to `true` in the wrapper.
+  - For TextWorld in the pilot config, avoid stopping on a single newline: `domain_prompts.textworld.action_stop: ["\n\n"]`.
 - **Model echoes prompt fragments (e.g. “Do not use disk numbers.”)**
-  - This is also a strong signal that the chat template is not applied. Keep `inference.chat_template: true`.
+  - Strong signal that the chat template is not applied. Keep `inference.chat_template: true`.
 - **VC is always `null`**
-  - Increase `vc.followup_max_tokens` (default is small). In `configs/pilot.yaml` we use **24**.
-  - If the VC follow-up output contains words instead of a number, it will parse as `null`.
-- **Thinking text floods the action**
-  - Keep `inference.enable_thinking: false` for baseline runs; enable only in dedicated A/B variants.
+  - Align with the **final** VC contract in `configs/experiment_core.yaml`: `vc.followup_max_tokens: 4`, `followup_temperature: 0.2`, and the `Confidence:`-terminated `followup_instruction` (first line only is parsed; extra words → `null`).
+  - If you run `run_pilot.py` with `configs/pilot.yaml`, temporarily mirror those `vc.*` keys from `experiment_core.yaml` for comparable VC rates — the pilot file’s **24**-token follow-up is a legacy convenience, not the thesis default.
+- **Thinking text floods the action / C1 unparsed steps**
+  - C1 is always evaluated with thinking **ON** on the reason call. Do not disable thinking globally to “fix” C0; use the C1 handoff gate above and inspect `debug_views/` (`reason` block, `parse_method` in traces).
+  - For prompt A/B only, `configs/prompt_variants/v_think.yaml` toggles thinking for controlled comparisons — not the production stage contract.
 
 **If vLLM fails during model init with a KV-cache / max-seq-len error (common on 24 GB GPUs):**
 
@@ -353,10 +369,11 @@ Run this sequence when validating infrastructure before committing GPU budget to
 3. **TextWorld:** Step 6b — generate games if `data/tasks/textworld/textworld_0.z8` is missing.
 4. **Unit tests:** `python -m pytest tests/ -v`
 5. **L0.1 probe:** `python scripts/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode cuda --real`
-6. **Pilot:** `python scripts/run_pilot.py --config configs/pilot.yaml --output-dir "${RESULTS_DIR}" --pilot-mode cuda --real`
-7. **Download** (local machine, pod running): `./scripts/download_runpod_results.sh --tcp … [--run pilot_…]`
-8. **Audit** (local): `python scripts/audit_pilot_signals.py data/results/runpod_pilot/pilot_…`
+6. **C1 handoff gate (thinking ON):** `run_c1_handoff_gate.py` with `configs/experiment_core.yaml` on TextWorld and ToH (see Step 9 inference contract).
+7. **Pilot:** `python scripts/run_pilot.py --config configs/pilot.yaml --output-dir "${RESULTS_DIR}" --pilot-mode cuda --real` (mirror `vc.*` from `experiment_core.yaml` if auditing VC against thesis defaults).
+8. **Download** (local machine, pod running): `./scripts/download_runpod_results.sh --tcp … [--run pilot_…]`
+9. **Audit** (local): `python scripts/audit_pilot_signals.py data/results/runpod_pilot/pilot_…`
 
-**Pass criteria for this smoke:** `pilot_sanity.json` has `has_logprobs: true`; `audit_pilot_signals` shows C0 `tle_rate >= 0.95`; VC rate `>= 0.80`; C2 traces use `self_consistency_majority_vote` when `compute_stages` includes C2. Gate 1 itself still requires a dedicated 20-episode C0 parseability run per domain (see `blueprints/thesis_dependency_map.html`).
+**Pass criteria for this smoke:** `pilot_sanity.json` has `has_logprobs: true`; `audit_pilot_signals` shows C0 `tle_rate >= 0.95`; VC rate `>= 0.80` under the **`experiment_core.yaml` VC contract** (`followup_max_tokens: 4`); C1 handoff gate shows low unparsed rate with thinking ON; C2 traces use `self_consistency_majority_vote` when `compute_stages` includes C2. Gate 1 itself still requires a dedicated 20-episode C0 parseability run per domain (see `blueprints/thesis_dependency_map.html`).
 
 Then run analysis locally (e.g. ECE on `pilot_calibration.json` via `src/analysis/calibration.py`).
