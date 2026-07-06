@@ -394,7 +394,10 @@ def _match_proxy(
         return sum(ys) / len(ys), sum(ts) / len(ts), "mean_run"
     candidates = [(k, pool[k][0]) for k in pool if k[0] == instance and k[3] == stage]
     if candidates:
-        nearest = min(candidates, key=lambda x: abs(int(x[0][2]) - step_index))
+        nearest = min(
+            candidates,
+            key=lambda x: (abs(int(x[0][2]) - step_index), int(x[0][2])),
+        )
         rec = nearest[1]
         return float(rec["y"]), float(rec["tokens"]), "nearest_position"
     return None, None, "none"
