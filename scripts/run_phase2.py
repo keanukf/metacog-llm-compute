@@ -248,11 +248,17 @@ def main() -> None:
         log_step_line,
         print_batch_progress,
     )
+    from src.utils.run_resilience import (
+        classify_exclusion_reason,
+        load_quarantined_episode_ids,
+        write_quarantine,
+    )
     from src.utils.step_config import resolve_step_fn_kwargs
     from src.utils.tracing import optional_trace_hook_from_config
 
     trace_hook = optional_trace_hook_from_config(config, dotenv_info=_DOTENV_INFO)
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
+    quarantined = load_quarantined_episode_ids(checkpoint_dir)
     log(f"Checkpoint directory: {checkpoint_dir.resolve()}")
     phase2 = config.get("phase2", {})
     domains = phase2.get("domains", ["textworld", "tower_of_hanoi"])
@@ -370,6 +376,8 @@ def main() -> None:
                 for run in range(runs):
                     ep_id = f"ep_{domain}_{inst}_{strategy}_{run}"
                     if ep_id in completed:
+                        continue
+                    if ep_id in quarantined:
                         continue
                     attempted += 1
                     t_ep0 = time.perf_counter()
@@ -502,20 +510,35 @@ def main() -> None:
                                 wall_s=float(ep_wall),
                                 success=bool(data.get("task_success")),
                             )
-                    except Exception:
+                    except Exception as exc:
                         failed += 1
-                        err = {
-                            "episode_id": ep_id,
-                            "domain": domain,
-                            "instance": inst,
-                            "stage_or_strategy": strategy,
-                            "run": run,
-                            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-                            "traceback": traceback.format_exc(),
-                        }
-                        with open(errors_path, "a") as f:
-                            f.write(json.dumps(err) + "\n")
-                        log(f"Warning: episode failed {ep_id} (continuing)")
+                        reason = classify_exclusion_reason(exc)
+                        if reason is not None:
+                            write_quarantine(
+                                checkpoint_dir,
+                                ep_id,
+                                reason,
+                                meta={
+                                    "domain": domain,
+                                    "instance": inst,
+                                    "stage_or_strategy": strategy,
+                                },
+                            )
+                            quarantined.add(ep_id)
+                            log(f"QUARANTINE {ep_id} ({reason})")
+                        else:
+                            err = {
+                                "episode_id": ep_id,
+                                "domain": domain,
+                                "instance": inst,
+                                "stage_or_strategy": strategy,
+                                "run": run,
+                                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                                "traceback": traceback.format_exc(),
+                            }
+                            with open(errors_path, "a") as f:
+                                f.write(json.dumps(err) + "\n")
+                            log(f"Warning: episode failed {ep_id} (continuing)")
 
                     now = time.time()
                     elapsed_run = time.perf_counter() - t_run_start

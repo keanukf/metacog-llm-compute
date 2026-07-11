@@ -19,3 +19,11 @@ class EnvironmentError(MetacogError):
 
 class ArtifactError(MetacogError):
     """Raised when reading/writing run artifacts fails."""
+
+
+class EnvStateError(MetacogError):
+    """Raised when environment init or step() invariants are violated."""
+
+
+class LabelError(MetacogError):
+    """Raised when BFS labeling cannot produce a valid optimal path."""
