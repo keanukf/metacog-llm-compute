@@ -390,8 +390,11 @@ vllm serve Qwen/Qwen3-8B \
   --dtype float16 \
   --max-model-len 16384 \
   --logprobs-mode raw_logprobs \
+  --attention-backend TRITON_ATTN \
   --port 8000
 ```
+
+**5090 / Blackwell workaround:** On some RunPod images the default `FLASH_ATTN` (FlashAttention-2) path fails at engine init with `cudaErrorUnsupportedPtxVersion` (`the provided PTX was compiled with an unsupported toolchain`). The model loads fine; the crash is in the FA2 kernels. Use `--attention-backend TRITON_ATTN` (or `FLASHINFER`) instead. Re-verify logprobs after switching backends.
 
 Set in YAML (`execution.server_url: "http://127.0.0.1:8000/v1"`) or export before runners. C2 `generate_many` is **sequential** — effective concurrent sequences ≈ `execution.max_concurrent_episodes`, not ×3.
 
