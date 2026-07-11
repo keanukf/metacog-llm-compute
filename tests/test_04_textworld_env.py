@@ -6,7 +6,14 @@ Uses stub TextWorldEnv so no TextWorld install required.
 
 from __future__ import annotations
 
+import threading
+
+from src.environments import textworld_env
 from src.environments.textworld_env import TextWorldEnv
+
+
+def test_textworld_load_lock_exists_for_parallel_init():
+    assert isinstance(textworld_env._TEXTWORLD_LOAD_LOCK, type(threading.Lock()))
 
 
 def test_textworld_env_reset_returns_observation():
