@@ -134,7 +134,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Verify backend logprob parity (§5.7)")
     parser.add_argument("--config", default="configs/experiment_core.yaml")
     parser.add_argument("--probes", default="data/probes/parity_prompts.json")
-    parser.add_argument("--backend", choices=["vllm", "lmstudio", "mock"], default="mock")
+    parser.add_argument("--backend", choices=["vllm", "lmstudio", "mock", "server"], default="mock")
     parser.add_argument("--compare-backends", action="store_true")
     parser.add_argument("--output-dir", default="data/results")
     args = parser.parse_args()
@@ -148,8 +148,13 @@ def main() -> None:
 
     from src.utils.experiment_env import create_experiment_model
 
-    config.setdefault("inference", {})["backend"] = args.backend
-    model = create_experiment_model(config, use_real=args.backend != "mock")
+    if args.backend == "server":
+        from src.execution.backend.factory import create_execution_backend
+
+        model = create_execution_backend(config, use_real=True)
+    else:
+        config.setdefault("inference", {})["backend"] = args.backend
+        model = create_experiment_model(config, use_real=args.backend != "mock")
     report: dict[str, Any] = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "probes_file": str(args.probes),

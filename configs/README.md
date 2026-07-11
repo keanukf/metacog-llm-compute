@@ -32,7 +32,19 @@ YAML configs live here. **Do not commit secrets** — use environment variables 
 | `vc` | `followup_max_tokens`, … | VC follow-up call sizing |
 | `episode` | `max_steps_per_episode` | Agent cap per episode (separate from game gen limit) |
 
-See [`docs/pilot.md`](../docs/pilot.md) for CLI flags and [`blueprints/infrastructureplan_pilot.md`](../blueprints/infrastructureplan_pilot.md) for pilot design rationale.
+## `execution` block (Phase 1/2 parallel runs)
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `max_concurrent_episodes` | `1` | Thread-pool width; opt-in parallelism against shared `vllm serve` |
+| `backend_mode` | `server` | `--real` uses HTTP server backend; `inprocess` reserved |
+| `server_url` | `http://127.0.0.1:8000/v1` | OpenAI-compatible base URL |
+| `frozen_max_concurrent_episodes` | — | Freeze after TLE invariance validation; must match `max_concurrent_episodes` under `--real` |
+| `frozen_tle_invariance_eps` | — | Paired with frozen N in `run_metadata.json` |
+
+**Backpressure (RTX 5090, 32 GB):** effective concurrent sequences ≈ `max_concurrent_episodes` (C2 uses sequential `generate_many`, not ×3 fan-out). Size N so `N × KV footprint at max_model_len` fits KV budget.
+
+See [`docs/runpod.md`](../docs/runpod.md) for plumbing smoke vs TLE invariance validation.
 
 ## `experiment_core.yaml` — Phase 1/2 RunPod keys
 

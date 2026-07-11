@@ -378,6 +378,59 @@ python scripts/audit_pilot_signals.py data/results/runpod_pilot/pilot_YYYYMMDD_H
 
 The pod must be **running** (not stopped) for `scp` to succeed.
 
+## Parallel execution (`src/execution/`) — vLLM server mode
+
+Phase 1/2 with `--real` use **`ServerBackend`** (sync HTTP) against a shared OpenAI-compatible server — not in-process `VLLMWrapper`.
+
+**Start server (5090 pod, load-bearing flags):**
+
+```bash
+vllm serve Qwen/Qwen3-8B \
+  --revision b968826d9c46dd6066d109eabc6255188de91218 \
+  --dtype float16 \
+  --max-model-len 16384 \
+  --logprobs-mode raw_logprobs \
+  --port 8000
+```
+
+Set in YAML (`execution.server_url: "http://127.0.0.1:8000/v1"`) or export before runners. C2 `generate_many` is **sequential** — effective concurrent sequences ≈ `execution.max_concurrent_episodes`, not ×3.
+
+### Validation regime: plumbing smoke vs TLE invariance under load
+
+| Level | Script | N | GO/NO-GO |
+|-------|--------|---|----------|
+| **Plumbing smoke** | `scripts/smoke_parallel.py` | Small N in `configs/dev/smoke.yaml` (e.g. 3) | `SMOKE_PARALLEL: GO/NO-GO` — scheduler, checkpoints, concurrency |
+| **TLE invariance validation** | `scripts/run_tle_invariance_validation.py` + `verify_backend_parity.py` | Production `max_concurrent_episodes` from `experiment_core.yaml` | Temperature + batch invariance at committed-action TLE window |
+
+**Green plumbing smoke ≠ TLE invariance evidence.** Smoke does not replace batch-invariance or eps derivation under load.
+
+```bash
+# Plumbing (mock locally, or --real on pod with server running):
+python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --output-dir data/results/smoke_parallel
+python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --real --output-dir data/results/smoke_parallel
+
+# TLE invariance validation (production N, saturated pool):
+python scripts/run_tle_invariance_validation.py --config configs/experiment_core.yaml \
+  --output data/results/tle_invariance_report.json
+python scripts/verify_backend_parity.py --backend server --config configs/experiment_core.yaml
+```
+
+Block before Smoke `--real` GO: `enable_thinking` must produce thinking blocks on the server (C1/C2 degrade silently otherwise).
+
+### §5.7.5 — eps under load (5090)
+
+Der `verify_backend_parity`-Kontrolllauf zur eps-Ableitung läuft **unter Last** (gesättigter Pool bei Produktions-N), nicht solo. Begründung: der Same-T-Kontrollterm in `resolve_tle_invariance_eps()` muss Batch-Rauschen des Erhebungsregimes enthalten; solo-abgeleitetes eps wäre zu eng.
+
+Nach erfolgreicher TLE-Invarianz-Validierung: `(N, eps)` in `run_metadata.frozen_execution_params` einfrieren (`execution.frozen_*` in YAML oder `--freeze-metadata-dir` on `run_tle_invariance_validation.py`).
+
+### Fallback escalation (document only — not automated)
+
+If `max |dTLE|` exceeds eps: (1) enable vLLM batch-invariance kernels (FlashInfer/Blackwell path on 5090), (2) re-derive eps under load at the same production N and re-freeze, (3) accept ~55–60% throughput loss. Default remains without batch-invariant kernels.
+
+### §5.9 limitation note
+
+Batch jitter within eps is bounded measurement noise, not a confound (content-agnostic scheduling; Phase 1 uses stage-homogeneous passes). Trajectory divergence solo vs parallel is **descriptive only** (`execution_metrics.trajectory_divergence_rate`), never GO/NO-GO.
+
 ## Gate-1 readiness smoke (checklist)
 
 Run this sequence when validating infrastructure before committing GPU budget to Gate 1 (20 episodes/domain at C0):
