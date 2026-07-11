@@ -14,7 +14,6 @@ import json
 import random
 import sys
 import time
-import traceback
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,6 +81,7 @@ def _build_run_summary(
     episodes_attempted: int,
     episodes_completed: int,
     episodes_failed: int,
+    execution_metrics: dict[str, Any] | None = None,
 ) -> dict:
     episodes: list[dict] = []
     for p in sorted(checkpoint_dir.glob("ep_*.json")):
@@ -146,7 +146,7 @@ def _build_run_summary(
     }
     total_episodes = len(episodes)
     avg_episode_time_s = (total_wall_time_s / episodes_completed) if episodes_completed > 0 else 0.0
-    return {
+    summary = {
         "total_episodes": total_episodes,
         "new_episodes_this_run": int(episodes_completed),
         "episodes_attempted": int(episodes_attempted),
@@ -160,6 +160,9 @@ def _build_run_summary(
         "signal_summary": signal_summary,
         "timestamp_end_utc": datetime.now(timezone.utc).isoformat(),
     }
+    if execution_metrics is not None:
+        summary["execution_metrics"] = execution_metrics
+    return summary
 
 
 def _rng_for_episode(ep_id: str) -> random.Random:
@@ -230,16 +233,14 @@ def main() -> None:
 
     save_step_traces, _, _, _ = resolve_step_trace_flags(config)
 
-    from src.agent.base_agent import run_adaptive_episode
-    from src.utils.checkpointing import list_completed_episodes, save_episode_checkpoint
-    from src.utils.experiment_env import create_experiment_model, make_experiment_env
-    from src.utils.history_guard import enforce_full_history_or_exit
-    from src.utils.logging_utils import (
-        write_logprob_distribution_artifacts,
-        write_run_metadata,
-        write_vc_distribution_artifacts,
-    )
-    from src.utils.manifest import manifest_entry_for_instance
+    from src.execution.backend.factory import create_execution_backend
+    from src.execution.config import ExecutionConfig, write_frozen_execution_params
+    from src.execution.episode_runner import Phase2RunContext, run_phase2_job
+    from src.execution.metrics import build_execution_metrics
+    from src.execution.scheduler import EpisodeScheduler
+    from src.execution.worklist import build_phase2_worklist
+    from src.utils.checkpointing import list_completed_episodes
+    from src.utils.logging_utils import write_run_metadata
     from src.utils.run_output_layout import write_short_run_info
     from src.utils.run_progress import (
         format_run_elapsed,
@@ -248,15 +249,10 @@ def main() -> None:
         log_step_line,
         print_batch_progress,
     )
-    from src.utils.run_resilience import (
-        classify_exclusion_reason,
-        load_quarantined_episode_ids,
-        write_quarantine,
-    )
-    from src.utils.step_config import resolve_step_fn_kwargs
-    from src.utils.tracing import optional_trace_hook_from_config
+    from src.utils.run_resilience import load_quarantined_episode_ids
 
-    trace_hook = optional_trace_hook_from_config(config, dotenv_info=_DOTENV_INFO)
+    exec_cfg = ExecutionConfig.from_config(config, real=bool(args.real))
+    exec_cfg.enforce_frozen_or_exit()
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
     quarantined = load_quarantined_episode_ids(checkpoint_dir)
     log(f"Checkpoint directory: {checkpoint_dir.resolve()}")
@@ -311,7 +307,7 @@ def main() -> None:
         f"| resume={args.resume} real={args.real} | already_done={len(completed)}"
     )
 
-    model = create_experiment_model(config, args.real)
+    model = create_execution_backend(config, use_real=bool(args.real))
     pilot_mode = "cuda" if args.real else "mock"
     model_cfg = config.get("model", {})
     write_run_metadata(
@@ -327,6 +323,21 @@ def main() -> None:
         resumed_from=int(len(completed)),
         repo_root=REPO_ROOT,
     )
+    frozen = config.get("execution") or {}
+    if (
+        frozen.get("frozen_max_concurrent_episodes") is not None
+        and frozen.get("frozen_tle_invariance_eps") is not None
+    ):
+        from src.execution.config import frozen_execution_params_dict
+
+        write_frozen_execution_params(
+            checkpoint_dir,
+            frozen_execution_params_dict(
+                max_concurrent_episodes=int(frozen["frozen_max_concurrent_episodes"]),
+                tle_invariance_eps=float(frozen["frozen_tle_invariance_eps"]),
+                eps_derived_under_load=bool(frozen.get("eps_derived_under_load", False)),
+            ),
+        )
     if policy_artifact_path is not None or args.allow_history_truncation:
         meta_path = checkpoint_dir / "run_metadata.json"
         with open(meta_path) as f:
@@ -356,225 +367,107 @@ def main() -> None:
     run_summary_path = checkpoint_dir / "run_summary.json"
     t_run_start = time.perf_counter()
     last_report_t = time.time()
-    attempted = 0
-    completed_ok = 0
-    failed = 0
     rolling: list[dict] = []
     done_count = 0
-    for domain in domains:
-        step_cfg_probe = resolve_step_fn_kwargs(config, domain)
-        enforce_full_history_or_exit(
-            step_cfg_probe,
-            allow_history_truncation=bool(args.allow_history_truncation),
-            script_name="run_phase2.py",
-        )
-        log(
-            f"Phase 2: domain block — {domain} ({instances_per_domain} instances × {len(strategies)} strategies × {runs} runs)"
-        )
-        for inst in range(instances_per_domain):
-            for strategy in strategies:
-                for run in range(runs):
-                    ep_id = f"ep_{domain}_{inst}_{strategy}_{run}"
-                    if ep_id in completed:
-                        continue
-                    if ep_id in quarantined:
-                        continue
-                    attempted += 1
-                    t_ep0 = time.perf_counter()
-                    try:
-                        env = make_experiment_env(domain, inst, config, max_steps, REPO_ROOT)
-                        rng = _rng_for_episode(ep_id)
-                        on_step = None
-                        if args.verbose_steps:
 
-                            def _make_on_step(eid: str):
-                                def _inner(info: dict) -> None:
-                                    log_step_line(f"Phase 2 {eid}", info)
+    run_ctx = Phase2RunContext(
+        config=config,
+        checkpoint_dir=checkpoint_dir,
+        repo_root=REPO_ROOT,
+        max_steps=max_steps,
+        model_cfg=model_cfg,
+        save_logprob_distributions=save_logprob_distributions,
+        save_vc_distributions=save_vc_distributions,
+        logprob_export_format=logprob_export_format,
+        vc_export_format=vc_export_format,
+        logprob_subdir=logprob_subdir,
+        vc_subdir=vc_subdir,
+        save_step_traces=save_step_traces,
+        allow_history_truncation=bool(args.allow_history_truncation),
+        verbose_steps=bool(args.verbose_steps),
+        policies_by_key=policies_by_key,
+        allocate_fn=allocate,
+        rng_for_episode=_rng_for_episode,
+        tracing_cfg=config.get("tracing"),
+        log_fn=log,
+        log_step_fn=log_step_line if args.verbose_steps else None,
+    )
 
-                                return _inner
+    jobs = build_phase2_worklist(config, completed=completed, quarantined=quarantined)
+    scheduler = EpisodeScheduler(exec_cfg.max_concurrent_episodes)
 
-                            on_step = _make_on_step(ep_id)
-                        # For adaptive runs we pass a per-episode seed into C2 so tie-breaking is reproducible.
-                        step_cfg = resolve_step_fn_kwargs(config, domain)
-                        step_cfg["c2_tie_break_seed"] = ep_id
-                        ep_policy = policies_by_key.get((str(domain), str(strategy)))
-                        result = run_adaptive_episode(
-                            env,
-                            model,
-                            strategy,
-                            max_steps=max_steps,
-                            rng=rng,
-                            policy=ep_policy,
-                            allocate_fn=allocate,
-                            on_step=on_step,
-                            save_logprob_distributions=save_logprob_distributions,
-                            save_vc_distributions=save_vc_distributions,
-                            save_step_traces=save_step_traces,
-                            episode_id=ep_id,
-                            trace_output_dir=str(checkpoint_dir),
-                            trace_model_name=str(model_cfg.get("name", "")) or None,
-                            trace_hook=trace_hook,
-                            trace_session_id=str(checkpoint_dir.name),
-                            trace_tags=[
-                                "phase2",
-                                str(domain),
-                                str(strategy),
-                                str(model_cfg.get("name", ""))
-                                if str(model_cfg.get("name", ""))
-                                else "",
-                            ],
-                            trace_name=ep_id,
-                            **step_cfg,
-                        )
-                        mentry = manifest_entry_for_instance(domain, inst, config, REPO_ROOT)
-                        data = {
-                            "episode_id": ep_id,
-                            "domain": domain,
-                            "instance": inst,
-                            "strategy": strategy,
-                            "run": run,
-                            "holdout": bool(mentry.get("holdout", False)),
-                            "difficulty_tier": mentry.get("difficulty_tier"),
-                            "task_success": result["task_success"],
-                            "steps": result["steps"],
-                            # Legacy fields kept for backward compatibility
-                            "lm_calls": result.get("lm_calls", result["steps"]),
-                            "tokens": result.get("tokens", result.get("total_tokens_generated", 0)),
-                            # New explicit fields
-                            "episode_length_steps": result.get(
-                                "episode_length_steps", result["steps"]
-                            ),
-                            "total_lm_calls": result.get("total_lm_calls", 0),
-                            "total_tokens_generated": result.get(
-                                "total_tokens_generated", result.get("tokens", 0)
-                            ),
-                            "normalized_compute_cost": result.get("normalized_compute_cost", 0.0),
-                            "efficiency_score": result.get("efficiency_score"),
-                            "timestamp_utc": result.get("timestamp_utc"),
-                            "wall_clock_time": result["wall_clock_time"],
-                            "tle_per_step": result.get("tle_per_step"),
-                            "vc_per_step": result.get("vc_per_step"),
-                            "stage_per_step": result.get("stage_per_step"),
-                            "steps_detail": result.get("steps_detail"),
-                        }
-                        if result.get("step_correctness") is not None:
-                            data["step_correctness"] = result["step_correctness"]
-                        if result.get("vc_detail_per_step") is not None:
-                            data["vc_detail_per_step"] = result["vc_detail_per_step"]
-                        save_episode_checkpoint(checkpoint_dir, ep_id, data)
-                        if save_logprob_distributions and result.get("logprob_raw_per_step"):
-                            for p in write_logprob_distribution_artifacts(
-                                ep_id,
-                                result["logprob_raw_per_step"],
-                                checkpoint_dir,
-                                export_format=logprob_export_format,
-                                logprob_subdir=logprob_subdir,
-                            ):
-                                log(f"Wrote {p}")
-                        if save_vc_distributions and result.get("vc_detail_per_step"):
-                            for p in write_vc_distribution_artifacts(
-                                ep_id,
-                                result["vc_detail_per_step"],
-                                checkpoint_dir,
-                                export_format=vc_export_format,
-                                vc_subdir=vc_subdir,
-                            ):
-                                log(f"Wrote {p}")
-                        completed_ok += 1
-                        done_count += 1
-                        ep_wall = time.perf_counter() - t_ep0
-                        rolling.append(
-                            {
-                                "task_success": bool(data.get("task_success")),
-                                "steps": int(data.get("steps") or 0),
-                                "ep_wall_time_s": float(ep_wall),
-                                "tle_mean": _episode_mean_tle(data),
-                                "vc_mean": _episode_mean_vc(data),
-                                "domain": domain,
-                                "strategy": strategy,
-                                "instance": inst,
-                            }
-                        )
-                        if len(rolling) > 10:
-                            rolling = rolling[-10:]
-                        if args.verbose_episodes:
-                            log_episode_line(
-                                "Phase 2",
-                                ep_id,
-                                domain=domain,
-                                label=strategy,
-                                instance=inst,
-                                run=run,
-                                steps=int(data.get("steps") or 0),
-                                total_lm_calls=int(data.get("total_lm_calls") or 0),
-                                wall_s=float(ep_wall),
-                                success=bool(data.get("task_success")),
-                            )
-                    except Exception as exc:
-                        failed += 1
-                        reason = classify_exclusion_reason(exc)
-                        if reason is not None:
-                            write_quarantine(
-                                checkpoint_dir,
-                                ep_id,
-                                reason,
-                                meta={
-                                    "domain": domain,
-                                    "instance": inst,
-                                    "stage_or_strategy": strategy,
-                                },
-                            )
-                            quarantined.add(ep_id)
-                            log(f"QUARANTINE {ep_id} ({reason})")
-                        else:
-                            err = {
-                                "episode_id": ep_id,
-                                "domain": domain,
-                                "instance": inst,
-                                "stage_or_strategy": strategy,
-                                "run": run,
-                                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-                                "traceback": traceback.format_exc(),
-                            }
-                            with open(errors_path, "a") as f:
-                                f.write(json.dumps(err) + "\n")
-                            log(f"Warning: episode failed {ep_id} (continuing)")
+    def _on_complete(outcome: dict, stats) -> None:
+        nonlocal last_report_t, done_count, rolling
+        if outcome.get("status") != "completed":
+            return
+        done_count = stats.done_count
+        rolling = list(stats.rolling)
+        data = outcome.get("data") or {}
+        if args.verbose_episodes:
+            log_episode_line(
+                "Phase 2",
+                str(outcome.get("episode_id")),
+                domain=str(outcome.get("domain")),
+                label=str(outcome.get("strategy")),
+                instance=int(outcome.get("instance") or 0),
+                run=int(outcome.get("run") or 0),
+                steps=int(data.get("steps") or 0),
+                total_lm_calls=int(data.get("total_lm_calls") or 0),
+                wall_s=float(outcome.get("ep_wall_time_s") or 0.0),
+                success=bool(data.get("task_success")),
+            )
+        now = time.time()
+        elapsed_run = time.perf_counter() - t_run_start
+        if (
+            done_count == 1
+            or (progress_every and done_count > 0 and done_count % progress_every == 0)
+            or (now - last_report_t) >= 300
+        ):
+            last_report_t = now
+            total_done = len(completed) + done_count
+            rate = (done_count / elapsed_run) if elapsed_run > 0 else 0.0
+            remaining = total - total_done
+            eta_s = (remaining / rate) if rate > 0 else None
+            print_batch_progress(
+                phase="Phase 2",
+                total_done=total_done,
+                total=total,
+                new_in_run=done_count,
+                elapsed_s=elapsed_run,
+                eta_s=eta_s,
+                rolling=rolling,
+                domain=str(outcome.get("domain")),
+                stage_or_strategy=str(outcome.get("strategy")),
+                label_key="strategy",
+            )
 
-                    now = time.time()
-                    elapsed_run = time.perf_counter() - t_run_start
-                    if (
-                        done_count == 1
-                        or (progress_every and done_count > 0 and done_count % progress_every == 0)
-                        or (now - last_report_t) >= 300
-                    ):
-                        last_report_t = now
-                        total_done = len(completed) + done_count
-                        rate = (done_count / elapsed_run) if elapsed_run > 0 else 0.0
-                        remaining = total - total_done
-                        eta_s = (remaining / rate) if rate > 0 else None
-                        print_batch_progress(
-                            phase="Phase 2",
-                            total_done=total_done,
-                            total=total,
-                            new_in_run=done_count,
-                            elapsed_s=elapsed_run,
-                            eta_s=eta_s,
-                            rolling=rolling,
-                            domain=domain,
-                            stage_or_strategy=strategy,
-                            label_key="strategy",
-                        )
+    stats = scheduler.run(
+        jobs,
+        run_fn=lambda job: run_phase2_job(job, model, run_ctx),
+        on_complete=_on_complete,
+        errors_path=errors_path,
+        checkpoint_dir=checkpoint_dir,
+        quarantined=quarantined,
+        log_fn=log,
+    )
     wall_total = time.perf_counter() - t_run_start
     log(
-        f"Phase 2 finished — new episodes: {done_count}; checkpoints: {len(list_completed_episodes(checkpoint_dir))}; "
-        f"wall {format_run_elapsed(wall_total)}"
+        f"Phase 2 finished — new episodes: {stats.done_count}; checkpoints: {len(list_completed_episodes(checkpoint_dir))}; "
+        f"wall {format_run_elapsed(wall_total)}; max_in_flight={stats.max_in_flight_observed}"
+    )
+    exec_metrics = build_execution_metrics(
+        checkpoint_dir=checkpoint_dir,
+        total_wall_time_s=wall_total,
+        total_tokens_generated=stats.total_tokens_generated,
+        max_in_flight_observed=stats.max_in_flight_observed,
     )
     summary = _build_run_summary(
         checkpoint_dir=checkpoint_dir,
         total_wall_time_s=time.perf_counter() - t_run_start,
-        episodes_attempted=attempted,
-        episodes_completed=completed_ok,
-        episodes_failed=failed,
+        episodes_attempted=stats.episodes_attempted,
+        episodes_completed=stats.episodes_completed,
+        episodes_failed=stats.episodes_failed,
+        execution_metrics=exec_metrics,
     )
     with open(run_summary_path, "w") as f:
         json.dump(summary, f, indent=2)

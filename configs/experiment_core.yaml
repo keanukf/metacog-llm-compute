@@ -15,6 +15,15 @@ inference:
   avg_tokens_per_call: 200
   top_logprobs: 20
 
+# Parallel episode execution (Phase 1/2 with --real use ServerBackend against vllm serve).
+execution:
+  max_concurrent_episodes: 1
+  backend_mode: server
+  server_url: "http://127.0.0.1:8000/v1"
+  # Optional freeze after TLE invariance validation (written to run_metadata.frozen_execution_params):
+  # frozen_max_concurrent_episodes: 4
+  # frozen_tle_invariance_eps: 0.05
+
 phase1:
   domains: ["textworld", "tower_of_hanoi"]
   instances_per_domain: 50

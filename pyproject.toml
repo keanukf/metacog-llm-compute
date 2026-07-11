@@ -100,6 +100,7 @@ disable_error_code = ["unused-ignore", "arg-type", "import-not-found"]
 module = [
     "src.utils.inference.vllm",
     "src.utils.inference.lmstudio.responses",
+    "src.execution.backend.server",
 ]
 ignore_missing_imports = true
 disable_error_code = ["unused-ignore", "import-not-found", "no-any-return"]

@@ -20,8 +20,10 @@ Labeling edge cases (preregistered):
 from __future__ import annotations
 
 import json
+import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from src.utils.errors import EnvironmentError
 
@@ -31,6 +33,16 @@ try:
     TEXTWORLD_AVAILABLE = True
 except ImportError:
     TEXTWORLD_AVAILABLE = False
+
+# TextWorld/TatSu game logic parsing is not thread-safe; serialize env init + reset load.
+_TEXTWORLD_LOAD_LOCK = threading.Lock()
+
+
+@contextmanager
+def _textworld_load_section() -> Iterator[None]:
+    with _TEXTWORLD_LOAD_LOCK:
+        yield
+
 
 # Feedback substrings suggesting the parser rejected the command (best-effort fallback).
 _UNKNOWN_CMD_HINTS = (
@@ -194,32 +206,33 @@ class TextWorldEnv:
 
     def _init_gym_env(self) -> None:
         try:
-            import textworld.gym
+            with _textworld_load_section():
+                import textworld.gym
 
-            try:
-                from textworld import EnvInfos
+                try:
+                    from textworld import EnvInfos
 
-                infos = EnvInfos(
-                    admissible_commands=True,
-                    feedback=True,
-                    score=True,
-                    max_score=True,
-                    won=True,
-                    lost=True,
-                )
-                env_id = textworld.gym.register_game(
-                    self._game_file,
-                    max_episode_steps=self._max_steps,
-                    name=f"tw_{id(self)}",
-                    request_infos=infos,
-                )
-            except (ImportError, AttributeError, TypeError, ValueError):
-                env_id = textworld.gym.register_game(
-                    self._game_file,
-                    max_episode_steps=self._max_steps,
-                    name=f"tw_{id(self)}",
-                )
-            self._gym_env = textworld.gym.make(env_id)
+                    infos = EnvInfos(
+                        admissible_commands=True,
+                        feedback=True,
+                        score=True,
+                        max_score=True,
+                        won=True,
+                        lost=True,
+                    )
+                    env_id = textworld.gym.register_game(
+                        self._game_file,
+                        max_episode_steps=self._max_steps,
+                        name=f"tw_{id(self)}",
+                        request_infos=infos,
+                    )
+                except (ImportError, AttributeError, TypeError, ValueError):
+                    env_id = textworld.gym.register_game(
+                        self._game_file,
+                        max_episode_steps=self._max_steps,
+                        name=f"tw_{id(self)}",
+                    )
+                self._gym_env = textworld.gym.make(env_id)
         except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
             self._use_real = False
             self._gym_env = None
@@ -247,7 +260,8 @@ class TextWorldEnv:
         self._last_score = None
         self._last_admissible = None
         if self._use_real and self._gym_env is not None:
-            result = self._gym_env.reset()
+            with _textworld_load_section():
+                result = self._gym_env.reset()
             info: dict[str, Any] = {}
             if isinstance(result, tuple) and len(result) == 2:
                 obs, raw_info = result
