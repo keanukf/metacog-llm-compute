@@ -1,12 +1,12 @@
 # Running on RunPod Cloud GPU
 
-The pilot with `--real` is designed for **~2 GPU-hours** on an **RTX 3090** (24 GB VRAM). Budget: about **$0.44** (see [`blueprints/infrastructureplan_pilot.md`](../blueprints/infrastructureplan_pilot.md) Section V).
+The pilot with `--real` is designed for **~2 GPU-hours** on an **RTX 5090** (32 GB VRAM). Budget: about **$0.44** (see [`blueprints/infrastructureplan_pilot.md`](../blueprints/infrastructureplan_pilot.md) Section V).
 
 **Related:** [`docs/pilot.md`](pilot.md) (pilot modes), [`docs/scripts.md`](scripts.md), [`configs/models_runpod.yaml`](../configs/models_runpod.yaml).
 
 ## Step 1 — Create & start the pod (dashboard settings)
 
-- **GPU**: RTX 4090 (or 3090-class), **count = 1**
+- **GPU**: RTX 5090, **count = 1**
 - **Template/Image**: RunPod **PyTorch 2.x**
   - PyTorch **2.4.0 vs 2.8.0**: either works; this repo installs pinned Python deps from `requirements.txt` anyway. If unsure, **2.4.0 is fine**.
 - **Pricing**:

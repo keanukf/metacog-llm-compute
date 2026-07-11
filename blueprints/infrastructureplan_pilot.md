@@ -1,3 +1,5 @@
+> **SUPERSEDED** — siehe Gate F / [`thesis_design.md`](thesis_design.md). Dieses Dokument ist als Ganzes veraltet (u. a. Qwen2.5-3B, RTX 3090, $0.22/hr, 16h-Phase-1-Schätzung, Delayed-Cue); kein line-by-line Update.
+
 # Infrastrukturplan, Budget & Feasibility-Pilotstudie (v2)
 
 ## Master Thesis: Metacognitive Effort Allocation in Sequential Language Model Agents

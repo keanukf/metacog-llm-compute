@@ -375,7 +375,7 @@ penalties). Stage-specific decoding temperatures (C0 0.3, C1 0.5, C2 0.7) theref
    `|dTLE(T_low vs T_high)| ≤ eps`, with Same-T control and scaling-span diagnostics in JSON report.
 
 **Preregistered tolerance:** `eps = max(0.05 bits, 3 × max_probe_same_T |dTLE|)`. Floor `0.05` bits
-from RunPod control run (Qwen3-8B, RTX 4090, 2026-07-04); dynamic term absorbs fp16 request noise.
+from RunPod control run (Qwen3-8B, RTX 5090, 2026-07-11); dynamic term absorbs fp16 request noise.
 
 ---
 
