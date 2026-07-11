@@ -62,6 +62,8 @@ export HF_TOKEN="..."   # read-only token is enough for downloads
 
 This also improves rate limits for metadata scripts like `scripts/hf_model_card_gate.py`.
 
+**Fast Hub downloads (`hf_transfer`):** Some RunPod images or `/workspace/secrets/env.sh` set `HF_HUB_ENABLE_HF_TRANSFER=1`. That requires the `hf_transfer` package — it is pinned in `requirements.txt` (Linux) and installed by `scripts/setup_cloud.sh`. If you see `Fast download using 'hf_transfer' is enabled … but 'hf_transfer' package is not available`, re-run setup or `pip install hf_transfer`.
+
 **Optional — Langfuse tracing (recommended if you want cloud traces)**
 
 These secrets are **not committed** (don’t put them in git). Set them on the pod before running pilots:

@@ -30,6 +30,7 @@ dev = [
 ]
 full = [
     "vllm==0.19.1; sys_platform == 'linux'",
+    "hf_transfer==0.1.9; sys_platform == 'linux'",
     "transformers==4.56.2",
     "torch==2.10.0",
     "lmstudio>=1.5.0",

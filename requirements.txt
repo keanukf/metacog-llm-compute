@@ -5,6 +5,8 @@
 # (e.g. static_assert chained comparisons in cpu_attn_vec.hpp). Local Mac: requirements-local.txt
 # or pip install -e ".[dev]" + --pilot-mode lmstudio.
 vllm==0.19.1; sys_platform == "linux"
+# Required when HF_HUB_ENABLE_HF_TRANSFER=1 (common on RunPod; see docs/runpod.md)
+hf_transfer==0.1.9; sys_platform == "linux"
 # Qwen3.5+ checkpoints use model_type qwen3_5 (needs transformers >= 5.2)
 transformers==4.56.2
 lmstudio>=1.5.0
