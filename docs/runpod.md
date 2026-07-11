@@ -312,6 +312,22 @@ python scripts/run_prompt_ab.py --pilot-mode cuda --output-dir data/results/runp
 
 This writes `data/results/runpod_pilot/ab_YYYYMMDD_HHMMSS/ab_summary.json` plus per-variant pilot folders.
 
+## Phase 1 / Phase 2 autostop
+
+Wrap long runs with [`scripts/run_with_autostop.sh`](../scripts/run_with_autostop.sh) (best-effort `runpodctl stop` when `RUNPOD_POD_ID` is set; local no-op):
+
+```bash
+cd /workspace/metacog-llm-compute
+export RESULTS_DIR="/workspace/metacog-llm-compute/data/results"
+STOP_POD=1 ./scripts/run_with_autostop.sh scripts/run_phase1.py \
+  --config configs/experiment_core.yaml --real --resume \
+  --checkpoint-dir "${RESULTS_DIR}/phase1/phase1_YYYYMMDD_HHMMSS_UTC"
+```
+
+**Resume directory trap:** `--checkpoint-dir` must be the **exact timestamped run folder** that contains `ep_*.json` (and optionally `quarantine.jsonl`), not the parent `phase1/` base.
+
+Phase runners write `env_assertion` / `label_error` failures to `quarantine.jsonl` and skip those episodes on resume; all other episode failures still append to `errors.jsonl` unchanged.
+
 ## Download results from the pod
 
 From your **local machine** (repo root). RunPod shows **two** SSH options in the dashboard:
