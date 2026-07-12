@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.execution.parity import run_batch_invariance_probe
 from src.signals.token_entropy import entropy_shannon_from_top_logprobs
 from src.utils.inference.logprob_invariance import (
     TLE_INVARIANCE_EPS_BITS,
@@ -68,6 +69,8 @@ def _check_backend(
     min_k: int = 20,
     t_low: float = 0.3,
     t_high: float = 1.0,
+    max_concurrent_episodes: int | None = None,
+    run_batch_invariance: bool = False,
 ) -> dict[str, Any]:
     k_ok = True
     temp_ok = True
@@ -109,7 +112,7 @@ def _check_backend(
             temp_ok = False
         inv["pass"] = cross is not None and float(cross) <= eps
 
-    return {
+    result: dict[str, Any] = {
         "backend": label,
         "k_coverage_pass": k_ok,
         "temperature_invariance_pass": temp_ok,
@@ -129,36 +132,101 @@ def _check_backend(
         "probes": details,
     }
 
+    if run_batch_invariance and max_concurrent_episodes is not None:
+        batch = run_batch_invariance_probe(
+            model,
+            probes,
+            max_concurrent_episodes=max_concurrent_episodes,
+            eps=eps,
+        )
+        result["batch_invariance_pass"] = bool(batch["passed"])
+        result["batch_invariance"] = batch
+        result["batch_invariance_note"] = (
+            "Pass when |dTLE(solo vs under concurrent server load)| <= eps at the "
+            "committed-action TLE window; load uses saturated pool at production N."
+        )
+    else:
+        result["batch_invariance_pass"] = "not_applicable"
+        result["batch_invariance_note"] = (
+            "Batch invariance runs only with --backend server (parallel vLLM)."
+        )
 
-def main() -> None:
+    return result
+
+
+def _all_pass(backend_report: dict[str, Any], *, backend_label: str) -> bool:
+    if backend_label == "mock":
+        return True
+    batch = backend_report.get("batch_invariance_pass")
+    batch_ok = batch is True or batch == "not_applicable"
+    return (
+        bool(backend_report.get("k_coverage_pass"))
+        and bool(backend_report.get("temperature_invariance_pass"))
+        and batch_ok
+    )
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(description="Verify backend logprob parity (§5.7)")
     parser.add_argument("--config", default="configs/experiment_core.yaml")
     parser.add_argument("--probes", default="data/probes/parity_prompts.json")
     parser.add_argument("--backend", choices=["vllm", "lmstudio", "mock", "server"], default="mock")
     parser.add_argument("--compare-backends", action="store_true")
     parser.add_argument("--output-dir", default="data/results")
+    parser.add_argument(
+        "--freeze-metadata-dir",
+        default=None,
+        help="If set, write frozen (N, eps) into run_metadata.json under this checkpoint dir",
+    )
     args = parser.parse_args()
 
     import yaml
+
+    from src.execution.config import (
+        ExecutionConfig,
+        frozen_execution_params_dict,
+        write_frozen_execution_params,
+    )
 
     config_path = REPO_ROOT / args.config
     with open(config_path) as f:
         config = yaml.safe_load(f)
     probes = _load_probes(REPO_ROOT / args.probes)
+    exec_cfg = ExecutionConfig.from_config(config, real=args.backend == "server")
 
     from src.utils.experiment_env import create_experiment_model
+
+    close_fn: Any = None
+    run_batch = args.backend == "server"
+    max_n = exec_cfg.max_concurrent_episodes if run_batch else None
 
     if args.backend == "server":
         from src.execution.backend.factory import create_execution_backend
 
         model = create_execution_backend(config, use_real=True)
+        close_fn = getattr(model, "close", None)
     else:
         config.setdefault("inference", {})["backend"] = args.backend
         model = create_experiment_model(config, use_real=args.backend != "mock")
+
+    try:
+        backend_report = _check_backend(
+            model,
+            probes,
+            label=args.backend,
+            max_concurrent_episodes=max_n,
+            run_batch_invariance=run_batch,
+        )
+    finally:
+        if close_fn is not None:
+            close_fn()
+
     report: dict[str, Any] = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "probes_file": str(args.probes),
-        "backends": [_check_backend(model, probes, label=args.backend)],
+        "config": str(args.config),
+        "max_concurrent_episodes": max_n,
+        "backends": [backend_report],
     }
     if args.compare_backends:
         report["note"] = "Run separately on each backend host; merge JSON for thesis §5.7.5"
@@ -171,15 +239,43 @@ def main() -> None:
     out_path = out_dir / f"backend_parity_{ts}.json"
     out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"Wrote {out_path}")
+
     b0 = report["backends"][0]
-    all_pass = b0["k_coverage_pass"] and b0["temperature_invariance_pass"]
+    all_pass = _all_pass(b0, backend_label=args.backend)
     print(f"K-coverage: {'PASS' if b0['k_coverage_pass'] else 'FAIL'}")
     print(
         f"Temperature invariance: {'PASS' if b0['temperature_invariance_pass'] else 'FAIL'} "
         f"(eps={b0['temperature_invariance_eps_bits']} bits)"
     )
-    raise SystemExit(0 if all_pass or args.backend == "mock" else 1)
+    batch_pass = b0.get("batch_invariance_pass")
+    if batch_pass == "not_applicable":
+        print("Batch invariance: not_applicable (use --backend server on vLLM pod)")
+    else:
+        batch = b0.get("batch_invariance") or {}
+        print(
+            f"Batch invariance: {'PASS' if batch_pass else 'FAIL'} "
+            f"(max_dtle={batch.get('max_dtle')}, eps={batch.get('eps')} bits)"
+        )
+
+    if args.freeze_metadata_dir is not None and run_batch and batch_pass is True:
+        meta_dir = Path(args.freeze_metadata_dir)
+        if not meta_dir.is_absolute():
+            meta_dir = REPO_ROOT / meta_dir
+        batch_eps = float(
+            (b0.get("batch_invariance") or {}).get("eps", b0["temperature_invariance_eps_bits"])
+        )
+        write_frozen_execution_params(
+            meta_dir,
+            frozen_execution_params_dict(
+                max_concurrent_episodes=exec_cfg.max_concurrent_episodes,
+                tle_invariance_eps=batch_eps,
+                eps_derived_under_load=True,
+            ),
+        )
+        print(f"Froze execution params in {meta_dir / 'run_metadata.json'}")
+
+    return 0 if all_pass else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

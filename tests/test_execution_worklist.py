@@ -36,6 +36,20 @@ def test_phase1_worklist_enumeration_count():
     assert all(isinstance(j, EpisodeJob) and j.phase == "phase1" for j in jobs)
 
 
+def test_phase1_worklist_respects_compute_stages_count():
+    config = {
+        "phase1": {
+            "domains": ["tower_of_hanoi"],
+            "instances_per_domain": 20,
+            "compute_stages": 1,
+            "runs_per_condition": 1,
+        }
+    }
+    jobs = build_phase1_worklist(config, completed=set(), quarantined=set())
+    assert len(jobs) == 20
+    assert all(j.compute_stage == "C0" for j in jobs)
+
+
 def test_phase2_worklist_enumeration():
     config = {
         "phase2": {

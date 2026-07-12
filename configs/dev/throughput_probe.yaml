@@ -1,0 +1,117 @@
+# Minimal smoke for max_concurrent_episodes throughput comparison on Pod.
+# Not part of any preregistered experiment run.
+
+model:
+  name: "Qwen/Qwen3-8B"
+  revision: "b968826d9c46dd6066d109eabc6255188de91218"
+  dtype: float16
+
+inference:
+  temperature: 0.3
+  max_tokens: 256
+  max_model_len: 16384
+  avg_tokens_per_call: 200
+  top_logprobs: 20
+
+execution:
+  max_concurrent_episodes: 3
+  backend_mode: server
+  server_url: "http://127.0.0.1:8000/v1"
+
+phase1:
+  domains: ["textworld", "tower_of_hanoi"]
+  instances_per_domain: 2
+  compute_stages: 3
+  runs_per_condition: 1
+  # 2 domains * 2 instances * 3 stages = 12 episodes per candidate N
+
+phase2:
+  domains: ["textworld"]
+  instances_per_domain: 1
+  strategies: [always_c0]
+  runs_per_condition: 1
+
+paths:
+  tasks_dir: "data/tasks"
+  task_manifests:
+    textworld: "data/tasks/textworld/difficulty_manifest.json"
+    tower_of_hanoi: "data/tasks/tower_of_hanoi/difficulty_manifest.json"
+  results_phase1: "data/results/phase1"
+  results_phase2: "data/results/phase2"
+
+logging:
+  save_logprob_distributions: false
+  logprob_export_format: json
+  logprob_subdir: logprobs
+  save_vc_distributions: false
+  vc_export_format: json
+  vc_subdir: vc
+  save_step_traces: false
+  write_debug_views: false
+
+tracing:
+  langfuse_enabled: false
+
+c1:
+  cot_temperature: 0.5
+
+c2:
+  n_samples: 3
+  sample_temperature: 0.7
+
+domain_prompts:
+  textworld:
+    prefix: >
+      You are playing a parser-based text adventure (interactive fiction). Base each reply on the
+      latest game text shown below. Use only parser commands from the templates below (e.g. go north,
+      look, take key). Do not add narration, quotes, role-play, multiple actions, or reasoning.
+    action_max_tokens: 32
+    action_stop: ["\n"]
+    include_admissible_commands: false
+    cot_max_tokens: 1024
+    history_keep_last_pairs: null
+    history_max_obs_chars: 0
+    history_current_obs_max_chars: 0
+    history_obs_head_ratio: 0.15
+    pin_recipe: false
+  tower_of_hanoi:
+    prefix: >
+      You are solving Tower of Hanoi. Only the top disk on a peg may move; place it on an empty
+      peg or on a larger-numbered disk.
+
+      Output format:
+      - Output exactly ONE move as [source_peg]->[target_peg] using only A, B, or C (e.g. A->C).
+      - No disk numbers. No explanation. Single line only.
+    action_max_tokens: 32
+    include_valid_moves: false
+    cot_max_tokens: 2048
+    history_keep_last_pairs: null
+    history_max_obs_chars: 0
+    history_current_obs_max_chars: 0
+    history_obs_head_ratio: 0.15
+    pin_recipe: false
+
+vc:
+  mode: followup
+  judged_context: action_only
+  retry_on_parse_failure: true
+  followup_max_tokens: 4
+  followup_temperature: 0.2
+  followup_max_context_chars: null
+  followup_cot_max_chars: 12000
+  raw_completion_max_chars: 8000
+  followup_instruction: |
+    How likely is the chosen action to be correct in this situation?
+    Respond with only a single integer between 0 and 100,
+    where 0 means certainly wrong and 100 means certainly correct.
+
+    Confidence:
+
+episode:
+  max_steps_per_episode: 8
+  avg_steps: 8
+
+tower_of_hanoi:
+  num_disks_range: [3, 4]
+  partial_start_range: [0, 3]
+  task_generation_seed: 42

@@ -413,10 +413,68 @@ python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --output-dir da
 python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --real --output-dir data/results/smoke_parallel
 
 # TLE invariance validation (production N, saturated pool):
+python scripts/verify_backend_parity.py --backend server \
+  --config configs/experiment_core.yaml \
+  --output-dir data/results/instrument_validation
+# Legacy wrapper (delegates to verify_backend_parity):
 python scripts/run_tle_invariance_validation.py --config configs/experiment_core.yaml \
-  --output data/results/tle_invariance_report.json
-python scripts/verify_backend_parity.py --backend server --config configs/experiment_core.yaml
+  --output data/results/instrument_validation/tle_invariance_report.json
 ```
+
+### Instrument validation session (5090 pod)
+
+After connecting Cursor via SSH Remote to `/workspace/metacog-llm-compute`:
+
+**Order matters:** pick production `max_concurrent_episodes` from measured throughput *before* backend parity (batch invariance must use the N you will run in Phase 1).
+
+```bash
+bash scripts/instrument_validation_preflight.sh
+# Terminal A: vllm serve … (see above; pin --revision to match experiment_core.yaml)
+# Terminal B — results under data/results/instrument_validation/
+
+# 1) Plumbing + thinking check
+python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --real \
+  --output-dir data/results/instrument_validation/smoke_parallel
+
+# 2) Throughput sweep — choose N (try 1,3,6,8; extend if headroom)
+python scripts/measure_concurrent_throughput.py --real \
+  --candidates 1,3,6,8 \
+  --output data/results/instrument_validation/throughput_sweep.json
+# Set execution.max_concurrent_episodes in experiment_core.yaml + dev configs to chosen N
+
+# 3) Backend parity at production N (hard stop if FAIL)
+python scripts/verify_backend_parity.py --backend server \
+  --config configs/experiment_core.yaml \
+  --output-dir data/results/instrument_validation
+
+# 4) Format/VC probe — check vc_rate + traces; preanalysis AUROC is smoke-only here
+python scripts/run_phase1.py --config configs/dev/format_vc_probe.yaml --real \
+  --checkpoint-dir data/results/instrument_validation
+PROBE=$(ls -td data/results/instrument_validation/phase1_* | head -1)
+python scripts/audit_pilot_signals.py "$PROBE" --json
+python -m src.analysis.preanalysis_screen "$PROBE"   # AUROC marked (smoke) if n<50
+
+# 5) ToH parse probe
+python scripts/run_phase1.py --config configs/dev/toh_parse_probe.yaml --real \
+  --checkpoint-dir data/results/instrument_validation
+
+# 6) Signal smoke — extrapolate wall time from probe ep/h before starting
+python scripts/run_phase1.py --config configs/dev/signal_smoke.yaml --real \
+  --checkpoint-dir data/results/instrument_validation
+RUN=$(ls -td data/results/instrument_validation/phase1_* | head -1)
+python -m src.analysis.preanalysis_screen "$RUN"
+python scripts/sweep_topk_sensitivity.py "$RUN" --output "$RUN/topk_sensitivity.json"
+```
+
+Dev configs: `format_vc_probe.yaml`, `toh_parse_probe.yaml`, `signal_smoke.yaml` (72 episodes, 1 run/condition).
+Track progress in `data/results/instrument_validation/session_manifest.json` (not committed).
+Gate checklist: `blueprints/gate_p1_readiness.md` (Gate C), `docs/consistency_log.md`.
+
+**Production N:** Do not freeze `max_concurrent_episodes` at a guess (e.g. 3). Sweep first; if Phase 1 later uses a higher N, re-run parity. Running parity at lower N than production limits generalizability — document as limitation if unavoidable.
+
+**Attention backend:** If you switch `TRITON_ATTN` → `FLASHINFER` (or back) after a passed parity run, **re-run** `verify_backend_parity.py` — backends can change numerics.
+
+**Budget / time:** Rough ep/h from the sweep × planned episodes is enough for planning; no need to optimize to the last euro. After `format_vc_probe`, extrapolate C-5 duration before launching `signal_smoke`.
 
 Block before Smoke `--real` GO: `enable_thinking` must produce thinking blocks on the server (C1/C2 degrade silently otherwise).
 

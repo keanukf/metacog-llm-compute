@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from src.utils.compute_stage_selection import resolve_compute_stages_for_domain
+
 PhaseKind = Literal["phase1", "phase2"]
 
 
@@ -28,10 +30,10 @@ def build_phase1_worklist(
     phase1 = config.get("phase1", {})
     domains = list(phase1.get("domains", ["textworld", "tower_of_hanoi"]))
     instances_per_domain = int(phase1.get("instances_per_domain", 50))
-    stages = ["C0", "C1", "C2"]
     runs = int(phase1.get("runs_per_condition", 5))
     jobs: list[EpisodeJob] = []
     for domain in domains:
+        stages = resolve_compute_stages_for_domain(config, domain=str(domain), config_key="phase1")
         for inst in range(instances_per_domain):
             for stage in stages:
                 for run in range(runs):

@@ -1,42 +1,33 @@
-# Core experiment configuration — Phase 1 (Calibration) and Phase 2 (Adaptive Allocation).
-# See blueprints/infrastructureplan_pilot.md Section III.
+# Dev signal discrimination smoke: TLE/VC AUROC + logprob sidecars for top-K sweep.
+# Not part of any preregistered experiment run.
 
 model:
   name: "Qwen/Qwen3-8B"
   revision: "b968826d9c46dd6066d109eabc6255188de91218"
-  # vLLM 0.19+ accepts float16/bfloat16 literals only (not fp16/bf16 aliases).
   dtype: float16
 
 inference:
   temperature: 0.3
   max_tokens: 256
-  # Qwen3-8B advertises 40960 context; cap for 24 GB GPUs (KV cache OOM otherwise).
   max_model_len: 16384
   avg_tokens_per_call: 200
   top_logprobs: 20
 
-# Parallel episode execution (Phase 1/2 with --real use ServerBackend against vllm serve).
 execution:
-  # Set on Pod after measure_concurrent_throughput.py; batch parity must use this same N.
-  max_concurrent_episodes: 1
+  max_concurrent_episodes: 3
   backend_mode: server
   server_url: "http://127.0.0.1:8000/v1"
-  # Optional freeze after TLE invariance validation (written to run_metadata.frozen_execution_params):
-  # frozen_max_concurrent_episodes: 4
-  # frozen_tle_invariance_eps: 0.05
 
 phase1:
   domains: ["textworld", "tower_of_hanoi"]
-  instances_per_domain: 50
-  compute_stages: 3   # C0, C1, C2
-  runs_per_condition: 5
-  # 100 instances * 3 stages * 5 runs = 1500 episodes
+  instances_per_domain: 12
+  compute_stages: 3
+  runs_per_condition: 1
+  # 2 domains * 12 instances * 3 stages * 1 run = 72 episodes (AUROC smoke; add runs only if CIs too wide)
 
 phase2:
   domains: ["textworld", "tower_of_hanoi"]
   instances_per_domain: 50
-  # Required for adaptive_tle, adaptive_vc, eager_style (hard-fail if missing).
-  # policy_artifact: "data/results/phase1/threshold_artifact.json"
   strategies:
     - adaptive_tle
     - adaptive_vc
@@ -45,7 +36,6 @@ phase2:
     - random
     - eager_style
   runs_per_condition: 5
-  # 100 * 6 * 5 = 3000 episodes
 
 paths:
   tasks_dir: "data/tasks"
@@ -55,39 +45,35 @@ paths:
   results_phase1: "data/results/phase1"
   results_phase2: "data/results/phase2"
 
-# Same keys as pilot.yaml — optional sidecar logprob dumps for Phase 1 (checkpoint_dir / logprob_subdir).
 logging:
-  save_logprob_distributions: false
+  save_logprob_distributions: true
   logprob_export_format: json
   logprob_subdir: logprobs
   save_vc_distributions: false
-  vc_export_format: json   # json | csv | both — VC follow-up sidecars (*_vc.json)
+  vc_export_format: json
   vc_subdir: vc
-  save_step_traces: false   # true for debugging: trace_{episode_id}.jsonl in checkpoint dir
-  write_debug_views: true   # builds debug_views/ from traces (forces save_step_traces when true)
+  save_step_traces: false
+  write_debug_views: false
   debug_view_head_chars: 800
   debug_view_tail_chars: 800
 
 tracing:
   langfuse_enabled: true
 
-# Compute stage C1 (single reasoning call).
 c1:
   cot_temperature: 0.5
 
-# Compute stage C2 (Self-Consistency / majority vote).
 c2:
   n_samples: 3
   sample_temperature: 0.7
 
-# Domain prompting / action-generation settings (environment-specific; not signal extraction).
 domain_prompts:
   textworld:
     prefix: >
       You are playing a parser-based text adventure (interactive fiction). Base each reply on the
       latest game text shown below. Use only parser commands from the templates below (e.g. go north,
       look, take key). Do not add narration, quotes, role-play, multiple actions, or reasoning.
-      
+
       Command templates (valid forms; do NOT assume an explicit list of allowed commands will be provided):
       - go [north|south|east|west|up|down]
       - take [object]
@@ -103,7 +89,6 @@ domain_prompts:
     action_stop: ["\n"]
     include_admissible_commands: false
     cot_max_tokens: 1024
-    # Full episode history (H3 confound control) — explicit off
     history_keep_last_pairs: null
     history_max_obs_chars: 0
     history_current_obs_max_chars: 0
@@ -126,10 +111,9 @@ domain_prompts:
     history_obs_head_ratio: 0.15
     pin_recipe: false
 
-# Verbalized confidence: separate short follow-up call (recommended) or parse from action text (inline).
 vc:
   mode: followup
-  judged_context: action_only   # action_only | full (exploratory)
+  judged_context: action_only
   retry_on_parse_failure: true
   followup_max_tokens: 4
   followup_temperature: 0.2
@@ -147,7 +131,6 @@ episode:
   max_steps_per_episode: 20
   avg_steps: 10
 
-# Tower of Hanoi: vary number of disks and partial-start depth.
 tower_of_hanoi:
   num_disks_range: [3, 4]
   partial_start_range: [0, 3]
