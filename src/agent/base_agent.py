@@ -405,9 +405,10 @@ def run_episode(
     finally:
         if trace_hook is not None:
             try:
-                succ = bool(getattr(env, "task_success", False)) or bool(
-                    getattr(env, "done", False)
-                )
+                if hasattr(env, "task_success"):
+                    succ = bool(getattr(env, "task_success"))
+                else:
+                    succ = bool(getattr(env, "done", False))
             except Exception:
                 succ = False
             final_tags: list[str] = []
@@ -514,6 +515,7 @@ def run_adaptive_episode(
     vc_followup_instruction: str | None = None,
     c1_cot_temperature: float | None = None,
     c1_cot_max_tokens: int | None = None,
+    c2_cot_max_tokens: int | None = None,
     c2_n_samples: int = 3,
     c2_tie_break_seed: str | int | None = None,
     c2_sample_temperature: float = 0.7,
@@ -570,6 +572,7 @@ def run_adaptive_episode(
                     vc_retry_on_parse_failure=vc_retry_on_parse_failure,
                     c1_cot_temperature=c1_cot_temperature,
                     c1_cot_max_tokens=c1_cot_max_tokens,
+                    c2_cot_max_tokens=c2_cot_max_tokens,
                 ),
             )
 
@@ -862,9 +865,10 @@ def run_adaptive_episode(
     finally:
         if trace_hook is not None:
             try:
-                succ = bool(getattr(env, "task_success", False)) or bool(
-                    getattr(env, "done", False)
-                )
+                if hasattr(env, "task_success"):
+                    succ = bool(getattr(env, "task_success"))
+                else:
+                    succ = bool(getattr(env, "done", False))
             except Exception:
                 succ = False
             final_tags: list[str] = []

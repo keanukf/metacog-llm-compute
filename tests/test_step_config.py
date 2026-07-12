@@ -128,5 +128,19 @@ def test_c1_and_c2_knobs_from_yaml() -> None:
     k = resolve_step_fn_kwargs(cfg, "tower_of_hanoi")
     assert k["c1_cot_temperature"] == 0.7
     assert k["c1_cot_max_tokens"] == 222
+    assert k["c2_cot_max_tokens"] == 222
     assert k["c2_n_samples"] == 5
     assert k["c2_sample_temperature"] == 0.65
+
+
+def test_c2_cot_max_tokens_from_c2_section() -> None:
+    cfg = {
+        "inference": {"max_tokens": 128, "temperature": 0.2},
+        "vc": {"mode": "inline"},
+        "domain_prompts": {"tower_of_hanoi": {"prefix": "x"}},
+        "c1": {"cot_max_tokens": 222},
+        "c2": {"cot_max_tokens": 888, "n_samples": 3},
+    }
+    k = resolve_step_fn_kwargs(cfg, "tower_of_hanoi")
+    assert k["c2_cot_max_tokens"] == 888
+    assert k["c1_cot_max_tokens"] == 222

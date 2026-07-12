@@ -67,6 +67,7 @@ def c2_step_core(
     action_max_tokens: int | None,
     action_temperature: float | None,
     action_stop: list[str] | None,
+    c2_cot_max_tokens: int | None,
     followup_max_tokens: int,
     followup_temperature: float,
     vc_followup_logprobs: bool,
@@ -79,7 +80,15 @@ def c2_step_core(
     prompt = (
         f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
     )
-    gen_kw = _action_generate_kwargs(action_max_tokens, float(sample_temperature), action_stop)
+    act_tok = int(action_max_tokens) if action_max_tokens is not None else 32
+    sample_max_tokens = (
+        int(c2_cot_max_tokens) if c2_cot_max_tokens is not None else max(128, act_tok * 2)
+    )
+    if sample_max_tokens <= 0:
+        sample_max_tokens = max(128, act_tok * 2)
+    # Stop sequences truncate native thinking; budget must cover think + action line.
+    gen_kw = _action_generate_kwargs(action_max_tokens, float(sample_temperature), None)
+    gen_kw["max_tokens"] = sample_max_tokens
     # Self-consistency requires thinking + diversity temperature; TLE uses raw_logprobs (T=1.0 scale).
     gen_kw["enable_thinking"] = True
     samples: list[dict[str, Any]] = []
@@ -235,6 +244,7 @@ def c2_step_core(
         "n_samples": int(n),
         "enable_thinking": True,
         "sample_temperature": float(sample_temperature),
+        "sample_max_tokens": int(sample_max_tokens),
         "winner_index": int(winner_index) if winner_index is not None else None,
         "winning_vote_key": winning_key,
         "tie_broken": bool(tie_broken),
@@ -278,6 +288,7 @@ def c2_step(
         action_max_tokens=None,
         action_temperature=None,
         action_stop=None,
+        c2_cot_max_tokens=None,
         followup_max_tokens=4,
         followup_temperature=0.0,
         vc_followup_logprobs=False,

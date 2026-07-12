@@ -95,6 +95,50 @@ def test_thinking_flags_c1_reason_only():
     assert m.seen == [True]
 
 
+def test_c1_thinking_call_ignores_action_stop():
+    class _M:
+        def __init__(self) -> None:
+            self.kwargs: list[dict] = []
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.kwargs.append(dict(kwargs))
+            return "<think>x</think>\ngo east", ([{"logprob": -0.1}] * 5 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn("C1", vc_mode="none", action_stop=["\n"], c1_cot_max_tokens=512)
+    step("obs", [], m)
+    assert m.kwargs[0].get("stop") is None
+    assert m.kwargs[0]["max_tokens"] == 512
+    assert m.kwargs[0]["enable_thinking"] is True
+
+
+def test_c2_sample_uses_cot_max_tokens_not_action_cap():
+    class _M:
+        def __init__(self) -> None:
+            self.kwargs: list[dict] = []
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.kwargs.append(dict(kwargs))
+            return "<think>plan</think>\ngo north", ([{"logprob": -0.1}] * 4 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn(
+        "C2",
+        vc_mode="none",
+        action_max_tokens=32,
+        action_stop=["\n"],
+        c2_cot_max_tokens=1024,
+        c2_n_samples=2,
+        c2_tie_break_seed="seed",
+    )
+    step("obs", [], m)
+    assert len(m.kwargs) == 2
+    for kw in m.kwargs:
+        assert kw.get("stop") is None
+        assert kw["max_tokens"] == 1024
+        assert kw["enable_thinking"] is True
+
+
 def test_c1_single_call_commits_post_think_action():
     class _M:
         def __init__(self) -> None:
