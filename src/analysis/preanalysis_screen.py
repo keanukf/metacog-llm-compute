@@ -132,17 +132,17 @@ def write_preanalysis_report(
         vc_a = d.get("vc_auroc")
         tle_ok = d.get("tle_auroc_interpretable")
         vc_ok = d.get("vc_auroc_interpretable")
-        tle_cell = f"{tle_a:.3f if isinstance(tle_a, (int, float)) else 'n/a'}" + (
+        tle_cell = (f"{tle_a:.3f}" if isinstance(tle_a, (int, float)) else "n/a") + (
             "" if tle_ok else " (smoke)"
         )
-        vc_cell = f"{vc_a:.3f if isinstance(vc_a, (int, float)) else 'n/a'}" + (
+        vc_cell = (f"{vc_a:.3f}" if isinstance(vc_a, (int, float)) else "n/a") + (
             "" if vc_ok else " (smoke)"
         )
+        miss_fmt = f"{miss:.3f}" if miss is not None else "n/a"
+        rate_fmt = f"{rate:.3f}" if rate is not None else "n/a"
         md_lines.append(
             f"| {dom} | {d.get('n_steps')} | {d.get('n_clusters')} | "
-            f"{miss:.3f if miss is not None else 'n/a'} | "
-            f"{rate:.3f if rate is not None else 'n/a'} | "
-            f"{tle_cell} | {vc_cell} |\n"
+            f"{miss_fmt} | {rate_fmt} | {tle_cell} | {vc_cell} |\n"
         )
     md_path = out / "preanalysis_screen.md"
     md_path.write_text("".join(md_lines), encoding="utf-8")
@@ -178,10 +178,9 @@ def main(argv: list[str] | None = None) -> int:
         vc_a = d.get("vc_auroc")
         tle_tag = "" if d.get("tle_auroc_interpretable") else " (smoke-only)"
         vc_tag = "" if d.get("vc_auroc_interpretable") else " (smoke-only)"
-        print(
-            f"  {dom}: tle_auroc={tle_a:.3f if isinstance(tle_a, (int, float)) else 'n/a'}{tle_tag} "
-            f"vc_auroc={vc_a:.3f if isinstance(vc_a, (int, float)) else 'n/a'}{vc_tag}"
-        )
+        tle_str = f"{tle_a:.3f}" if isinstance(tle_a, (int, float)) else "n/a"
+        vc_str = f"{vc_a:.3f}" if isinstance(vc_a, (int, float)) else "n/a"
+        print(f"  {dom}: tle_auroc={tle_str}{tle_tag} vc_auroc={vc_str}{vc_tag}")
     return 0
 
 
