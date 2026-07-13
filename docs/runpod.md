@@ -391,12 +391,20 @@ vllm serve Qwen/Qwen3-8B \
   --max-model-len 16384 \
   --logprobs-mode raw_logprobs \
   --attention-backend TRITON_ATTN \
+  --gpu-memory-utilization 0.92 \
+  --max-num-seqs 32 \
+  --max-num-batched-tokens 8192 \
+  --enable-prefix-caching \
   --port 8000
 ```
 
+Tune `--max-num-seqs` to at least your chosen `execution.max_concurrent_episodes` (after throughput sweep). Raise `--gpu-memory-utilization` toward `0.95` only if the pod stays stable (watch for KV preemption/OOM). **Freeze** attention backend and prefix-caching settings before `verify_backend_parity.py` — changing them later requires re-running parity.
+
 **5090 / Blackwell workaround:** On some RunPod images the default `FLASH_ATTN` (FlashAttention-2) path fails at engine init with `cudaErrorUnsupportedPtxVersion` (`the provided PTX was compiled with an unsupported toolchain`). The model loads fine; the crash is in the FA2 kernels. Use `--attention-backend TRITON_ATTN` (or `FLASHINFER`) instead. Re-verify logprobs after switching backends.
 
-Set in YAML (`execution.server_url: "http://127.0.0.1:8000/v1"`) or export before runners. C2 `generate_many` is **sequential** — effective concurrent sequences ≈ `execution.max_concurrent_episodes`, not ×3.
+Set in YAML (`execution.server_url: "http://127.0.0.1:8000/v1"`) or export before runners. The Python client (`ServerBackend`) must **not** serialize HTTP POSTs — parallel episode threads rely on vLLM continuous batching. C2 uses one request with `n=3` samples when the server supports it.
+
+Optional: `execution.server_timeout_s` in YAML (default 600s) for long C2 thinking generations under load.
 
 ### Validation regime: plumbing smoke vs TLE invariance under load
 
@@ -436,9 +444,9 @@ bash scripts/instrument_validation_preflight.sh
 python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --real \
   --output-dir data/results/instrument_validation/smoke_parallel
 
-# 2) Throughput sweep — choose N (try 1,3,6,8; extend if headroom)
+# 2) Throughput sweep — choose N (try 8,16,24,32 after server concurrency fix; extend if headroom)
 python scripts/measure_concurrent_throughput.py --real \
-  --candidates 1,3,6,8 \
+  --candidates 8,16,24,32 \
   --output data/results/instrument_validation/throughput_sweep.json
 # Set execution.max_concurrent_episodes in experiment_core.yaml + dev configs to chosen N
 

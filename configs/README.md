@@ -42,7 +42,7 @@ YAML configs live here. **Do not commit secrets** — use environment variables 
 | `frozen_max_concurrent_episodes` | — | Freeze after TLE invariance validation; must match `max_concurrent_episodes` under `--real` |
 | `frozen_tle_invariance_eps` | — | Paired with frozen N in `run_metadata.json` |
 
-**Backpressure (RTX 5090, 32 GB):** effective concurrent sequences ≈ `max_concurrent_episodes` (C2 uses sequential `generate_many`, not ×3 fan-out). Size N so `N × KV footprint at max_model_len` fits KV budget.
+**Backpressure (RTX 5090, 32 GB):** effective concurrent sequences ≈ `max_concurrent_episodes` when `ServerBackend` posts are not serialized. C2 issues one `n=3` request per step when the server supports batched sampling. Size N so `N × KV footprint at max_model_len` fits KV budget; use throughput sweep + vLLM preemption logs to pick N.
 
 See [`docs/runpod.md`](../docs/runpod.md) for plumbing smoke vs TLE invariance validation.
 

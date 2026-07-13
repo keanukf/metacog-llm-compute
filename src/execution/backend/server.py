@@ -17,12 +17,18 @@ _THINKING_MARKERS = (
     re.compile(r"</think>", re.IGNORECASE),
 )
 
+# C2 thinking samples can run long; allow headroom under real server batching.
+_DEFAULT_TIMEOUT_S = 600.0
+
 
 class ServerBackend:
     """
     Sync HTTP client for ``vllm serve`` ``/v1/chat/completions``.
 
     Server applies chat template; client sends ``messages`` only.
+
+    ``httpx.Client`` is thread-safe; do not serialize POSTs — parallel episode
+    threads must reach vLLM concurrently for continuous batching.
     """
 
     def __init__(
@@ -31,7 +37,7 @@ class ServerBackend:
         server_url: str,
         model_name: str,
         top_logprobs: int = 20,
-        timeout_s: float = 300.0,
+        timeout_s: float = _DEFAULT_TIMEOUT_S,
     ) -> None:
         base = server_url.rstrip("/")
         if base.endswith("/v1"):
@@ -41,7 +47,7 @@ class ServerBackend:
         self._model_name = model_name
         self._top_logprobs = max(1, int(top_logprobs))
         self._timeout_s = float(timeout_s)
-        self._lock = threading.Lock()
+        self._close_lock = threading.Lock()
         self._client = httpx.Client(timeout=self._timeout_s)
 
     @property
@@ -49,12 +55,11 @@ class ServerBackend:
         return self._model_name
 
     def close(self) -> None:
-        with self._lock:
+        with self._close_lock:
             self._client.close()
 
     def _post_chat(self, payload: dict[str, Any]) -> dict[str, Any]:
-        with self._lock:
-            resp = self._client.post(self._url, json=payload)
+        resp = self._client.post(self._url, json=payload)
         if resp.status_code >= 400:
             raise BackendError(f"vLLM server HTTP {resp.status_code}: {resp.text[:500]}")
         data = resp.json()
@@ -72,6 +77,7 @@ class ServerBackend:
         enable_thinking: bool | None,
         stop: Any,
         extra: dict[str, Any],
+        n: int | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self._model_name,
@@ -79,6 +85,8 @@ class ServerBackend:
             "max_tokens": int(max_tokens),
             "temperature": float(temperature),
         }
+        if n is not None and int(n) > 1:
+            payload["n"] = int(n)
         if logprobs:
             payload["logprobs"] = True
             payload["top_logprobs"] = self._top_logprobs
@@ -94,6 +102,18 @@ class ServerBackend:
                 payload[key] = val
         return payload
 
+    def _parse_choice(
+        self,
+        choice: dict[str, Any],
+        *,
+        logprobs: bool,
+    ) -> tuple[str, list[dict[str, Any]] | None]:
+        message = choice.get("message") or {}
+        text = str(message.get("content") or "")
+        raw_lp = choice.get("logprobs")
+        lp_list = normalize_chat_completion_logprobs(raw_lp) if logprobs else None
+        return text, lp_list
+
     def generate(
         self,
         prompt: str,
@@ -108,7 +128,7 @@ class ServerBackend:
         extra = {
             k: v
             for k, v in kwargs.items()
-            if k not in ("prompt", "logprobs", "max_tokens", "temperature")
+            if k not in ("prompt", "logprobs", "max_tokens", "temperature", "n")
         }
         payload = self._build_payload(
             prompt,
@@ -121,11 +141,36 @@ class ServerBackend:
         )
         data = self._post_chat(payload)
         choice = (data.get("choices") or [{}])[0]
-        message = choice.get("message") or {}
-        text = str(message.get("content") or "")
-        raw_lp = choice.get("logprobs")
-        lp_list = normalize_chat_completion_logprobs(raw_lp) if logprobs else None
-        return text, lp_list
+        return self._parse_choice(choice, logprobs=logprobs)
+
+    def _generate_many_batched(
+        self,
+        prompt: str,
+        *,
+        n: int,
+        logprobs: bool,
+        max_tokens: int,
+        temperature: float,
+        enable_thinking: bool | None,
+        stop: Any,
+        extra: dict[str, Any],
+    ) -> list[tuple[str, list[dict[str, Any]] | None]]:
+        payload = self._build_payload(
+            prompt,
+            logprobs=logprobs,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            enable_thinking=enable_thinking,
+            stop=stop,
+            extra=extra,
+            n=n,
+        )
+        data = self._post_chat(payload)
+        choices = data.get("choices") or []
+        if not choices:
+            return []
+        ordered = sorted(choices, key=lambda c: int(c.get("index", 0)))
+        return [self._parse_choice(c, logprobs=logprobs) for c in ordered]
 
     def generate_many(
         self,
@@ -138,18 +183,52 @@ class ServerBackend:
         **kwargs: Any,
     ) -> list[tuple[str, list[dict[str, Any]] | None]]:
         nn = max(1, int(n))
-        out: list[tuple[str, list[dict[str, Any]] | None]] = []
-        for _ in range(nn):
-            out.append(
+        enable_thinking = kwargs.pop("enable_thinking", None)
+        stop = kwargs.pop("stop", None)
+        extra = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ("prompt", "logprobs", "max_tokens", "temperature", "n")
+        }
+        think = enable_thinking if isinstance(enable_thinking, bool) else None
+        if nn == 1:
+            return [
                 self.generate(
                     prompt,
                     logprobs=logprobs,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    **kwargs,
+                    enable_thinking=think,
+                    stop=stop,
+                    **extra,
                 )
+            ]
+        try:
+            return self._generate_many_batched(
+                prompt,
+                n=nn,
+                logprobs=logprobs,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                enable_thinking=think,
+                stop=stop,
+                extra=extra,
             )
-        return out
+        except BackendError:
+            out: list[tuple[str, list[dict[str, Any]] | None]] = []
+            for _ in range(nn):
+                out.append(
+                    self.generate(
+                        prompt,
+                        logprobs=logprobs,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        enable_thinking=think,
+                        stop=stop,
+                        **extra,
+                    )
+                )
+            return out
 
 
 def response_has_thinking_block(text: str) -> bool:
@@ -199,8 +278,11 @@ def create_server_backend_from_config(config: dict[str, Any]) -> ServerBackend:
         raise BackendError("model.name is required for ServerBackend")
     server_url = str(exec_cfg.get("server_url", "http://127.0.0.1:8000/v1"))
     top_k = resolve_top_logprobs(inf)
+    timeout_raw = exec_cfg.get("server_timeout_s")
+    timeout_s = float(timeout_raw) if timeout_raw is not None else _DEFAULT_TIMEOUT_S
     return ServerBackend(
         server_url=server_url,
         model_name=model_name,
         top_logprobs=top_k,
+        timeout_s=timeout_s,
     )
