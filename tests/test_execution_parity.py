@@ -85,3 +85,20 @@ def test_batch_invariance_fails_when_dtle_exceeds_eps():
     )
     assert report["passed"] is False
     assert report["max_dtle"] > 0.001
+
+
+def test_non_gating_probe_drift_does_not_fail_gate():
+    """A drifting probe flagged gating=false stays out of the pass criterion."""
+    _DriftBackend._calls = 0
+    probes = [{"id": "diag", "prompt": "go north", "gating": False}]
+    report = run_batch_invariance_probe(
+        _DriftBackend(),
+        probes,
+        max_concurrent_episodes=2,
+        eps=0.001,
+        max_tokens=8,
+    )
+    assert report["passed"] is True
+    assert report["max_dtle"] == 0.0
+    assert report["diagnostic_max_dtle"] > 0.001
+    assert report["gating_probe_ids"] == []

@@ -18,7 +18,7 @@ inference:
 # Parallel episode execution (Phase 1/2 with --real use ServerBackend against vllm serve).
 execution:
   # Set on Pod after measure_concurrent_throughput.py; batch parity must use this same N.
-  max_concurrent_episodes: 1
+  max_concurrent_episodes: 32
   backend_mode: server
   server_url: "http://127.0.0.1:8000/v1"
   # Optional freeze after TLE invariance validation (written to run_metadata.frozen_execution_params):

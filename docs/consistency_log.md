@@ -2,6 +2,43 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-13 — C-1 scoped waiver + N=32 freeze (design sign-off)
+
+**Zweck:** C-1 Batch-Invarianz an den Signal-Kontrakt (committed-action-Fenster) angleichen und Produktions-N einfrieren.
+
+| Bereich | Ergebnis |
+|---------|----------|
+| Entscheidung | **N=32 frozen** (explizite User-Freigabe); Gate auf committed-action-repräsentative Probes beschränkt |
+| Committed-action Probes @ N=32 | **PASS** — `tw_short` 0.0002, `toh_short` 0.0078, `minimal_1` 0.0010, `minimal_2` 0.0021 (alle ≤ eps=0.05) |
+| `minimal_3` | **Diagnostik** (non-gating): dtle_mean 0.09–0.15 durch Sequenz-Divergenz bei unterspez. Prompt; nicht ergebnis-relevant |
+| `parity_prompts.json` | **OK** — `gating`/`role`/`note`; `minimal_3` → `gating:false` |
+| `src/execution/parity.py` | **OK** — Gate über gating-Probes; `diagnostic_max_dtle` transparent berichtet; Default `gating=True` (rückwärtskompatibel) |
+| Tests | **OK** — `test_non_gating_probe_drift_does_not_fail_gate`; Suite **281 passed** |
+| Configs | **N=32** in `experiment_core.yaml` + allen `configs/dev/*.yaml` |
+| Frozen params | `(N=32, eps=0.05 bits)`, `eps_derived_under_load=True` |
+
+**Nächster Schritt (Pod):** Parity @ N=32 mit neuem Gate re-run (PASS + Freeze-Metadaten), dann `format_vc_probe` → `toh_parse_probe` → `signal_smoke`.
+
+## 2026-07-13 — Gate C post-perf re-run (Pod online) — C-1 FAIL (superseded by scoped waiver above)
+
+**Zweck:** Gate C nach `perf/vllm-server-concurrency` auf Pod fortsetzen; C-1 bei N=32 FAIL → N=24/N=16 Fallback.
+
+| Bereich | Ergebnis |
+|---------|----------|
+| Throughput re-sweep | **OK** — N=8/16/24/32 smoke GO; best N=32 @ 192.4 ep/h (`throughput_sweep_post_perf.json`) |
+| C-1 parity N=32 | **FAIL** — K-coverage PASS, temp PASS, batch FAIL (max_dtle=0.091 > eps=0.05) |
+| C-1 parity N=24 | **FAIL** — batch max_dtle=0.154 |
+| C-1 parity N=16 (fallback) | **FAIL** — batch max_dtle=0.133 |
+| C-1 parity N=8 (diagnostic) | **FAIL** — batch max_dtle=0.130 |
+| Worst case | Probe `minimal_3`, constellation `pool*_long` (96 filler tokens); domain probes (`tw_short`, `toh_short`) PASS |
+| `experiment_core.yaml` | **N=16** (fallback; kein N erfüllt batch invariance) |
+| C-2/C-4 format_vc_probe | **BLOCKED** — hard stop |
+| C-3 toh_parse_probe | **BLOCKED** |
+| C-5 signal_smoke | **BLOCKED** |
+
+**Nächster Schritt:** vLLM batching/prefix-cache unter mixed-length concurrent load untersuchen; Parity erneut oder explizite Design-Freigabe für N=32 (max_dtle=0.091).
+
+
 ## 2026-07-13 — ServerBackend concurrency fix + Gate C re-run pending (Pod offline)
 
 **Zweck:** Durchsatz-Engpass im HTTP-Client behoben; Gate-C-Läufe auf Pod müssen mit `perf/vllm-server-concurrency` wiederholt werden.

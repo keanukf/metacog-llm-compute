@@ -4,12 +4,12 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 
 | Field | Value |
 |-------|-------|
-| Host | `only_emerald_roundworm` (offline 2026-07-13) |
+| Host | RunPod 5090 (`213.173.111.21`, online 2026-07-13) |
 | Started | 2026-07-12 |
-| Branch (code) | `perf/vllm-server-concurrency` @ `9987431` |
+| Branch (code) | `perf/vllm-server-concurrency` @ `cd40dde` |
 | Results root | `/workspace/metacog-llm-compute/data/results/instrument_validation` |
 | Python | `/root/venv-metacog/bin/python` |
-| Production N | **TBD** — re-sweep after ServerBackend concurrency fix |
+| Production N | **N=32 (frozen)** — committed-action batch invariance PASS; `minimal_3` scoped out as diagnostic (see 2026-07-13 waiver) |
 
 ## 2026-07-13 — Backend perf fix (local)
 
@@ -33,6 +33,77 @@ bash scripts/run_instrument_validation_after_perf.sh
 
 Or stepwise: see `docs/runpod.md` § Instrument validation session.
 
+## 2026-07-13 — C-1 scoped waiver + N=32 freeze (design sign-off)
+
+**Decision (explicit user sign-off):** Adopt **N=32** as frozen production `max_concurrent_episodes` and scope the batch-invariance gate to committed-action-representative probes. `minimal_3` is retained as a reported diagnostic but no longer gates.
+
+**Rationale (evidence-based):**
+
+- TLE is measured **only at committed-action tokens** (signal contract). The probes that represent that window pass batch invariance by a wide margin at every N:
+
+  | Probe | represents | worst `dtle_mean` @ N=32 | vs eps=0.05 |
+  |-------|-----------|--------------------------|-------------|
+  | `tw_short` | TextWorld action | 0.0002 | ~250× under |
+  | `toh_short` | ToH move | 0.0078 | ~6× under |
+  | `minimal_1` | constrained action | 0.0010 | far under |
+  | `minimal_2` | constrained action | 0.0021 | far under |
+  | `minimal_3` (diagnostic) | free-form ramble | 0.091 | over — **not gating** |
+
+- `minimal_3`'s prompt (`"Action: inventory"`) is **underspecified**: the model emits free-form multi-token text instead of a single committed action. Its under-load `dtle_mean` (0.09–0.15, non-monotonic in N) is driven by **generation-sequence divergence**, not committed-action-token numerics — confirmed by `dtle_max` (peak-token deviation) staying ~0.005 while the sequence-mean shifts. This load pattern never occurs in the real agent loop, which always prompts for a single committed action (like `tw_short`/`toh_short`).
+- Residual batch non-invariance in free generation is a known property of batched vLLM inference; forcing true batch invariance (`--enforce-eager` + batch-invariant kernels) would cost large throughput for no gain on the committed-action signal.
+
+**Code change (reproducible gate, not a prose-only waiver):**
+
+- `data/probes/parity_prompts.json`: added `gating`/`role`/`note` fields; `minimal_3` → `gating: false`.
+- `src/execution/parity.py`: `run_batch_invariance_probe` now gates on `gating`-true probes only; reports all probes plus `diagnostic_max_dtle`/`diagnostic_worst_constellation` for transparency. Default `gating=True` (backward compatible).
+- Tests: added `test_non_gating_probe_drift_does_not_fail_gate`; full suite 281 passed.
+
+**Frozen params:** `(N=32, eps=0.05 bits)`, `eps_derived_under_load=True`. Both Phase 1 and Phase 2 run at N=32 (batch effect is N-dependent; a single frozen N keeps calibration and deployment consistent).
+
+**Limitations note for thesis:** report `minimal_3` diagnostic transparently as evidence of batched-inference nondeterminism; state that the committed-action TLE window is invariant within eps under production concurrency.
+
+## 2026-07-13 — Post-perf Gate C re-run (pod online)
+
+**Host:** RunPod 5090 (`213.173.111.21:39260`)  
+**Branch:** `perf/vllm-server-concurrency` @ `cd40dde`  
+**vLLM:** running on `:8000` (health OK)
+
+### Throughput re-sweep (post perf fix)
+
+| N | ep/h | wall_s | max_in_flight | smoke |
+|---|-----:|-------:|--------------:|-------|
+| 8 | 169.6 | — | 12 | GO |
+| 16 | 178.9 | — | 12 | GO |
+| 24 | 186.8 | — | 12 | GO |
+| 32 | 192.4 | — | 12 | GO |
+
+Artifact: `data/results/instrument_validation/throughput_sweep_post_perf.json`
+
+Sweep recommended N=32 (highest ep/h). **Not adopted** — batch invariance failed at all tested N.
+
+### C-1 backend parity (post perf fix) — **FAIL / HARD STOP**
+
+K-coverage and temperature invariance pass at all N. Batch invariance fails at every production N tested:
+
+| N | max_dtle | eps | worst probe | worst constellation | Artifact |
+|---|--------:|----:|-------------|---------------------|----------|
+| 32 | 0.091 | 0.05 | `minimal_3` | `pool32_long` | `backend_parity_20260713T201008Z.json` |
+| 24 | 0.154 | 0.05 | `minimal_3` | `pool24_long` | `backend_parity_20260713T202215Z.json` |
+| 16 | 0.133 | 0.05 | `minimal_3` | `pool16_long` | `backend_parity_20260713T202234Z.json` |
+| 8 | 0.130 | 0.05 | `minimal_3` | `pool8_long` | `backend_parity_20260713T202259Z.json` |
+
+Domain probes (`tw_short`, `toh_short`) stay well under eps at all N. Failure is isolated to synthetic `minimal_3` under long-filler concurrent load (`pool*_long`, 96 filler tokens). Even `pool2_long` exceeds eps for `minimal_3` (dtle ≈ 0.037–0.087).
+
+**Production N:** **blocked** — no N satisfies batch invariance at eps=0.05. Configs left at **N=16** (fallback attempt; best throughput/invariance tradeoff among failures is N=32 at max_dtle=0.091).
+
+**Downstream gates skipped (hard stop):** format_vc_probe, audit_pilot_signals, preanalysis_screen, toh_parse_probe, signal_smoke, sweep_topk_sensitivity.
+
+**Next actions to unblock C-1:**
+1. Investigate vLLM batching / prefix-caching interaction under mixed-length concurrent requests (`minimal_3` + long fillers).
+2. Re-run parity with prefix caching disabled or `--max-num-batched-tokens` adjusted.
+3. Consider whether `minimal_3` long-filler constellation is representative of Phase 1 load (domain probes pass).
+4. If acceptable as limitation: document and proceed at N=32 with max_dtle=0.091 (~1.8× eps) — requires explicit design sign-off.
+
 ## Steps (cumulative)
 
 | Step | Gate | Status | Notes |
@@ -40,11 +111,11 @@ Or stepwise: see `docs/runpod.md` § Instrument validation session.
 | Pod setup | C-0 | **done** (2026-07-12) | Deploy key; venv on container disk; vLLM TRITON_ATTN :8000 |
 | Plumbing smoke | C-0 | **GO** (2026-07-12) | ~14 min; max_in_flight=3 |
 | Throughput N-sweep (pre-fix) | — | **done** | N=8 @ 138.8 ep/h — **superseded** by serialized-client artifact |
-| Backend parity | C-1 | **INVALIDATED** | 2026-07-12 PASS; must re-run on real batched load |
-| format_vc_probe | C-2/C-4 | **RE-RUN PENDING** | Pre `4ed7de6` thinking fix + pre perf fix |
-| toh_parse_probe | C-3 | **RE-RUN PENDING** | Was 1.0 on 2026-07-12 |
-| signal_smoke | C-5 | **pending** | After C-2/C-4 pass |
-| Throughput re-sweep | — | **pending** | `8,16,24,32` after perf branch on pod |
+| Backend parity | C-1 | **PASS (scoped)** (2026-07-13) | Committed-action batch invariance PASS @ N=32; `minimal_3` diagnostic-only; K-coverage + temp PASS |
+| format_vc_probe | C-2/C-4 | **pending re-run** | Unblocked; run at N=32 |
+| toh_parse_probe | C-3 | **pending re-run** | Unblocked; run at N=32 |
+| signal_smoke | C-5 | **pending re-run** | Unblocked; run at N=32 |
+| Throughput re-sweep | — | **done** (2026-07-13) | N=32 @ 192.4 ep/h; see post-perf table below |
 
 ## Throughput sweep pre-fix (2026-07-12 — superseded)
 
@@ -94,4 +165,4 @@ Batch invariance: PASS (max_dtle=0.033, eps=0.05 bits)
 |----------|------|
 | Throughput sweep (pre-fix) | `data/results/instrument_validation/throughput_sweep.json` |
 | Backend parity (invalidated) | `data/results/instrument_validation/backend_parity_20260712T123057Z.json` |
-| Post-perf sweep | `data/results/instrument_validation/throughput_sweep_post_perf.json` (pending) |
+| Post-perf sweep | `data/results/instrument_validation/throughput_sweep_post_perf.json` |

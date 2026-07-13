@@ -16,7 +16,7 @@ inference:
   top_logprobs: 20
 
 execution:
-  max_concurrent_episodes: 3
+  max_concurrent_episodes: 32
   backend_mode: server
   server_url: "http://127.0.0.1:8000/v1"
 
