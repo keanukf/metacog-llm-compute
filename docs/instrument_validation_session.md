@@ -6,10 +6,26 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 |-------|-------|
 | Host | RunPod 5090 (`213.173.111.21`, online 2026-07-13) |
 | Started | 2026-07-12 |
-| Branch (code) | `perf/vllm-server-concurrency` @ `cd40dde` |
+| Branch (code) | `perf/vllm-server-concurrency` @ `f725139` |
 | Results root | `/workspace/metacog-llm-compute/data/results/instrument_validation` |
 | Python | `/root/venv-metacog/bin/python` |
-| Production N | **N=32 (frozen)** — committed-action batch invariance PASS; `minimal_3` scoped out as diagnostic (see 2026-07-13 waiver) |
+| Production N | **N=32 (frozen)** — C-1 PASS; downstream gates run 2026-07-13 night |
+
+## 2026-07-13 — Gate C downstream complete @ N=32 (pod)
+
+**VLLM:** OK | **signal_smoke throughput:** ~132 ep/h
+
+| Gate | Result | Notes |
+|------|--------|-------|
+| C-1 parity | **PASS** | `backend_parity_20260713T205633Z.json`; gating max_dtle=0.008 |
+| C-2/C-4 format_vc_probe | **FAIL vs 90%** | TW C1 clean-action 73%; VC 63%; thinking trunc before `</think>` |
+| C-3 toh_parse_probe | **PASS** | parse_rate=1.0 |
+| C-5 signal_smoke | **PASS (run)** | 72 ep, 0 errors; AUROC interpretable; TW tle=0.71, ToH tle=0.21 |
+| C-6 topk sweep | **blocked** | sidecar schema drift — fix in progress locally |
+
+**Open:** C-2/C-4 needs `cot_max_tokens` decision; re-run freeze + topk after local fixes.
+
+**Artifacts:** `phase1_20260713_205837`, `phase1_20260713_210804`, `phase1_20260713_211029`
 
 ## 2026-07-13 — Backend perf fix (local)
 
@@ -112,9 +128,10 @@ Domain probes (`tw_short`, `toh_short`) stay well under eps at all N. Failure is
 | Plumbing smoke | C-0 | **GO** (2026-07-12) | ~14 min; max_in_flight=3 |
 | Throughput N-sweep (pre-fix) | — | **done** | N=8 @ 138.8 ep/h — **superseded** by serialized-client artifact |
 | Backend parity | C-1 | **PASS (scoped)** (2026-07-13) | Committed-action batch invariance PASS @ N=32; `minimal_3` diagnostic-only; K-coverage + temp PASS |
-| format_vc_probe | C-2/C-4 | **pending re-run** | Unblocked; run at N=32 |
-| toh_parse_probe | C-3 | **pending re-run** | Unblocked; run at N=32 |
-| signal_smoke | C-5 | **pending re-run** | Unblocked; run at N=32 |
+| format_vc_probe | C-2/C-4 | **FAIL vs 90%** | TW C1 clean 73%, VC 63%; thinking budget trunc |
+| toh_parse_probe | C-3 | **PASS** | parse_rate=1.0 |
+| signal_smoke | C-5 | **PASS (run)** | 72 ep; AUROC interpretable; ~132 ep/h |
+| topk sweep | C-6 | **fix pending** | sidecar schema drift in sweep script |
 | Throughput re-sweep | — | **done** (2026-07-13) | N=32 @ 192.4 ep/h; see post-perf table below |
 
 ## Throughput sweep pre-fix (2026-07-12 — superseded)

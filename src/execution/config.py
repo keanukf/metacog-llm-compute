@@ -87,13 +87,14 @@ def write_frozen_execution_params(
     checkpoint_dir: str | Path,
     params: dict[str, Any],
 ) -> None:
-    """Merge ``frozen_execution_params`` into ``run_metadata.json`` if present."""
+    """Merge ``frozen_execution_params`` into ``run_metadata.json`` (create if absent)."""
     checkpoint_dir = Path(checkpoint_dir)
     meta_path = checkpoint_dir / "run_metadata.json"
-    if not meta_path.is_file():
-        return
-    with open(meta_path, encoding="utf-8") as f:
-        meta = json.load(f)
+    if meta_path.is_file():
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+    else:
+        meta = {}
     meta["frozen_execution_params"] = dict(params)
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)

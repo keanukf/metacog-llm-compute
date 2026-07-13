@@ -28,6 +28,40 @@ def _tle_for_k(top_logprobs: list[dict], k: int) -> float | None:
         return None
 
 
+def _action_top_logprobs(payload: object, step_index: int | None) -> list[dict] | None:
+    """First committed-action token top_logprobs for an env step (sidecar v1/v2)."""
+    if isinstance(payload, list):
+        token_rows = [r for r in payload if isinstance(r, dict)]
+    elif isinstance(payload, dict):
+        steps = payload.get("steps")
+        if not isinstance(steps, list):
+            return None
+        step_entry = None
+        if step_index is not None:
+            for step in steps:
+                if isinstance(step, dict) and step.get("step_index") == step_index:
+                    step_entry = step
+                    break
+        if step_entry is None and steps and isinstance(steps[0], dict):
+            step_entry = steps[0]
+        if not isinstance(step_entry, dict):
+            return None
+        token_rows = step_entry.get("logprob_tokens")
+        if not isinstance(token_rows, list) and isinstance(step_entry.get("samples"), list):
+            samples = step_entry["samples"]
+            if samples and isinstance(samples[0], dict):
+                token_rows = samples[0].get("logprob_tokens")
+        if not isinstance(token_rows, list):
+            return None
+        token_rows = [r for r in token_rows if isinstance(r, dict)]
+    else:
+        return None
+    if not token_rows:
+        return None
+    top = token_rows[0].get("top_logprobs")
+    return top if isinstance(top, list) else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Top-K TLE sensitivity sweep")
     parser.add_argument("run_dir", help="Pilot/phase1 run dir with logprob sidecars")
@@ -61,10 +95,9 @@ def main() -> None:
                         label = 1
                     else:
                         continue
-                    # use first action token row heuristic
-                    if not rows:
-                        continue
-                    top = rows[0].get("top_logprobs") if isinstance(rows[0], dict) else None
+                    step_index_raw = sd.get("step_index")
+                    step_index = int(step_index_raw) if step_index_raw is not None else None
+                    top = _action_top_logprobs(rows, step_index)
                     if not isinstance(top, list):
                         continue
                     ent = _tle_for_k(top, k)
