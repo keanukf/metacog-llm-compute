@@ -475,8 +475,16 @@ python scripts/sweep_topk_sensitivity.py "$RUN" --output "$RUN/topk_sensitivity.
 ```
 
 Dev configs: `format_vc_probe.yaml`, `toh_parse_probe.yaml`, `signal_smoke.yaml` (72 episodes, 1 run/condition).
-Track progress in `data/results/instrument_validation/session_manifest.json` (not committed).
+Track progress in `docs/instrument_validation_session.md` (not committed).
 Gate checklist: `blueprints/gate_p1_readiness.md` (Gate C), `docs/consistency_log.md`.
+
+**One-shot after `perf/vllm-server-concurrency` merge on pod:**
+
+```bash
+bash scripts/run_instrument_validation_after_perf.sh
+```
+
+This runs re-sweep → `apply_production_n.py` → parity → format_vc_probe → toh_parse_probe → (optional) signal_smoke.
 
 **Production N:** Do not freeze `max_concurrent_episodes` at a guess (e.g. 3). Sweep first; if Phase 1 later uses a higher N, re-run parity. Running parity at lower N than production limits generalizability — document as limitation if unavoidable.
 

@@ -2,9 +2,25 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
-## 2026-07-12 — Gate C Instrument-Validierung (Phase 0 Code bereit, Pod-Session ausstehend)
+## 2026-07-13 — ServerBackend concurrency fix + Gate C re-run pending (Pod offline)
 
-**Zweck:** Code-Voraussetzungen für Gate C (Instrument-Validierung auf 5090 + parallel vLLM) sind implementiert; Live-Läufe auf RunPod stehen noch aus.
+**Zweck:** Durchsatz-Engpass im HTTP-Client behoben; Gate-C-Läufe auf Pod müssen mit `perf/vllm-server-concurrency` wiederholt werden.
+
+| Bereich | Ergebnis |
+|---------|----------|
+| `ServerBackend` | **OK** — globaler HTTP-Lock entfernt; C2 `n=` Batched Request; Timeout 600s |
+| Testsuite lokal | **OK** — `python -m pytest tests/ -q` → **278 passed** |
+| `docs/runpod.md` | **OK** — vLLM serve Tuning-Flags + aktualisierte Sweep-Kandidaten |
+| `scripts/apply_production_n.py` | **OK** — N aus Sweep-JSON in YAML schreiben |
+| `scripts/run_instrument_validation_after_perf.sh` | **OK** — Pod-Sequenz Sweep → Parity → Probes |
+| C-1 Parity 2026-07-12 | **INVALIDIERT** — lief über serialisierten Client; **Re-run auf Pod** |
+| Throughput / Gate C Pod | **ausstehend** — Pod `only_emerald_roundworm` offline; `bash scripts/run_instrument_validation_after_perf.sh` |
+
+**Nächster Schritt (Pod):** Branch `perf/vllm-server-concurrency` pullen → vLLM mit neuen Flags → `run_instrument_validation_after_perf.sh` oder Schritte in `docs/runpod.md`.
+
+## 2026-07-12 — Gate C Instrument-Validierung (erste Pod-Session, teilweise)
+
+**Zweck:** Erste Live-Läufe auf RunPod 5090; C-0/C-3 teils PASS; C-2/C-4 blockiert; C-1 später invalidiert (siehe 2026-07-13).
 
 | Bereich | Ergebnis |
 |---------|----------|
