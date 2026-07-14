@@ -223,11 +223,11 @@ def main() -> None:
         checkpoint_dir = make_run_subdirectory(checkpoint_base, prefix="phase2")
     config = load_config(config_path)
     lg = config.get("logging") or {}
-    save_logprob_distributions = bool(lg.get("save_logprob_distributions", False))
+    from src.utils.logprob_sidecar import LogprobSidecarConfig
+
+    logprob_sidecar = LogprobSidecarConfig.from_logging_config(lg)
     save_vc_distributions = bool(lg.get("save_vc_distributions", False))
-    logprob_export_format = str(lg.get("logprob_export_format", "json")).lower()
     vc_export_format = str(lg.get("vc_export_format", "json")).lower()
-    logprob_subdir = str(lg.get("logprob_subdir", "logprobs"))
     vc_subdir = str(lg.get("vc_subdir", "vc"))
     from src.utils.trace_debug_view import resolve_step_trace_flags
 
@@ -378,11 +378,9 @@ def main() -> None:
         repo_root=REPO_ROOT,
         max_steps=max_steps,
         model_cfg=model_cfg,
-        save_logprob_distributions=save_logprob_distributions,
+        logprob_sidecar=logprob_sidecar,
         save_vc_distributions=save_vc_distributions,
-        logprob_export_format=logprob_export_format,
         vc_export_format=vc_export_format,
-        logprob_subdir=logprob_subdir,
         vc_subdir=vc_subdir,
         save_step_traces=save_step_traces,
         allow_history_truncation=bool(args.allow_history_truncation),

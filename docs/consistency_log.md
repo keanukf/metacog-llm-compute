@@ -2,6 +2,33 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-14 — Logprob sidecar policy (pre–Gate D)
+
+**Entscheidung (Gate F Run-Hygiene, revidiert):** Kein binäres Sidecar an/aus. Drei Modi via `logging.logprob_sidecar_mode`:
+
+| Modus | Inhalt | Phase 1/2 |
+|-------|--------|-------------|
+| `off` | Keine Sidecars | — |
+| `action_window` | Top-K nur committed-action-Tokens | **Produktion (Default)** |
+| `full` | Volle Completion inkl. Reasoning | Explorative Teilstichprobe |
+
+**Produktion (`experiment_core.yaml`):** `logprob_sidecar_mode: action_window`. **Reasoning-Ausnahme:** `logprob_sidecar_full_instances: {textworld: [1,2,3], tower_of_hanoi: [1,2,3]}` — **Nicht-Holdout** (mod-10 Holdout = 0,10,20,30,40), Kap.-9-Ausblick auf konfirmatorischer Datenbasis.
+
+**Legacy:** `logging.save_logprob_distributions` → **ValueError** (kein stiller Fallback auf `full`).
+
+**Speicher-Hochrechnung (revidiert, aus 105004 ~116 MB/ep Vollsidecar):**
+
+| Modus | MB/ep (Ø) | P1+P2 (4.5k ep) | gzip (×5–10) |
+|-------|----------:|----------------:|-------------:|
+| `off` | ~0.02 (nur Episode-JSON) | ~0.1 GB | — |
+| `action_window` | ~2–3 (≈2–3 % von Voll) | **~10–15 GB** | **~1–3 GB** |
+| `full` (alle Ep.) | ~116 | ~522 GB | — |
+| `full` (Inst. 0, beide Dom., P1+P2 Schätzung) | — | **~few GB** | — |
+
+**Code:** `src/utils/logprob_sidecar.py`; Sidecar-JSON-Feld `sidecar_scope`; Filter via `slice_action_logprob_tokens`.
+
+**Nächster Schritt:** Gate D (nach Commit dieser Policy).
+
 ## 2026-07-14 — Gate C merge + Pod main (`9f8dafd`)
 
 **Merge:** PR #21 → `main` @ `9f8dafd` (22 Commits: Gate C instrument validation, stage-wise ECDF, legacy ECDF hardening, vLLM concurrency).
@@ -27,7 +54,7 @@ Quelle: `105004` — 72 ep, 47m 42s wall. Kurz-Sweep `@8` steps: ~192 ep/h (`thr
 | Episode-JSON only (`save_logprob_distributions: false`, Produktion) | ~0.02 | ~0.03 GB | ~0.06 GB | **~0.1 GB** |
 | Sidecars ON (Smoke/C-6, volle Reasoning-Logprobs) | ~116 | ~174 GB | ~348 GB | **~522 GB** |
 
-C1/C2 dominieren (TW C2 ~154 MB/ep, ToH C2 ~385 MB/ep); C0 ~0.1–0.2 MB/ep. **Entscheidung Gate F Run-Hygiene:** Sidecars **aus** für volle Phase 1/2 (`experiment_core.yaml` Default); K=20 aus C-6-Smoke eingefroren. Sidecars nur für gezielte Probes/Audit — nicht 4.5k Episoden auf Pod-PV.
+C1/C2 dominieren (TW C2 ~154 MB/ep, ToH C2 ~385 MB/ep); C0 ~0.1–0.2 MB/ep. **Entscheidung (superseded):** siehe Eintrag oben — `action_window` + Inst.-0-`full`-Subset.
 
 **Nächster Schritt:** Gate **D** (TW/ToH Difficulty-Sweep + Manifeste), **E** (Analyse-Rehearsal E2E), **F** (Resume-Test, Run-Hygiene, Top-up vs ~48 h GPU).
 

@@ -23,7 +23,7 @@ YAML configs live here. **Do not commit secrets** — use environment variables 
 | `inference` | `top_logprobs` | Top-k width for TLE (vLLM + LM Studio; default 20, EAGER-aligned) |
 | `inference` | `lmstudio_base_url`, `lmstudio_api_key` | LM Studio: `reasoning.effort: none` (off) / `low` (on) on `/v1/responses`; `lmstudio_top_logprobs` is a deprecated alias for `top_logprobs` |
 | `pilot` | `instances`, `compute_stages`, `runs_per_instance` | `compute_stages`: `3` or `C0` or `C0,C2` |
-| `logging` | `save_logprob_distributions`, `save_step_traces`, `logprob_subdir`, `vc_subdir` | Sidecar volume; off for long runs unless needed |
+| `logging` | `logprob_sidecar_mode` (`off` \| `action_window` \| `full`), `logprob_sidecar_full_instances`, `save_step_traces`, `logprob_subdir`, `vc_subdir` | Sidecar volume; production default `action_window` |
 | `tracing` | `langfuse_enabled` | Requires `pip install ".[tracing]"` (`langfuse>=3`) + env keys |
 | `c1` / `c2` | `cot_*` (C1) / `n_samples`, `sample_temperature` (C2) | C1 single native thinking pass (`cot_*` caps); C2 self-consistency (`n_samples`, `sample_temperature`) |
 | `domain_prompts` | `textworld`, `tower_of_hanoi` | Per-domain action prompts, stops, and optional `cot_max_tokens` (overrides `c1.cot_max_tokens`) |

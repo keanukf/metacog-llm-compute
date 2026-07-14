@@ -724,7 +724,9 @@ def run_test5_tower_of_hanoi(
         if result.get("vc_detail_per_step") is not None:
             data["vc_detail_per_step"] = result["vc_detail_per_step"]
         log_episode(ep_toh, data, output_dir)
-        _maybe_write_logprob_artifacts(config, ep_toh, result, output_dir)
+        _maybe_write_logprob_artifacts(
+            config, ep_toh, result, output_dir, domain="tower_of_hanoi", instance=i
+        )
         _maybe_write_vc_artifacts(config, ep_toh, result, output_dir)
         episodes_data.append(data)
         step_corr = result.get("step_correctness") or []
@@ -973,7 +975,9 @@ def run_test4_textworld_e2e(config: dict, output_dir: Path, real_model=None) -> 
                 if result.get("vc_detail_per_step") is not None:
                     data["vc_detail_per_step"] = result["vc_detail_per_step"]
                 log_episode(ep_id, data, output_dir)
-                _maybe_write_logprob_artifacts(config, ep_id, result, output_dir)
+                _maybe_write_logprob_artifacts(
+                    config, ep_id, result, output_dir, domain="textworld", instance=inst
+                )
                 _maybe_write_vc_artifacts(config, ep_id, result, output_dir)
                 episodes_data.append(data)
                 _log_progress()

@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.utils.logprob_sidecar import LogprobSidecarMode
+
 # Omitted from main episode JSON when ``compact=True`` — full detail lives in logprob / VC sidecars.
 _EPISODE_STORAGE_STRIP_KEYS = frozenset({"vc_detail_per_step", "logprob_raw_per_step"})
 _MINIMAL_STEP_KEYS = frozenset(
@@ -357,6 +359,7 @@ def write_logprob_distribution_artifacts(
     *,
     export_format: str = "json",
     logprob_subdir: str = "logprobs",
+    sidecar_scope: LogprobSidecarMode | str | None = None,
 ) -> list[Path]:
     """
     Write optional sidecar files with per-env-step completion token logprob rows (top-k optional).
@@ -402,6 +405,8 @@ def write_logprob_distribution_artifacts(
         ),
         "steps": steps_payload,
     }
+    if sidecar_scope is not None:
+        body["sidecar_scope"] = str(sidecar_scope)
     written: list[Path] = []
     fmt = export_format.strip().lower()
     if fmt in ("json", "both"):

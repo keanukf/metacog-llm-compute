@@ -52,7 +52,7 @@ paths:
 
 # Same keys as pilot.yaml — optional sidecar logprob dumps for Phase 1 (checkpoint_dir / logprob_subdir).
 logging:
-  save_logprob_distributions: false
+  logprob_sidecar_mode: off
   logprob_export_format: json
   logprob_subdir: logprobs
   save_vc_distributions: false

@@ -41,7 +41,7 @@ pilot:
 # Default off — size scales with env_steps × completion_tokens × top_k. Episode JSON stays summary-only (TLE mean/max).
 # Stored TLE entropy uses softmax renormalized over inference.top_logprobs candidates (not full vocabulary).
 logging:
-  save_logprob_distributions: true
+  logprob_sidecar_mode: full
   logprob_export_format: json   # json | csv | both
   logprob_subdir: logprobs
   save_vc_distributions: true

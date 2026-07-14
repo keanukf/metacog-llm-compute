@@ -20,6 +20,10 @@ from src.utils.logging_utils import (
     write_logprob_distribution_artifacts,
     write_vc_distribution_artifacts,
 )
+from src.utils.logprob_sidecar import (
+    LogprobSidecarConfig,
+    filter_logprob_raw_for_sidecar,
+)
 from src.utils.manifest import manifest_entry_for_instance
 from src.utils.step_config import resolve_step_fn_kwargs
 from src.utils.tracing import TraceHook, build_trace_hook
@@ -32,11 +36,9 @@ class Phase1RunContext:
     repo_root: Path
     max_steps: int
     model_cfg: dict[str, Any]
-    save_logprob_distributions: bool
+    logprob_sidecar: LogprobSidecarConfig
     save_vc_distributions: bool
-    logprob_export_format: str
     vc_export_format: str
-    logprob_subdir: str
     vc_subdir: str
     save_step_traces: bool
     allow_history_truncation: bool
@@ -53,11 +55,9 @@ class Phase2RunContext:
     repo_root: Path
     max_steps: int
     model_cfg: dict[str, Any]
-    save_logprob_distributions: bool
+    logprob_sidecar: LogprobSidecarConfig
     save_vc_distributions: bool
-    logprob_export_format: str
     vc_export_format: str
-    logprob_subdir: str
     vc_subdir: str
     save_step_traces: bool
     allow_history_truncation: bool
@@ -83,6 +83,31 @@ def _flush_trace_hook(hook: TraceHook) -> None:
                 flush()
             except Exception:
                 pass
+
+
+def _write_logprob_sidecar_for_episode(
+    *,
+    sidecar_cfg: LogprobSidecarConfig,
+    domain: str,
+    instance: int,
+    episode_id: str,
+    logprob_raw_per_step: list[Any] | None,
+    checkpoint_dir: Path,
+) -> None:
+    mode = sidecar_cfg.mode_for(domain, instance)
+    if mode == "off" or not logprob_raw_per_step:
+        return
+    filtered = filter_logprob_raw_for_sidecar(logprob_raw_per_step, mode)
+    if not filtered:
+        return
+    write_logprob_distribution_artifacts(
+        episode_id,
+        filtered,
+        checkpoint_dir,
+        export_format=sidecar_cfg.export_format,
+        logprob_subdir=sidecar_cfg.subdir,
+        sidecar_scope=mode,
+    )
 
 
 def run_phase1_job(
@@ -117,9 +142,10 @@ def run_phase1_job(
             "pin_recipe",
         }
         history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in hist_keys}
+        capture_logprobs = ctx.logprob_sidecar.capture_enabled(domain, inst)
         step_fn = get_step_fn(
             stage,
-            save_logprob_distributions=ctx.save_logprob_distributions,
+            save_logprob_distributions=capture_logprobs,
             save_vc_distributions=ctx.save_vc_distributions,
             **step_cfg,
         )
@@ -137,7 +163,7 @@ def run_phase1_job(
             step_fn=step_fn,
             max_steps=ctx.max_steps,
             on_step=on_step,
-            save_logprob_distributions=ctx.save_logprob_distributions,
+            save_logprob_distributions=capture_logprobs,
             save_vc_distributions=ctx.save_vc_distributions,
             save_step_traces=ctx.save_step_traces,
             episode_id=ep_id,
@@ -184,14 +210,14 @@ def run_phase1_job(
         if result.get("vc_detail_per_step") is not None:
             data["vc_detail_per_step"] = result["vc_detail_per_step"]
         save_episode_checkpoint(ctx.checkpoint_dir, ep_id, data)
-        if ctx.save_logprob_distributions and result.get("logprob_raw_per_step"):
-            write_logprob_distribution_artifacts(
-                ep_id,
-                result["logprob_raw_per_step"],
-                ctx.checkpoint_dir,
-                export_format=ctx.logprob_export_format,
-                logprob_subdir=ctx.logprob_subdir,
-            )
+        _write_logprob_sidecar_for_episode(
+            sidecar_cfg=ctx.logprob_sidecar,
+            domain=str(domain),
+            instance=int(inst),
+            episode_id=ep_id,
+            logprob_raw_per_step=result.get("logprob_raw_per_step"),
+            checkpoint_dir=ctx.checkpoint_dir,
+        )
         if ctx.save_vc_distributions and result.get("vc_detail_per_step"):
             write_vc_distribution_artifacts(
                 ep_id,
@@ -263,6 +289,7 @@ def run_phase2_job(
         step_cfg = resolve_step_fn_kwargs(ctx.config, domain)
         step_cfg["c2_tie_break_seed"] = ep_id
         ep_policy = ctx.policies_by_key.get((str(domain), str(strategy)))
+        capture_logprobs = ctx.logprob_sidecar.capture_enabled(domain, inst)
         result = run_adaptive_episode(
             env,
             model,
@@ -272,7 +299,7 @@ def run_phase2_job(
             policy=ep_policy,
             allocate_fn=ctx.allocate_fn,
             on_step=on_step,
-            save_logprob_distributions=ctx.save_logprob_distributions,
+            save_logprob_distributions=capture_logprobs,
             save_vc_distributions=ctx.save_vc_distributions,
             save_step_traces=ctx.save_step_traces,
             episode_id=ep_id,
@@ -320,14 +347,14 @@ def run_phase2_job(
         if result.get("vc_detail_per_step") is not None:
             data["vc_detail_per_step"] = result["vc_detail_per_step"]
         save_episode_checkpoint(ctx.checkpoint_dir, ep_id, data)
-        if ctx.save_logprob_distributions and result.get("logprob_raw_per_step"):
-            write_logprob_distribution_artifacts(
-                ep_id,
-                result["logprob_raw_per_step"],
-                ctx.checkpoint_dir,
-                export_format=ctx.logprob_export_format,
-                logprob_subdir=ctx.logprob_subdir,
-            )
+        _write_logprob_sidecar_for_episode(
+            sidecar_cfg=ctx.logprob_sidecar,
+            domain=str(domain),
+            instance=int(inst),
+            episode_id=ep_id,
+            logprob_raw_per_step=result.get("logprob_raw_per_step"),
+            checkpoint_dir=ctx.checkpoint_dir,
+        )
         if ctx.save_vc_distributions and result.get("vc_detail_per_step"):
             write_vc_distribution_artifacts(
                 ep_id,

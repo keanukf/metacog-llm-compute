@@ -1,6 +1,4 @@
-"""
-Pilot artifact helpers.
-"""
+"""Pilot artifact helpers."""
 
 from __future__ import annotations
 
@@ -12,15 +10,22 @@ from src.utils.logging_utils import (
     write_logprob_distribution_artifacts,
     write_vc_distribution_artifacts,
 )
+from src.utils.logprob_sidecar import LogprobSidecarConfig, filter_logprob_raw_for_sidecar
 from src.utils.run_progress import log
 
 
-def logprob_export_settings(config: dict[str, Any]) -> tuple[bool, str, str]:
+def logprob_sidecar_config(config: dict[str, Any]) -> LogprobSidecarConfig:
     lg = config.get("logging") or {}
+    return LogprobSidecarConfig.from_logging_config(lg)
+
+
+def logprob_export_settings(config: dict[str, Any]) -> tuple[bool, str, str]:
+    """Legacy helper: True if default mode captures any sidecar."""
+    cfg = logprob_sidecar_config(config)
     return (
-        bool(lg.get("save_logprob_distributions", False)),
-        str(lg.get("logprob_export_format", "json")).lower(),
-        str(lg.get("logprob_subdir", "logprobs")),
+        cfg.default_mode != "off",
+        cfg.export_format,
+        cfg.subdir,
     )
 
 
@@ -38,15 +43,27 @@ def maybe_write_logprob_artifacts(
     episode_id: str,
     result: dict[str, Any],
     output_dir: Path,
+    *,
+    domain: str | None = None,
+    instance: int | None = None,
 ) -> None:
-    save, fmt, sub = logprob_export_settings(config)
-    if not save:
+    sidecar_cfg = logprob_sidecar_config(config)
+    dom = str(domain if domain is not None else result.get("domain", ""))
+    inst = int(instance if instance is not None else result.get("instance", 0))
+    mode = sidecar_cfg.mode_for(dom, inst)
+    if mode == "off":
         return
     raw = result.get("logprob_raw_per_step")
     if not raw:
         return
+    filtered = filter_logprob_raw_for_sidecar(raw, mode)
     for path in write_logprob_distribution_artifacts(
-        episode_id, raw, output_dir, export_format=fmt, logprob_subdir=sub
+        episode_id,
+        filtered,
+        output_dir,
+        export_format=sidecar_cfg.export_format,
+        logprob_subdir=sidecar_cfg.subdir,
+        sidecar_scope=mode,
     ):
         log(f"Wrote {path}")
 

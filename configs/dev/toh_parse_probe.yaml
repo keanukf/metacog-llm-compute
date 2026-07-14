@@ -41,7 +41,7 @@ paths:
   results_phase2: "data/results/phase2"
 
 logging:
-  save_logprob_distributions: false
+  logprob_sidecar_mode: off
   logprob_export_format: json
   logprob_subdir: logprobs
   save_vc_distributions: false

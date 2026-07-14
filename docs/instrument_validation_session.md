@@ -266,10 +266,11 @@ Formula: `wall_hours ≈ total_episodes / measured_ep_per_hour`.
 
 | Mode | MB/ep (mean) | P1 (1.5k) | P2 (3k) | P1+P2 |
 |------|-------------:|----------:|--------:|------:|
-| Episode JSON only (`save_logprob_distributions: false`) | ~0.02 | ~0.03 GB | ~0.06 GB | **~0.1 GB** |
-| Full logprob sidecars (C-5/C-6 smoke) | ~116 | ~174 GB | ~348 GB | **~522 GB** |
+| Episode JSON only (`logprob_sidecar_mode: off`) | ~0.02 | ~0.03 GB | ~0.06 GB | **~0.1 GB** |
+| **Action-window sidecars (production default)** | **~2–3** | **~3–5 GB** | **~6–9 GB** | **~10–15 GB** |
+| Full sidecars incl. reasoning (C-5/C-6 smoke) | ~116 | ~174 GB | ~348 GB | **~522 GB** |
 
-C2 ToH sidecars dominate (~386 MB/ep); C0 negligible (~0.1 MB/ep). **Production decision:** sidecars **off** for full Phase 1/2; K=20 frozen from C-6 smoke. Sidecars only for targeted probes — not 4.5k episodes on pod PV.
+Reasoning tokens ≈97–98% of full sidecar volume (`105004`: ~173/177 tokens in C1). **Production:** `logprob_sidecar_mode: action_window` + non-holdout `logprob_sidecar_full_instances: {textworld: [1,2,3], tower_of_hanoi: [1,2,3]}` (mod-10 holdout excludes 0,10,20,30,40). Legacy `save_logprob_distributions` key **rejected** at config load.
 
 **Open:** GPU cost vs. ~9 EUR balance → top-up before Phase 1 block.
 

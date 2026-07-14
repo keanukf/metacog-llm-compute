@@ -22,7 +22,7 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/result
 
 You get per-step JSON under `--output-dir` (e.g. `pilot_test1_inference.json`, `pilot_test2_tle.json`, …) plus `ep_textworld_*.json` / `ep_tower_of_hanoi_*.json` for episodes and `pilot_feasibility.json`. In **mock** mode, metrics are synthetic (e.g. unrealistic `tokens_per_sec`).
 
-**Optional granular logprobs.** Set `logging.save_logprob_distributions: true` in `configs/pilot.yaml` to write per-env-step completion token rows (including `top_logprobs` when the backend returns them) as sidecar files under `logging.logprob_subdir` (default `logprobs/`), e.g. `{episode_id}_logprobs.json`, without bloating the main episode JSON. Use `logprob_export_format: csv` or `both` for a long tidy table; CSV includes `p_renorm_topk` (softmax over the returned top-k at export time). Size grows with steps × tokens × top-k—keep off for long runs unless needed. Test 2 can also emit `pilot_test2_tle_distributions.json` (and optional CSV) in that subdirectory. Phase 1 (`run_phase1.py`) honors the same `logging.*` keys next to checkpoints.
+**Optional granular logprobs.** Set `logging.logprob_sidecar_mode` in `configs/pilot.yaml` (`full` for pilot calibration, `action_window` for production Phase 1/2) to write per-env-step completion token rows as sidecar files under `logging.logprob_subdir` (default `logprobs/`), e.g. `{episode_id}_logprobs.json`, without bloating the main episode JSON. The deprecated key `save_logprob_distributions` is rejected — use `logprob_sidecar_mode` instead.
 
 Run individual steps without the full pipeline:
 

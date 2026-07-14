@@ -102,17 +102,17 @@ def main() -> int:
 
     max_steps = int(config.get("episode", {}).get("max_steps_per_episode", 10))
     lg = config.get("logging") or {}
+    from src.utils.logprob_sidecar import LogprobSidecarConfig
+
     run_ctx = Phase1RunContext(
         config=config,
         checkpoint_dir=checkpoint_dir,
         repo_root=REPO_ROOT,
         max_steps=max_steps,
         model_cfg=model_cfg,
-        save_logprob_distributions=bool(lg.get("save_logprob_distributions", False)),
+        logprob_sidecar=LogprobSidecarConfig.from_logging_config(lg),
         save_vc_distributions=bool(lg.get("save_vc_distributions", False)),
-        logprob_export_format=str(lg.get("logprob_export_format", "json")),
         vc_export_format=str(lg.get("vc_export_format", "json")),
-        logprob_subdir=str(lg.get("logprob_subdir", "logprobs")),
         vc_subdir=str(lg.get("vc_subdir", "vc")),
         save_step_traces=bool(lg.get("save_step_traces", False)),
         allow_history_truncation=False,

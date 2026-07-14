@@ -55,9 +55,14 @@ paths:
   results_phase1: "data/results/phase1"
   results_phase2: "data/results/phase2"
 
-# Same keys as pilot.yaml — optional sidecar logprob dumps for Phase 1 (checkpoint_dir / logprob_subdir).
+# Same keys as pilot.yaml — logprob sidecar policy for Phase 1/2 (checkpoint_dir / logprob_subdir).
 logging:
-  save_logprob_distributions: false
+  # off | action_window | full — production: action_window (TLE reanalysis without reasoning bloat)
+  logprob_sidecar_mode: action_window
+  # Full reasoning sidecars — non-holdout only (mod-10 holdout: 0,10,20,30,40)
+  logprob_sidecar_full_instances:
+    textworld: [1, 2, 3]
+    tower_of_hanoi: [1, 2, 3]
   logprob_export_format: json
   logprob_subdir: logprobs
   save_vc_distributions: false

@@ -16,7 +16,7 @@ pilot:
   runs_per_instance: 1
 
 logging:
-  save_logprob_distributions: true
+  logprob_sidecar_mode: full
   logprob_export_format: json
   logprob_subdir: logprobs
   save_vc_distributions: true
