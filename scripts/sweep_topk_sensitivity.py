@@ -8,58 +8,97 @@ import json
 import math
 import sys
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.analysis.calibration import compute_auroc
+from src.analysis.calibration import _label_from_correctness, compute_auroc
 from src.analysis.datasets import load_run_dataset
-from src.signals.token_entropy import entropy_shannon_from_top_logprobs
+from src.signals.token_entropy import tle_mean_entropy_at_k_from_logprob_tokens
 
 
-def _tle_for_k(top_logprobs: list[dict], k: int) -> float | None:
-    if not top_logprobs:
-        return None
-    trimmed = top_logprobs[:k]
-    try:
-        return float(entropy_shannon_from_top_logprobs(trimmed))
-    except Exception:
-        return None
+def _step_logprob_token_lists(step_entry: dict[str, Any] | None) -> list[list[dict[str, Any]]]:
+    """Return one or more candidate logprob token lists for an env step sidecar entry."""
+    if not isinstance(step_entry, dict):
+        return []
+    if isinstance(step_entry.get("samples"), list):
+        out: list[list[dict[str, Any]]] = []
+        for sample in step_entry["samples"]:
+            if not isinstance(sample, dict):
+                continue
+            toks = sample.get("logprob_tokens")
+            if isinstance(toks, list) and toks:
+                out.append([t for t in toks if isinstance(t, dict)])
+        return out
+    toks = step_entry.get("logprob_tokens")
+    if isinstance(toks, list) and toks:
+        return [[t for t in toks if isinstance(t, dict)]]
+    return []
 
 
-def _action_top_logprobs(payload: object, step_index: int | None) -> list[dict] | None:
-    """First committed-action token top_logprobs for an env step (sidecar v1/v2)."""
+def _sidecar_step_entry(payload: object, step_index: int | None) -> dict[str, Any] | None:
     if isinstance(payload, list):
-        token_rows = [r for r in payload if isinstance(r, dict)]
-    elif isinstance(payload, dict):
-        steps = payload.get("steps")
-        if not isinstance(steps, list):
-            return None
-        step_entry = None
-        if step_index is not None:
-            for step in steps:
-                if isinstance(step, dict) and step.get("step_index") == step_index:
-                    step_entry = step
-                    break
-        if step_entry is None and steps and isinstance(steps[0], dict):
-            step_entry = steps[0]
-        if not isinstance(step_entry, dict):
-            return None
-        token_rows = step_entry.get("logprob_tokens")
-        if not isinstance(token_rows, list) and isinstance(step_entry.get("samples"), list):
-            samples = step_entry["samples"]
-            if samples and isinstance(samples[0], dict):
-                token_rows = samples[0].get("logprob_tokens")
-        if not isinstance(token_rows, list):
-            return None
-        token_rows = [r for r in token_rows if isinstance(r, dict)]
-    else:
+        return {"step_index": step_index, "logprob_tokens": payload}
+    if not isinstance(payload, dict):
         return None
-    if not token_rows:
+    steps = payload.get("steps")
+    if not isinstance(steps, list):
         return None
-    top = token_rows[0].get("top_logprobs")
-    return top if isinstance(top, list) else None
+    if step_index is not None:
+        for step in steps:
+            if isinstance(step, dict) and step.get("step_index") == step_index:
+                return step
+    if steps and isinstance(steps[0], dict):
+        return steps[0]
+    return None
+
+
+def _pick_logprob_tokens(
+    candidates: list[list[dict[str, Any]]],
+    *,
+    reference_mean_entropy: float | None,
+    k: int,
+) -> list[dict[str, Any]] | None:
+    """Pick C2 sample whose action-window mean entropy at K best matches episode TLE."""
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    if reference_mean_entropy is None:
+        return candidates[0]
+    best: list[dict[str, Any]] | None = None
+    best_diff = float("inf")
+    for toks in candidates:
+        ent = tle_mean_entropy_at_k_from_logprob_tokens(toks, k)
+        if ent is None or math.isnan(ent):
+            continue
+        diff = abs(float(ent) - float(reference_mean_entropy))
+        if diff < best_diff:
+            best_diff = diff
+            best = toks
+    return best if best is not None else candidates[0]
+
+
+def _tle_score_at_k(
+    payload: object,
+    step_index: int | None,
+    k: int,
+    *,
+    reference_mean_entropy: float | None = None,
+) -> float | None:
+    """Committed-action mean entropy at K; AUROC uses ``-`` this value as score."""
+    step_entry = _sidecar_step_entry(payload, step_index)
+    candidates = _step_logprob_token_lists(step_entry)
+    toks = _pick_logprob_tokens(
+        candidates,
+        reference_mean_entropy=reference_mean_entropy,
+        k=k,
+    )
+    if not toks:
+        return None
+    return tle_mean_entropy_at_k_from_logprob_tokens(toks, k)
 
 
 def main() -> None:
@@ -86,25 +125,29 @@ def main() -> None:
                 lp_path = ep.get("logprobs_json_path")
                 if not lp_path or not Path(lp_path).is_file():
                     continue
-                rows = json.loads(Path(lp_path).read_text(encoding="utf-8"))
+                payload = json.loads(Path(lp_path).read_text(encoding="utf-8"))
                 for sd in ep.get("steps_detail") or []:
-                    y = sd.get("correctness")
-                    if y != "optimal":
-                        label = 0
-                    elif y == "optimal":
-                        label = 1
-                    else:
+                    if not isinstance(sd, dict):
+                        continue
+                    y01 = _label_from_correctness(sd.get("correctness"), "optimal_only")
+                    if y01 is None:
                         continue
                     step_index_raw = sd.get("step_index")
                     step_index = int(step_index_raw) if step_index_raw is not None else None
-                    top = _action_top_logprobs(rows, step_index)
-                    if not isinstance(top, list):
-                        continue
-                    ent = _tle_for_k(top, k)
+                    ref = None
+                    tle = sd.get("tle")
+                    if isinstance(tle, dict) and isinstance(tle.get("mean_entropy"), (int, float)):
+                        ref = float(tle["mean_entropy"])
+                    ent = _tle_score_at_k(
+                        payload,
+                        step_index,
+                        k,
+                        reference_mean_entropy=ref,
+                    )
                     if ent is None or math.isnan(ent):
                         continue
-                    scores.append(-ent)
-                    labels.append(label)
+                    scores.append(-float(ent))
+                    labels.append(1 if y01 >= 0.5 else 0)
             auroc = compute_auroc(scores, labels) if scores else float("nan")
             report[dom][str(k)] = {"auroc": auroc, "n": len(scores)}
 

@@ -2,6 +2,39 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-14 — AUROC reconciliation (C-6 blocked; K unfreeze)
+
+**Problem:** Zwei Implementierungen lieferten unterschiedliche H1a-AUROCs auf demselben Run.
+
+| Pfad | TW `105004` | ToH `105004` | Ursache |
+|------|------------:|-------------:|---------|
+| `preanalysis_screen` / `signal_discrimination_report` (alt) | 0.381 raw | 0.256 raw | Rohentropie ohne Vorzeichenflip (−entropy = H1a-Score) |
+| `sweep_topk_sensitivity.py` (alt) | 0.563 | 0.669 | **Erstes Sidecar-Token** (oft ``), nicht Action-Window; C1-Sidecars enthalten volle Thinking-Sequenz |
+| H1a kanonisch (`−mean_entropy`, Episode `steps_detail.tle`) | **0.619** | **0.744** | Committed-action **Mittel** über Action-Tokens |
+
+**Herkunft „0.19":** Nicht C-6 auf TW. `preanalysis_screen` auf `211029` meldet **ToH** raw TLE ≈ **0.209** (Flip ≈ 0.791); TW raw ≈ 0.714 (Flip ≈ 0.286). TW pre-DV `n_pos=8` macht beide Arms schwach interpretierbar.
+
+**Fix (Code):**
+- `signal_discrimination_report`: TLE-AUROC auf **−mean_entropy** (VC unverändert).
+- `token_entropy.py`: `slice_action_logprob_tokens`, `mean_entropy_at_top_k`, `tle_mean_entropy_at_k_from_logprob_tokens`.
+- `sweep_topk_sensitivity.py`: Action-Window-Slice + Mean-at-K + gleiche Labels wie H1a; C2-Sample per Referenz-`mean_entropy` wählen.
+
+**Status:** C-6 **nicht abgeschlossen** bis Re-Sweep auf Pod bestätigt `|ΔAUROC| < ε` vs H1a. **K=20 unfreeze** bis dahin.
+
+**N-Konsistenz (C-1 ↔ `105004`):** `execution.max_concurrent_episodes=32` in `signal_smoke.yaml`, `experiment_core.yaml`, Parity-Freeze (`run_metadata.json`: N=32, eps=0.05); `105004` `max_in_flight_observed=32`. **Identisch.**
+
+## 2026-07-14 — C-5/C-6 complete; K=20 frozen
+
+**Run:** `phase1_20260714_105004` — `signal_smoke.yaml`, 72 ep, quest-DV, cot_max_tokens=8192, git `3be18f0`, wall 47m 42s (~93 ep/h).
+
+**C-5:** Pipeline + 72 logprob sidecars **Done**. TW `n_positive` (optimal_only) **81** vs `211029` **8** (pre-DV score labels).
+
+**C-6 / K:** Siehe Rekonzilierungs-Eintrag oben — vorheriger K-Freeze **zurückgenommen** pending Re-Sweep.
+
+**H1a-Smoke (kanonisch, `−mean_entropy`, optimal_only):** TW TLE 0.619 / VC 0.611; ToH TLE 0.744 / VC 0.701. **Nur Diagnose** (DV-Fix, Signal nicht tot); kein Design-Tuning.
+
+**VC TW ≈ TLE TW:** Gleichstand auf 72 ep — empirische H1a-Frage, kein Bug; Fenster geschlossen.
+
 ## 2026-07-14 — C-5/C-6 pre-run declaration (post quest-DV)
 
 **Vor `signal_smoke`-Re-Run festgehalten** — H1a-AUROC vor Freeze sichtbar; zulässige Entscheidungen:
@@ -48,7 +81,7 @@ Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit 
 - Episodenlänge TW: §5.5 8–15 vs. Probe 15–20+ → Phase-0-Kalibrierung; `position_norm` (H3).
 - Instanz-Heterogenität: Reset-Restdistanzen 7/4/7.
 
-**Nächster Schritt:** C-1 freeze metadata → C-5 re-run → C-6 → K freeze.
+**Nächster Schritt:** Gate C abgeschlossen (C-0…C-6). Phase-1-Readiness / Gate F ep/h aus `105004` (~93 ep/h @ 20 steps). C-1 freeze metadata **Done**.
 
 ## 2026-07-14 — Gate C-2/C-4 budget raster + C2 admissibility (`7b1ef9f`)
 

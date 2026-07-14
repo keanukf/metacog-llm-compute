@@ -6,7 +6,7 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 |-------|-------|
 | Host | RunPod 5090 (`213.173.111.21`, online 2026-07-13) |
 | Started | 2026-07-12 |
-| Branch (code) | `perf/vllm-server-concurrency` @ `9e27f94` (post quest-DV) |
+| Branch (code) | `perf/vllm-server-concurrency` @ `3be18f0` (pod pulled post C-5/C-6 pre-declaration) |
 | Results root | `/workspace/metacog-llm-compute/data/results/instrument_validation` |
 | Python | `/root/venv-metacog/bin/python` |
 | Production N | **N=32 (frozen)** — C-1 PASS; downstream gates run 2026-07-13 night |
@@ -17,7 +17,32 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 
 **C-5 scope:** `phase1_20260713_211029` = **pipeline/sidecars Done**; TW signal discrimination **invalid** (score labels). Re-run @ 8192 + quest labels replaces signal arm and feeds C-6.
 
-**Planned:** `signal_smoke` → AUROC (TLE+VC × both collapses, n_positive) → `sweep_topk_sensitivity` K∈{5,10,20} → freeze K.
+**In flight:** ~~`signal_smoke` @ `phase1_20260714_105004`~~ **Done** (72 ep, quest-DV, 8192, 47m 42s wall, ~93 ep/h @ max_in_flight=32, git `3be18f0`).
+
+**C-5 `105004`:** Pipeline + sidecars **Done**. Signal arm **Done** (quest-DV labels).
+
+**C-6:** **Blocked — AUROC reconciliation.** Alter Sweep (first Sidecar-Token, kein Action-Slice) wich von H1a ab (TW Δ≈0.06). Fix in Code; Re-Sweep pending. **K=20 unfreeze** bis Re-Sweep ≡ H1a.
+
+**H1a AUROC (kanonisch: score = −TLE mean entropy; `signal_discrimination_report` nach Fix):**
+
+| Domain | Collapse | Signal | AUROC | n_steps | n_positive |
+|--------|----------|--------|------:|--------:|-----------:|
+| TextWorld | optimal_only | TLE | **0.619** | 703 | **81** |
+| TextWorld | optimal_only | VC | 0.611 | 703 | 81 |
+| TextWorld | legal_or_optimal | TLE | 0.649 | 703 | 600 |
+| TextWorld | legal_or_optimal | VC | 0.468 | 703 | 600 |
+| ToH | optimal_only | TLE | 0.744 | 659 | 178 |
+| ToH | optimal_only | VC | 0.701 | 659 | 178 |
+| ToH | legal_or_optimal | TLE | 0.953 | 659 | 450 |
+| ToH | legal_or_optimal | VC | 0.714 | 659 | 450 |
+
+**DV-repair diagnostic:** TW `n_positive` 8→81; TW TLE H1a > 0.5 post-fix. `preanalysis_screen` TLE = raw entropy (legacy display); H1a uses **−entropy**.
+
+**AUROC path reconciliation (2026-07-14):** Drei Pfade erklärt — (1) preanalysis raw + flip; (2) alter C-6 first-token; (3) H1a −mean_entropy action-window. „0.19" = ToH raw auf `211029` (~0.209), nicht C-6 TW. Fix: `slice_action_logprob_tokens` + sweep aligned to H1a.
+
+**N @ `105004`:** `max_concurrent_episodes=32` (= parity freeze, `max_in_flight_observed=32`).
+
+**C-1 freeze metadata:** **Done** — `backend_parity_20260714T104959Z.json`, `run_metadata.json` (`frozen_execution_params`: N=32, eps=0.05).
 
 ## 2026-07-13 — Gate C downstream complete @ N=32 (pod)
 
@@ -28,12 +53,12 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 | C-1 parity | **PASS** | `backend_parity_20260713T205633Z.json`; gating max_dtle=0.008 |
 | C-2/C-4 format_vc_probe | **C-2 pilot OK @ 8192** | Budget raster + admissibility fix; `phase1_20260714_083538` @ `7b1ef9f` — see 2026-07-14 section |
 | C-3 toh_parse_probe | **PASS** | parse_rate=1.0 |
-| C-5 signal_smoke | **pipeline OK** (`211029`) | Sidecars complete; **TW AUROC invalid** (pre-DV labels) — **re-run pending** |
-| C-6 topk sweep | **pending** | After C-5 re-run; K must be chosen on both domains |
+| C-5 signal_smoke | **Done** | `211029`: sidecars only (pre-DV); **`105004`**: full signal arm |
+| C-6 topk sweep | **blocked — reconcile** | Fix deployed; Re-Sweep pending; K unfrozen |
 
-**Open:** C-1 freeze metadata; C-5/C-6 re-run in progress (see 2026-07-14 C-5/C-6 section); FREEZE-REVIEW §5.3 C2 (thesis repo).
+**Open:** FREEZE-REVIEW §5.3 C2 (thesis repo); local disk full — 7/72 logprob sidecars not rsync'd (analysis ran on pod).
 
-**Artifacts:** `phase1_20260713_205837`, `phase1_20260713_210804`, `phase1_20260713_211029`, `phase1_20260714_075754`, `phase1_20260714_083538`, `phase1_20260714_100023`
+**Artifacts:** `phase1_20260713_211029`, `phase1_20260714_083538`, `phase1_20260714_100023`, **`phase1_20260714_105004`**, `backend_parity_20260714T104959Z.json`
 
 ## 2026-07-14 — TW quest-distance DV repair + label re-run
 
@@ -201,11 +226,11 @@ Domain probes (`tw_short`, `toh_short`) stay well under eps at all N. Failure is
 |------|------|--------|-------|
 | Pod setup | C-0 | **done** | vLLM :8000, Qwen3-8B, `experiment_core.yaml` |
 | Throughput @ N=32 | — | **done** | ~192 ep/h post-perf (`throughput_sweep_post_perf.json`) |
-| Backend parity | C-1 | **PASS** | `backend_parity_20260713T205633Z.json`; **freeze metadata pending** |
+| Backend parity | C-1 | **PASS + frozen** | `backend_parity_20260714T104959Z.json`; `run_metadata.json` N=32, eps=0.05 |
 | format_vc_probe | C-2/C-4 | **PASS @ 8192** | `083538` budget/admissibility; `100023` post-DV labels |
 | toh_parse_probe | C-3 | **PASS** | parse_rate=1.0 |
-| signal_smoke | C-5 | **partial → re-run** | `211029`: sidecars OK; TW signal invalid pre-DV |
-| topk sweep | C-6 | **pending** | After C-5 re-run @ quest-DV + 8192 |
+| signal_smoke | C-5 | **Done** | `105004` @ quest-DV + 8192; `211029` sidecars-only legacy |
+| topk sweep | C-6 | **blocked — reconcile** | Re-Sweep after sweep/H1a alignment fix |
 
 ## Throughput sweep pre-fix (2026-07-12 — superseded)
 

@@ -150,3 +150,58 @@ def test_extract_action_tle_slices_first_line_after_think_close():
     ]
     sliced = extract_action_tle_from_response("<think>\nx\n</think>\nA->C\nextra", lp)
     assert sliced == compute_tle(lp[6:11])
+
+
+def test_c1_production_tle_excludes_thinking_first_token_regression():
+    """
+    Regression: TLE must average committed-action tokens only, never the first sequence token.
+
+    Mirrors C1 sidecar failure mode: first token is `` with high Shannon entropy;
+    action tokens after `` are near-deterministic. Including the first token
+    (old sweep bug) would inflate mean_entropy by orders of magnitude.
+    """
+    from src.signals.token_entropy import slice_action_logprob_tokens
+
+    high_entropy_top = [
+        {"token": "t0", "logprob": -0.01},
+        {"token": "t1", "logprob": -0.01},
+        {"token": "t2", "logprob": -0.01},
+    ]
+    low_entropy_top = [
+        {"token": "A", "logprob": -0.001},
+        {"token": "B", "logprob": -8.0},
+    ]
+    thinking_tokens = [
+        {"token": "<think>", "logprob": -0.01, "top_logprobs": high_entropy_top},
+        {"token": "\n", "logprob": -0.01, "top_logprobs": high_entropy_top},
+    ]
+    # Long thinking run (would dominate if first-token or full-sequence mean were used).
+    thinking_tokens += [
+        {"token": f"t{i}", "logprob": -0.01, "top_logprobs": high_entropy_top} for i in range(50)
+    ]
+    thinking_tokens += [
+        {"token": "</think>", "logprob": -0.01, "top_logprobs": high_entropy_top},
+        {"token": "\n", "logprob": -0.01, "top_logprobs": high_entropy_top},
+    ]
+    action_tokens = [
+        {"token": "A", "logprob": -0.001, "top_logprobs": low_entropy_top},
+        {"token": "->", "logprob": -0.001, "top_logprobs": low_entropy_top},
+        {"token": "C", "logprob": -0.001, "top_logprobs": low_entropy_top},
+        {"token": "\n", "logprob": -0.001, "top_logprobs": low_entropy_top},
+    ]
+    full_lp = thinking_tokens + action_tokens
+    text = "".join(str(t["token"]) for t in full_lp)
+
+    production = extract_action_tle_from_response(text, full_lp)
+    assert production is not None
+
+    action_slice = slice_action_logprob_tokens(full_lp, text=text)
+    action_only = compute_tle(action_slice)
+    assert production == action_only
+
+    # Wrong estimators that must NOT match production (old sweep / full-sequence bugs).
+    first_token_only = compute_tle([full_lp[0]])
+    full_sequence = compute_tle(full_lp)
+    assert first_token_only["mean_entropy"] > production["mean_entropy"] * 10
+    assert full_sequence["mean_entropy"] > production["mean_entropy"] * 5
+    assert production["mean_entropy"] < 0.05

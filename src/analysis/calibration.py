@@ -398,18 +398,21 @@ def signal_discrimination_report(
                 v = tle.get("mean_entropy")
                 if not isinstance(v, (int, float)):
                     continue
-                s = float(v)
+                raw = float(v)
+                # AUROC: higher score = more likely optimal (lower entropy = more confident).
+                s = -raw
             elif signal == "vc":
                 v = sd.get("vc")
                 if not isinstance(v, (int, float)):
                     continue
-                s = float(v)
+                raw = float(v)
+                s = raw
             else:
                 raise ValueError("signal must be 'tle' or 'vc'")
             scores.append(s)
             y = 1 if y01 >= 0.5 else 0
             labels.append(y)
-            (sig_correct if y == 1 else sig_incorrect).append(s)
+            (sig_correct if y == 1 else sig_incorrect).append(raw)
 
     auroc = compute_auroc(scores, labels)
     mean_correct = (sum(sig_correct) / len(sig_correct)) if sig_correct else 0.0
