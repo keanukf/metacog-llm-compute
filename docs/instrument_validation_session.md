@@ -18,7 +18,7 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 | Gate | Result | Notes |
 |------|--------|-------|
 | C-1 parity | **PASS** | `backend_parity_20260713T205633Z.json`; gating max_dtle=0.008 |
-| C-2/C-4 format_vc_probe | **PASS** (2026-07-14) | VC prompt fix + unified `cot_max_tokens=4096` both domains; `phase1_20260714_075754`: vc=100%; TW C1/C2 think 100%; ToH C1 83%, C2 100% |
+| C-2/C-4 format_vc_probe | **PASS** (2026-07-14) | VC prompt fix + unified `cot_max_tokens=4096`; `phase1_20260714_075754`: vc=100%; see thinking-closure table below |
 | C-3 toh_parse_probe | **PASS** | parse_rate=1.0 |
 | C-5 signal_smoke | **PASS (run)** | 72 ep, 0 errors; AUROC interpretable; TW tle=0.71, ToH tle=0.21 |
 | C-6 topk sweep | **blocked** | sidecar schema drift — fix in progress locally |
@@ -27,7 +27,31 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 
 **Note (2026-07-14):** In the 2026-07-13 format_vc_probe run, Tower of Hanoi instances were **solved under C1 and C2** on Qwen3-8B — a meaningful step up from local Qwen3-4B, which often stalled on final moves. Unified **`cot_max_tokens=4096`** for both domains after Gate C-2/C-4 re-runs.
 
-**Artifacts:** `phase1_20260713_205837`, `phase1_20260713_210804`, `phase1_20260713_211029`
+**Artifacts:** `phase1_20260713_205837`, `phase1_20260713_210804`, `phase1_20260713_211029`, `phase1_20260714_075754`
+
+## 2026-07-14 — C2 thinking-closure metric comparison (ad-hoc)
+
+Source: `phase1_20260714_075754` traces (`thinking_closure_comparison.json` on pod).  
+Criterion: `</think>` present in completion text.
+
+| Domain | Stage | step_any (≥1 sample) | winner_closed | all_samples (3/3) | avg closed/step |
+|--------|-------|---------------------:|--------------:|------------------:|----------------:|
+| TextWorld | C1 | 100% (30) | 100% | 100% | 1.0 / 1 |
+| TextWorld | C2 | 100% (30) | 100% | 96.7% | 2.97 / 3 |
+| ToH | C1 | 83.3% (30) | 83.3% | 83.3% | 1.0 / 1 |
+| ToH | C2 | **100%** | **80.0%** | **60.0%** | 2.43 / 3 |
+
+C1: single completion → all three definitions identical.  
+C2: prior session headline “100% ToH C2” used **step_any_closed** (optimistic). **Winner_closed** (what executes) = 80%; **all_samples** = 60%.  
+ToH C2 mismatches: 12/30 steps had ≥1 closed sample but not all 3; **6/30** steps had an unclosed **winner** despite another sample being closed.
+
+## 2026-07-14 — C2 vote admissibility fix
+
+**Bug:** Unclosed C2 samples could supply garbage vote keys (`_strip_think_blocks` no-op without close tag); winner could be non–committed-action → TLE measured at wrong tokens.
+
+**Fix:** Vote only over admissible samples (closed thinking + `parse_method=post_think`). Log `n_samples_admissible`, `step_outcome`, `truncation_reason`. Rejected samples still count toward token/compute totals. Zero admissible → `truncation_no_action`, empty action, no VC follow-up.
+
+**Limitation (§5.9):** C2 effective N is data-dependent after fix.
 
 ## 2026-07-13 — Backend perf fix (local)
 

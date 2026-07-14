@@ -5,21 +5,91 @@ from __future__ import annotations
 import random
 from typing import Any
 
+from src.agent.cot_parser import parse_cot_action
 from src.agent.stages.shared import (
     _SINGLE_LINE_OUTPUT_INSTRUCTION,
     DEFAULT_VC_FOLLOWUP_INSTRUCTION,
     StepReturn,
     _action_generate_kwargs,
     _build_prompt,
-    _extract_first_line,
     _normalize_action_for_execution,
     _normalize_vote_key,
     _run_vc_followup,
     _seeded_rng,
-    _strip_think_blocks,
 )
 from src.signals import token_entropy, verbalized_confidence
 from src.utils.inference.lmstudio.wrapper import attach_lmstudio_diagnostics_to_subcalls
+
+_THINK_CLOSE_TAG = "</think>"
+
+
+def _thinking_block_closed(text: str) -> bool:
+    return _THINK_CLOSE_TAG.casefold() in (text or "").casefold()
+
+
+def assess_c2_sample_admissibility(response: str) -> dict[str, Any]:
+    """
+    A C2 sample is vote-eligible only with a closed thinking block and a post-think action.
+
+    Returns admissible flag, reject_reason, vote fields, and parse_method for tracing.
+    """
+    text = response or ""
+    if not _thinking_block_closed(text):
+        return {
+            "admissible": False,
+            "reject_reason": "thinking_unclosed",
+            "action_exec": "",
+            "vote_key": "",
+            "raw_first_line": "",
+            "parse_method": None,
+        }
+    parsed = parse_cot_action(text)
+    parse_method = parsed.get("parse_method")
+    action = str(parsed.get("action") or "").strip()
+    if parsed.get("status") != "parsed" or parse_method != "post_think" or not action:
+        reject_reason = "no_parseable_action"
+        if parse_method:
+            reject_reason = f"parse_method_{parse_method}"
+        return {
+            "admissible": False,
+            "reject_reason": reject_reason,
+            "action_exec": "",
+            "vote_key": "",
+            "raw_first_line": "",
+            "parse_method": parse_method,
+        }
+    return {
+        "admissible": True,
+        "reject_reason": None,
+        "action_exec": _normalize_action_for_execution(action),
+        "vote_key": _normalize_vote_key(action),
+        "raw_first_line": action,
+        "parse_method": "post_think",
+    }
+
+
+def _annotate_c2_sample(sample: dict[str, Any]) -> None:
+    meta = assess_c2_sample_admissibility(str(sample.get("response") or ""))
+    sample.update(meta)
+
+
+def _build_c2_sample_record(
+    *,
+    sample_index: int,
+    prompt: str,
+    text: str,
+    logprobs: Any,
+) -> dict[str, Any]:
+    sample: dict[str, Any] = {
+        "kind": "sample",
+        "sample_index": int(sample_index),
+        "prompt": prompt,
+        "response": text,
+        "logprobs": logprobs,
+        "tokens_generated": int(len(logprobs) if logprobs else 0),
+    }
+    _annotate_c2_sample(sample)
+    return sample
 
 
 def majority_vote(
@@ -43,12 +113,6 @@ def majority_vote(
         return tied[0], False, dict(counts)
     r = rng or random.Random(0)
     return str(r.choice(tied)), True, dict(counts)
-
-
-def _first_action_line_from_completion(text: str) -> str:
-    """First non-empty line after stripping think blocks (vote key source)."""
-    stripped = _strip_think_blocks(text or "")
-    return _extract_first_line(stripped)
 
 
 def c2_step_core(
@@ -97,58 +161,56 @@ def c2_step_core(
     if hasattr(model, "generate_many") and callable(getattr(model, "generate_many")):
         outs = model.generate_many(prompt, n=n, logprobs=True, **gen_kw)
         for i, (text, logprobs) in enumerate(outs):
-            first_raw = _first_action_line_from_completion(text)
-            action_exec = _normalize_action_for_execution(first_raw)
-            vote_key = _normalize_vote_key(first_raw)
             samples.append(
-                {
-                    "kind": "sample",
-                    "sample_index": int(i),
-                    "prompt": prompt,
-                    "response": text,
-                    "raw_first_line": first_raw,
-                    "action_exec": action_exec,
-                    "vote_key": vote_key,
-                    "logprobs": logprobs,
-                    "tokens_generated": int(len(logprobs) if logprobs else 0),
-                }
+                _build_c2_sample_record(
+                    sample_index=int(i),
+                    prompt=prompt,
+                    text=text,
+                    logprobs=logprobs,
+                )
             )
             total_tokens += len(logprobs) if logprobs else 0
     else:
         for i in range(n):
             text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
-            first_raw = _first_action_line_from_completion(text)
-            action_exec = _normalize_action_for_execution(first_raw)
-            vote_key = _normalize_vote_key(first_raw)
             samples.append(
-                {
-                    "kind": "sample",
-                    "sample_index": int(i),
-                    "prompt": prompt,
-                    "response": text,
-                    "raw_first_line": first_raw,
-                    "action_exec": action_exec,
-                    "vote_key": vote_key,
-                    "logprobs": logprobs,
-                    "tokens_generated": int(len(logprobs) if logprobs else 0),
-                }
+                _build_c2_sample_record(
+                    sample_index=int(i),
+                    prompt=prompt,
+                    text=text,
+                    logprobs=logprobs,
+                )
             )
             total_tokens += len(logprobs) if logprobs else 0
 
-    vote_keys = [str(s.get("vote_key") or "") for s in samples]
-    rng = _seeded_rng(tie_break_seed, call_index=int(call_index))
-    winning_key, tie_broken, vote_counts = majority_vote(vote_keys, rng=rng)
-    max_count = max(vote_counts.values()) if vote_counts else 0
-    vote_agreement = (float(max_count) / float(n)) if n > 0 else 0.0
-    unique_actions = len({k for k in vote_keys if k})
+    admissible_samples = [s for s in samples if s.get("admissible")]
+    n_admissible = len(admissible_samples)
+    n_rejected = int(n) - n_admissible
+    vote_keys = [str(s.get("vote_key") or "") for s in admissible_samples if s.get("vote_key")]
+    step_outcome = "vote"
+    truncation_reason: str | None = None
 
-    winner_index: int | None = None
-    for s in samples:
-        if str(s.get("vote_key") or "") == winning_key:
-            winner_index = int(s.get("sample_index") or 0)
-            break
-    if winner_index is None and samples:
-        winner_index = int(samples[0].get("sample_index") or 0)
+    if not vote_keys:
+        step_outcome = "truncation_no_action"
+        truncation_reason = "no_admissible_samples"
+        winning_key = ""
+        tie_broken = False
+        vote_counts: dict[str, int] = {}
+        vote_agreement = 0.0
+        unique_actions = 0
+        winner_index = None
+    else:
+        rng = _seeded_rng(tie_break_seed, call_index=int(call_index))
+        winning_key, tie_broken, vote_counts = majority_vote(vote_keys, rng=rng)
+        max_count = max(vote_counts.values()) if vote_counts else 0
+        vote_agreement = (float(max_count) / float(n_admissible)) if n_admissible > 0 else 0.0
+        unique_actions = len({k for k in vote_keys if k})
+
+        winner_index = None
+        for s in admissible_samples:
+            if str(s.get("vote_key") or "") == winning_key:
+                winner_index = int(s.get("sample_index") or 0)
+                break
 
     # Per-sample TLE (trace only; allocator signal uses winner sample only).
     for s in samples:
@@ -167,44 +229,52 @@ def c2_step_core(
         else:
             s["mean_logprob"] = None
 
-    winner_sample = samples[winner_index] if winner_index is not None and samples else {}
+    winner_sample = samples[winner_index] if winner_index is not None else {}
     winner_action_exec = str(winner_sample.get("action_exec") or "")
     winner_raw_first = str(winner_sample.get("raw_first_line") or "")
-    winner_tle: dict[str, float] | None = winner_sample.get("tle")
-    mlp = winner_sample.get("mean_logprob")
-    winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
+    winner_tle: dict[str, float] | None = None
+    winner_mean_logprob: float | None = None
     winner_completion = str(winner_sample.get("response") or "")
+
+    if winner_index is not None:
+        winner_tle = winner_sample.get("tle")
+        mlp = winner_sample.get("mean_logprob")
+        winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
 
     vc: float | None = None
     vc_detail: dict[str, Any] | None = None
     extra_tok = 0
     extra_calls = 0
     mode = (vc_mode or "inline").strip().lower()
-    if mode == "inline":
-        vc = verbalized_confidence.parse_confidence(winner_completion)
-    elif mode == "none":
-        vc = None
-    else:
-        vc, vc_detail, extra_tok, extra_calls = _run_vc_followup(
-            model,
-            observation=observation,
-            history=history,
-            prompt_prefix=prompt_prefix,
-            stage_tag="C2",
-            action_line=winner_action_exec,
-            vc_followup_instruction=vc_followup_instruction,
-            judged_context=vc_judged_context,
-            retry_on_parse_failure=vc_retry_on_parse_failure,
-            c2_n_samples=n,
-            c2_sample_first_lines=[str(s.get("raw_first_line") or "") for s in samples],
-            c2_winner_completion=winner_completion,
-            followup_max_tokens=followup_max_tokens,
-            followup_temperature=followup_temperature,
-            request_logprobs=vc_followup_logprobs,
-            followup_max_context_chars=followup_max_context_chars,
-            followup_cot_max_chars=followup_cot_max_chars,
-            raw_completion_max_chars=vc_raw_completion_max_chars,
-        )
+    if step_outcome == "vote" and winner_action_exec:
+        if mode == "inline":
+            vc = verbalized_confidence.parse_confidence(winner_completion)
+        elif mode == "none":
+            vc = None
+        else:
+            admissible_first_lines = [
+                str(s.get("raw_first_line") or "") for s in admissible_samples
+            ]
+            vc, vc_detail, extra_tok, extra_calls = _run_vc_followup(
+                model,
+                observation=observation,
+                history=history,
+                prompt_prefix=prompt_prefix,
+                stage_tag="C2",
+                action_line=winner_action_exec,
+                vc_followup_instruction=vc_followup_instruction,
+                judged_context=vc_judged_context,
+                retry_on_parse_failure=vc_retry_on_parse_failure,
+                c2_n_samples=n_admissible,
+                c2_sample_first_lines=admissible_first_lines,
+                c2_winner_completion=winner_completion,
+                followup_max_tokens=followup_max_tokens,
+                followup_temperature=followup_temperature,
+                request_logprobs=vc_followup_logprobs,
+                followup_max_context_chars=followup_max_context_chars,
+                followup_cot_max_chars=followup_cot_max_chars,
+                raw_completion_max_chars=vc_raw_completion_max_chars,
+            )
 
     total_tokens += extra_tok
     lm_calls = int(n) + extra_calls
@@ -215,7 +285,12 @@ def c2_step_core(
     else:
         lp_saved = None
     sample_blocks = [
-        f"=== sample {int(s.get('sample_index', 0)) + 1}/{n} (first_line={str(s.get('raw_first_line') or '')!r}) ===\n{str(s.get('response') or '')}"
+        (
+            f"=== sample {int(s.get('sample_index', 0)) + 1}/{n} "
+            f"(admissible={bool(s.get('admissible'))}, "
+            f"first_line={str(s.get('raw_first_line') or '')!r}) ===\n"
+            f"{str(s.get('response') or '')}"
+        )
         for s in samples
     ]
     response_full = "\n\n".join(sample_blocks)
@@ -228,6 +303,9 @@ def c2_step_core(
             "raw_first_line": s.get("raw_first_line") or "",
             "action_exec": s.get("action_exec") or "",
             "action_normalized": s.get("vote_key") or "",
+            "admissible": bool(s.get("admissible")),
+            "reject_reason": s.get("reject_reason"),
+            "parse_method": s.get("parse_method"),
             "tokens_generated": int(s.get("tokens_generated") or 0),
             "tle": s.get("tle"),
             "mean_logprob": s.get("mean_logprob"),
@@ -242,6 +320,10 @@ def c2_step_core(
         "stage": "C2",
         "method": "self_consistency_majority_vote",
         "n_samples": int(n),
+        "n_samples_admissible": int(n_admissible),
+        "n_samples_rejected": int(n_rejected),
+        "step_outcome": step_outcome,
+        "truncation_reason": truncation_reason,
         "enable_thinking": True,
         "sample_temperature": float(sample_temperature),
         "sample_max_tokens": int(sample_max_tokens),
