@@ -2,6 +2,21 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-14 — C-5/C-6 pre-run declaration (post quest-DV)
+
+**Vor `signal_smoke`-Re-Run festgehalten** — H1a-AUROC vor Freeze sichtbar; zulässige Entscheidungen:
+
+| Erlaubt | Nicht erlaubt |
+|---------|----------------|
+| **K** wählen/einfrieren (C-6, beide Domänen, **dasselbe K**) | Schwellenwert-Tuning |
+| Diagnose: TW AUROC nach DV-Fix **> 0.5** (Inversion weg?) vs `211029` tle≈0.19 | Signaldefinition ändern |
+| Pipeline/Sidecar-Validierung | Collapse-Umschaltung |
+| | Domänenentscheidungen / Phase-1 Go aus Smoke-AUROC |
+
+**C-5 `211029`:** Sidecars/pipeline **Done**; TW H1a **nicht Done** (score-labels, n_pos=8, tle≈0.19 inverted). Re-Run @ `signal_smoke.yaml` 8192 + quest labels ersetzt Signal-Arm.
+
+**Geplant:** 72 ep → AUROC TLE+VC × {optimal_only, legal_or_optimal} × domain + n_positive → C-6 K∈{5,10,20} → K freeze.
+
 ## 2026-07-14 — TextWorld DV repair: quest-distance labels (`9d994b8`)
 
 **Zweck:** Abhängige Variable reparieren — TW-`optimal` von score-basiert auf quest-Restdistanz (`len(policy_commands)`) umstellen, analog ToH (strikt reduziert Restdistanz). **Begründung ausschließlich Konstruktvalidität:** (1) score-basiertes Label klassifizierte korrekte Navigationsschritte als `legal` → negative Klasse unter `y_optimal` kontaminiert (H1a); (2) TW und ToH maßen unter gleichem Label-Namen verschiedene Konstrukte (H4 DiD). **Nicht** begründet mit beobachteten Signal- oder AUROC-Werten.
@@ -33,7 +48,7 @@ Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit 
 - Episodenlänge TW: §5.5 8–15 vs. Probe 15–20+ → Phase-0-Kalibrierung; `position_norm` (H3).
 - Instanz-Heterogenität: Reset-Restdistanzen 7/4/7.
 
-**Nächster Schritt:** C-1 freeze metadata; C-6 topk (H1a-DV jetzt valide).
+**Nächster Schritt:** C-1 freeze metadata → C-5 re-run → C-6 → K freeze.
 
 ## 2026-07-14 — Gate C-2/C-4 budget raster + C2 admissibility (`7b1ef9f`)
 

@@ -6,10 +6,18 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 |-------|-------|
 | Host | RunPod 5090 (`213.173.111.21`, online 2026-07-13) |
 | Started | 2026-07-12 |
-| Branch (code) | `perf/vllm-server-concurrency` @ `f725139` |
+| Branch (code) | `perf/vllm-server-concurrency` @ `9e27f94` (post quest-DV) |
 | Results root | `/workspace/metacog-llm-compute/data/results/instrument_validation` |
 | Python | `/root/venv-metacog/bin/python` |
 | Production N | **N=32 (frozen)** — C-1 PASS; downstream gates run 2026-07-13 night |
+
+## 2026-07-14 — C-5/C-6 sequence (post quest-DV, pre-freeze)
+
+**Pre-declaration (before `signal_smoke` re-run):** H1a-style AUROC from this run is visible pre-freeze. **Permitted uses only:** (1) choose frozen **K** for TLE (C-6, both domains, same K); (2) diagnose whether TW TLE/VC AUROC is **no longer inverted** vs pre-DV `211029` (TW tle≈0.19 under score labels). **Not permitted:** threshold tuning, signal-definition changes, collapse switch, domain decisions, or Phase-1 go/no-go from smoke AUROCs alone.
+
+**C-5 scope:** `phase1_20260713_211029` = **pipeline/sidecars Done**; TW signal discrimination **invalid** (score labels). Re-run @ 8192 + quest labels replaces signal arm and feeds C-6.
+
+**Planned:** `signal_smoke` → AUROC (TLE+VC × both collapses, n_positive) → `sweep_topk_sensitivity` K∈{5,10,20} → freeze K.
 
 ## 2026-07-13 — Gate C downstream complete @ N=32 (pod)
 
@@ -20,10 +28,10 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 | C-1 parity | **PASS** | `backend_parity_20260713T205633Z.json`; gating max_dtle=0.008 |
 | C-2/C-4 format_vc_probe | **C-2 pilot OK @ 8192** | Budget raster + admissibility fix; `phase1_20260714_083538` @ `7b1ef9f` — see 2026-07-14 section |
 | C-3 toh_parse_probe | **PASS** | parse_rate=1.0 |
-| C-5 signal_smoke | **PASS (run)** | 72 ep, 0 errors; AUROC interpretable; TW tle=0.71, ToH tle=0.21 |
-| C-6 topk sweep | **blocked** | sidecar schema drift — fix in progress locally |
+| C-5 signal_smoke | **pipeline OK** (`211029`) | Sidecars complete; **TW AUROC invalid** (pre-DV labels) — **re-run pending** |
+| C-6 topk sweep | **pending** | After C-5 re-run; K must be chosen on both domains |
 
-**Open:** C-1 freeze metadata re-run; C-6 topk on pod; **FREEZE-REVIEW** §5.3 C2 definition (effective N); ToH difficulty / label balance check before full Phase 1.
+**Open:** C-1 freeze metadata; C-5/C-6 re-run in progress (see 2026-07-14 C-5/C-6 section); FREEZE-REVIEW §5.3 C2 (thesis repo).
 
 **Artifacts:** `phase1_20260713_205837`, `phase1_20260713_210804`, `phase1_20260713_211029`, `phase1_20260714_075754`, `phase1_20260714_083538`, `phase1_20260714_100023`
 
@@ -187,19 +195,17 @@ Domain probes (`tw_short`, `toh_short`) stay well under eps at all N. Failure is
 3. Consider whether `minimal_3` long-filler constellation is representative of Phase 1 load (domain probes pass).
 4. If acceptable as limitation: document and proceed at N=32 with max_dtle=0.091 (~1.8× eps) — requires explicit design sign-off.
 
-## Steps (cumulative)
+## Steps (cumulative — authoritative)
 
 | Step | Gate | Status | Notes |
 |------|------|--------|-------|
-| Pod setup | C-0 | **done** (2026-07-12) | Deploy key; venv on container disk; vLLM TRITON_ATTN :8000 |
-| Plumbing smoke | C-0 | **GO** (2026-07-12) | ~14 min; max_in_flight=3 |
-| Throughput N-sweep (pre-fix) | — | **done** | N=8 @ 138.8 ep/h — **superseded** by serialized-client artifact |
-| Backend parity | C-1 | **PASS (scoped)** (2026-07-13) | Committed-action batch invariance PASS @ N=32; `minimal_3` diagnostic-only; K-coverage + temp PASS |
-| format_vc_probe | C-2/C-4 | **FAIL vs 90%** | TW C1 clean 73%, VC 63%; thinking budget trunc |
+| Pod setup | C-0 | **done** | vLLM :8000, Qwen3-8B, `experiment_core.yaml` |
+| Throughput @ N=32 | — | **done** | ~192 ep/h post-perf (`throughput_sweep_post_perf.json`) |
+| Backend parity | C-1 | **PASS** | `backend_parity_20260713T205633Z.json`; **freeze metadata pending** |
+| format_vc_probe | C-2/C-4 | **PASS @ 8192** | `083538` budget/admissibility; `100023` post-DV labels |
 | toh_parse_probe | C-3 | **PASS** | parse_rate=1.0 |
-| signal_smoke | C-5 | **PASS (run)** | 72 ep; AUROC interpretable; ~132 ep/h |
-| topk sweep | C-6 | **fix pending** | sidecar schema drift in sweep script |
-| Throughput re-sweep | — | **done** (2026-07-13) | N=32 @ 192.4 ep/h; see post-perf table below |
+| signal_smoke | C-5 | **partial → re-run** | `211029`: sidecars OK; TW signal invalid pre-DV |
+| topk sweep | C-6 | **pending** | After C-5 re-run @ quest-DV + 8192 |
 
 ## Throughput sweep pre-fix (2026-07-12 — superseded)
 
