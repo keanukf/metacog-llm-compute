@@ -10,6 +10,8 @@ cd "$REPO_ROOT"
 
 export RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/data/results}"
 export PATH="${VENV_BIN:-/root/venv-metacog/bin}:$PATH"
+# shellcheck disable=SC1091
+source "$REPO_ROOT/scripts/activate_pod_env.sh" 2>/dev/null || true
 PYTHON="${PYTHON:-python}"
 
 IV="$RESULTS_DIR/instrument_validation"

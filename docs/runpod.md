@@ -154,16 +154,53 @@ This resets **tracked** files only. Ignored paths such as `data/results/` and `.
 
 ## Step 6 — Set up the environment on the pod
 
-On the pod, from the repo root:
+On a **new pod** (fresh container disk), one command from the repo root on `/workspace`:
 
 ```bash
-cd /workspace/metacog-llm-compute
+cd /workspace/metacog-llm-compute   # skip clone if the volume already has the repo
 bash scripts/setup_cloud.sh
 ```
 
+`setup_cloud.sh` prepares a **runnable pod** (secrets, SSH, Python env, model cache). It does **not** start vLLM or run Gate C / probes — you choose what to run afterward.
+
+| Step | What |
+|------|------|
+| `source /workspace/secrets/env.sh` | HF_TOKEN, Langfuse, etc. |
+| GitHub deploy key | copies `/workspace/secrets/runpod_github_ed25519` → `~/.ssh/` |
+| Git sync | `git fetch origin`, then **ff-only pull on the branch already checked out** (no branch switch). Optional override: `GIT_BRANCH=main` |
+| venv | `/root/venv-metacog` on **container disk** |
+| Caches | `HF_HOME=/root/.cache/huggingface`, `PIP_CACHE_DIR=/root/.cache/pip` (not `/workspace`) |
+| deps + model | `requirements.txt` + optional `Qwen/Qwen3-8B` pre-download |
+
+**Skip flags** (e.g. stopped pod with venv + model still on container disk):
+
+```bash
+SKIP_MODEL_DOWNLOAD=1 bash scripts/setup_cloud.sh
+# SKIP_GIT_SYNC=1   — no fetch/pull (deploy key still installed)
+# SKIP_VENV=1       — reuse existing venv
+```
+
+**Switch branch before setup** (if you want a different branch than the one on disk):
+
+```bash
+cd /workspace/metacog-llm-compute
+git checkout main   # or any branch you use
+bash scripts/setup_cloud.sh
+# or one-shot: GIT_BRANCH=main bash scripts/setup_cloud.sh
+```
+
+**New SSH session** (after setup):
+
+```bash
+cd /workspace/metacog-llm-compute
+source scripts/activate_pod_env.sh
+```
+
+Start **vLLM serve** separately when you need GPU inference — see `docs/runpod.md`.
+
 This installs the **pinned** dependency set from `requirements.txt` (includes `vllm`, `transformers`, `textworld`, `numpy`, `pandas`, `scipy`, `pyyaml`, test deps, etc.).
 
-**Optional — pre-download the model** (saves time during the pilot; `scripts/setup_cloud.sh` does this unless `SKIP_MODEL_DOWNLOAD=1`. If `MODEL_NAME` is unset, it uses the **first** model in `configs/models_runpod.yaml`):
+**Optional — pre-download only** (if you already ran setup and only need weights):
 
 ```bash
 export MODEL_NAME="Qwen/Qwen3-8B"
@@ -171,7 +208,7 @@ export SKIP_MODEL_DOWNLOAD=0
 bash scripts/setup_cloud.sh
 ```
 
-Store the model on the network volume (e.g. under `/workspace`) so it persists.
+Store models on the **container disk** (`HF_HOME=/root/.cache/huggingface`) so the 10 GB network volume is not filled; results stay under `/workspace/metacog-llm-compute/data/results`.
 
 ## Step 6b — Generate TextWorld games (required before TextWorld pilot)
 

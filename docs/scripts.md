@@ -40,7 +40,8 @@ All entry points live in [`scripts/`](../scripts/). Run from the **repository ro
 
 | Script | Purpose | When to use | Status |
 |--------|---------|-------------|--------|
-| [`setup_cloud.sh`](../scripts/setup_cloud.sh) | Install pinned `requirements.txt` on pod; optional model pre-download | RunPod pod setup | `cloud` |
+| [`setup_cloud.sh`](../scripts/setup_cloud.sh) | Pod basics: secrets, deploy key, git pull (current branch), venv, deps, model cache | RunPod pod setup | `cloud` |
+| [`activate_pod_env.sh`](../scripts/activate_pod_env.sh) | Source PATH/HF_HOME/RESULTS_DIR in new SSH sessions | After setup on pod | `cloud` |
 | [`run_with_autostop.sh`](../scripts/run_with_autostop.sh) | Run Phase 1/2 with best-effort pod stop via `runpodctl` | RunPod long runs (`STOP_POD=1`, `RUNPOD_POD_ID`) | `cloud` |
 | [`download_runpod_results.sh`](../scripts/download_runpod_results.sh) | `scp`/rsync results from pod; auto-flattens nested `results/` | After cloud pilot | `cloud` |
 | [`flatten_runpod_download.py`](../scripts/flatten_runpod_download.py) | Repair nested `results/` after manual scp | After cloud pilot download | `cloud` |
