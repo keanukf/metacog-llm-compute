@@ -9,6 +9,7 @@ from src.agent.allocation_policy import FrozenPolicy, load_policy
 from src.agent.allocator import allocate, eager_fixed_stage_from_signal
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "policy_artifact_v1.json"
+LEGACY_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "policy_artifact_legacy_pooled.json"
 
 
 def test_frozen_policy_percentile_and_stage():
@@ -48,6 +49,30 @@ def test_stage_wise_ecdf_c1_low_raw_maps_to_mid_percentile():
     assert p.percentile(2e-6, source_stage="C0") < 0.2
     assert p.stage(2e-6, source_stage="C1") == "C1"
     assert p.stage(2e-6, source_stage="C0") == "C0"
+
+
+def test_load_policy_rejects_legacy_pooled_ecdf_without_opt_in():
+    import pytest
+
+    from src.agent.allocation_policy import LEGACY_POOLED_ECDF_ERROR
+
+    with pytest.raises(ValueError) as exc:
+        load_policy(LEGACY_FIXTURE, domain="textworld", signal="tle_mean_entropy")
+    assert "ecdf_ref" in str(exc.value)
+    assert LEGACY_POOLED_ECDF_ERROR.split(".")[0] in str(exc.value)
+
+
+def test_load_policy_legacy_pooled_ecdf_opt_in_warns():
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        pol = load_policy(
+            LEGACY_FIXTURE,
+            domain="textworld",
+            signal="tle_mean_entropy",
+            allow_legacy_pooled_ecdf=True,
+        )
+        assert any("legacy pooled ecdf_ref" in str(x.message).lower() for x in w)
+    assert pol.ecdf_by_stage["C0"] == pol.ecdf_by_stage["C1"]
 
 
 def test_load_policy_roundtrip():

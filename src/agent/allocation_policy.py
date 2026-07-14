@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import bisect
 import json
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,12 @@ SIGNAL_TLE = "tle_mean_entropy"
 SIGNAL_VC = "vc"
 POLICY_SIGNALS = (SIGNAL_TLE, SIGNAL_VC)
 COMPUTE_STAGES = ("C0", "C1", "C2")
+
+LEGACY_POOLED_ECDF_ERROR = (
+    "policy artifact uses deprecated pooled ecdf_ref without ecdf_by_stage; "
+    "not Phase-1-eligible (regenerate with stage-wise ECDF via write_threshold_artifact). "
+    "Pilot-only reload: pass allow_legacy_pooled_ecdf=True."
+)
 
 
 @dataclass(frozen=True)
@@ -62,7 +69,11 @@ class FrozenPolicy:
         return "C2"
 
 
-def _load_ecdf_by_stage(block: dict) -> dict[str, tuple[float, ...]]:
+def _load_ecdf_by_stage(
+    block: dict,
+    *,
+    allow_legacy_pooled_ecdf: bool = False,
+) -> dict[str, tuple[float, ...]]:
     if "ecdf_by_stage" in block:
         raw = block["ecdf_by_stage"]
         if not isinstance(raw, dict):
@@ -77,18 +88,35 @@ def _load_ecdf_by_stage(block: dict) -> dict[str, tuple[float, ...]]:
             raise ValueError("ecdf_by_stage is empty")
         return out
     if "ecdf_ref" in block:
+        if not allow_legacy_pooled_ecdf:
+            raise ValueError(LEGACY_POOLED_ECDF_ERROR)
+        warnings.warn(
+            "loading legacy pooled ecdf_ref artifact; replicates the same ECDF on all stages — "
+            "not valid for Phase 1/2 (pilot-only opt-in)",
+            UserWarning,
+            stacklevel=3,
+        )
         ref = tuple(sorted(float(v) for v in block["ecdf_ref"]))
         return {stage: ref for stage in COMPUTE_STAGES}
-    raise ValueError("policy block missing ecdf_by_stage or ecdf_ref")
+    raise ValueError("policy block missing ecdf_by_stage")
 
 
-def load_policy(path: str | Path, *, domain: str, signal: str) -> FrozenPolicy:
+def load_policy(
+    path: str | Path,
+    *,
+    domain: str,
+    signal: str,
+    allow_legacy_pooled_ecdf: bool = False,
+) -> FrozenPolicy:
     obj = json.loads(Path(path).read_text(encoding="utf-8"))
     d = obj["by_domain"][domain][signal]
     return FrozenPolicy(
         signal=signal,
         domain=domain,
-        ecdf_by_stage=_load_ecdf_by_stage(d),
+        ecdf_by_stage=_load_ecdf_by_stage(
+            d,
+            allow_legacy_pooled_ecdf=allow_legacy_pooled_ecdf,
+        ),
         theta1=float(d["theta1"]),
         theta2=float(d["theta2"]),
         direction=str(d["direction"]),

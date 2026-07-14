@@ -2,6 +2,31 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-14 — Gate C close: legacy ECDF hardening, sidecar verification, ECDF occupancy
+
+**P1 — Legacy `ecdf_ref` Ladepfad:** Stilles Replizieren der gepoolten ECDF auf alle Stufen **entfernt**. Artefakte ohne `ecdf_by_stage` → `ValueError` (nicht Phase-1-tauglich). Pilot-only: `allow_legacy_pooled_ecdf=True` mit `UserWarning`. `run_phase2.py` setzt Flag **nie**.
+
+**P2 — Reasoning-Logprobs in Sidecars (105004, pod-verifiziert):** **Ja, bereits enthalten** — nicht nur Action-Tokens.
+- C1: `steps[].logprob_tokens` = volle Completion (Schema v1). Beispiel `ep_textworld_0_C1_0`: 177 Tokens, ~173 im Thinking-Block, ~4 Action; first token ``.
+- C2: `steps[].samples[].logprob_tokens` = volle Completion pro Sample (Schema v2); gleiches Muster (~134–172 think / ~4 action).
+- **Kein Sidecar-Schema-Change** (Daten bereits da; TLE-Produktionspfad unverändert).
+- Größenordnung: C1-Sidecar ~55 MB vs C0 ~103 KB/Episode (Reasoning dominiert Speicher — bereits so persistiert).
+
+**P3 — ECDF-Besetzung Holdout (105004, Instanzen 0–4, first-n):** TLE `mean_entropy` pro Domäne/Stufe:
+
+| Domain | Stage | n | distinct | min Δpercentile | median Δpercentile |
+|--------|-------|--:|---------:|----------------:|-------------------:|
+| TextWorld | C0 | 84 | 84 | 0.0119 | 0.0119 |
+| TextWorld | C1 | 100 | 100 | 0.0100 | 0.0100 |
+| TextWorld | C2 | 100 | 100 | 0.0100 | 0.0100 |
+| ToH | C0 | 100 | 100 | 0.0100 | 0.0100 |
+| ToH | C1 | 98 | 98 | 0.0102 | 0.0102 |
+| ToH | C2 | 90 | 90 | 0.0111 | 0.0111 |
+
+Pilot-Smoke: ~84–100 Holdout-Steps/Stufe/Domäne (5 Inst × 3 Stages × ~6–7 Steps); Perzentil-Raster ~0.01 (≈100 Stützstellen). Kein Redesign — §5.9 Holdout-Limitationspunkt präzisiert.
+
+**Gate C:** **Done** (final).
+
 ## 2026-07-14 — Stage-wise ECDF allocator (§5.4 design fix)
 
 **Entscheidung:** Stufenweise ECDF implementiert (`ecdf_by_stage`: C0/C1/C2 je Domain/Signal auf Phase-1-Holdout). θ₁/θ₂ unverändert auf Perzentilskala; Grid-Search unverändert bis auf stufenpassende ECDF pro Holdout-Row/`compute_stage`. Runtime: Perzentil des Signals aus Schritt *t* gegen ECDF der Stufe, in der Schritt *t* lief (`signal_source_stage`).

@@ -26,7 +26,7 @@ A pooled ECDF violates the cross-stage comparability assumption underlying §5.4
 | θ₁, θ₂ | Percentile cutoffs | Unchanged (same values, now meaningful cross-stage) |
 | Grid search | Pooled ECDF | Stage-appropriate ECDF per holdout row's `compute_stage` |
 
-Artifact schema: policy JSON uses `ecdf_by_stage`; legacy `ecdf_ref` artifacts load by replicating the pooled ref across all three stages (backward compatible).
+Artifact schema: policy JSON uses `ecdf_by_stage`. Legacy `ecdf_ref`-only artifacts **fail to load** unless `allow_legacy_pooled_ecdf=True` (pilot-only opt-in with warning; Phase 2 path never sets this flag).
 
 ## §5.6 note (measurement mechanism)
 
