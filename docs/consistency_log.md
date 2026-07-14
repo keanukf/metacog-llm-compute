@@ -2,6 +2,27 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-14 — Gate C-2/C-4 budget raster + C2 admissibility (`7b1ef9f`)
+
+**Zweck:** Thinking-Budget einfrieren; C2-Vote-Pipeline korrigieren; format_vc_probe abschließen ohne H2-Metriken im Entscheidungspfad.
+
+| Bereich | Ergebnis |
+|---------|----------|
+| Budget raster | 1024 → 2048 → 4096 → **8192** (TW+ToH, beide Thinking-Stufen); **frozen** in `experiment_core.yaml` |
+| VC prompt | **OK** — `711785e`: trailing `Confidence:` entfernt; TW VC-Echo behoben |
+| C2 admissibility | **OK** — `eac97cd`: Vote nur über closed+`post_think`; `truncation_no_action` + `n_samples_admissible` geloggt; verworfene Samples token-billed |
+| `truncation_no_action` @8192 | **0/30 TW**, **0/29 ToH** — primäre post-fix C2-Metrik |
+| C1 closure @8192 | **93.3% TW** (28/30), **100% ToH** — 2 TW-Ausfälle = **8192-token cap hits** (`textworld_2_C1` steps 8–9); Wilson ~78–98% @ n=30 → Pilot zeigt Budget nicht mehr limitierend; belastbare Rate in Phase 1 |
+| avg `n_samples_admissible` | **2.87 TW**, **2.97 ToH** |
+| VC | **179/179** (100%; 179 steps — one ToH C2 ep 9 steps) |
+| `winner_closed` | **N/A as evidence** — by construction 100% nach Admissibility-Fix |
+| Step labels (8192 run) | TW: optimal 2.2%, legal 71.1%, illegal 26.7%; ToH: optimal 34.8%, legal 40.4%, illegal 24.7% — ToH nicht degeneriert ~90%+ optimal |
+| Artefakt | `phase1_20260714_083538` |
+
+**Freeze-relevant (Thesis-Repo, nicht still):** §5.3 C2 = 3 Generierungen (voll billed), Vote über zulässige Kandidaten, effektives N protokolliert; Limitation §5.9.
+
+**Nächster Schritt:** C-1 freeze metadata; C-6 topk; weiter Gate C — ToH-Schwierigkeit (3 vs 4 disks) vor Phase 1 prüfen falls TW/ToH label balance divergiert.
+
 ## 2026-07-13 — C-1 scoped waiver + N=32 freeze (design sign-off)
 
 **Zweck:** C-1 Batch-Invarianz an den Signal-Kontrakt (committed-action-Fenster) angleichen und Produktions-N einfrieren.

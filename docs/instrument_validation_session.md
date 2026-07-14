@@ -18,32 +18,57 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 | Gate | Result | Notes |
 |------|--------|-------|
 | C-1 parity | **PASS** | `backend_parity_20260713T205633Z.json`; gating max_dtle=0.008 |
-| C-2/C-4 format_vc_probe | **PASS** (2026-07-14) | VC prompt fix + unified `cot_max_tokens=4096`; `phase1_20260714_075754`: vc=100%; see thinking-closure table below |
+| C-2/C-4 format_vc_probe | **C-2 pilot OK @ 8192** | Budget raster + admissibility fix; `phase1_20260714_083538` @ `7b1ef9f` — see 2026-07-14 section |
 | C-3 toh_parse_probe | **PASS** | parse_rate=1.0 |
 | C-5 signal_smoke | **PASS (run)** | 72 ep, 0 errors; AUROC interpretable; TW tle=0.71, ToH tle=0.21 |
 | C-6 topk sweep | **blocked** | sidecar schema drift — fix in progress locally |
 
-**Open:** C-1 freeze metadata re-run; C-6 topk on pod after pull.
+**Open:** C-1 freeze metadata re-run; C-6 topk on pod; **FREEZE-REVIEW** §5.3 C2 definition (effective N); ToH difficulty / label balance check before full Phase 1.
 
-**Note (2026-07-14):** In the 2026-07-13 format_vc_probe run, Tower of Hanoi instances were **solved under C1 and C2** on Qwen3-8B — a meaningful step up from local Qwen3-4B, which often stalled on final moves. Unified **`cot_max_tokens=4096`** for both domains after Gate C-2/C-4 re-runs.
+**Artifacts:** `phase1_20260713_205837`, `phase1_20260713_210804`, `phase1_20260713_211029`, `phase1_20260714_075754`, `phase1_20260714_083538`
 
-**Artifacts:** `phase1_20260713_205837`, `phase1_20260713_210804`, `phase1_20260713_211029`, `phase1_20260714_075754`
+## 2026-07-14 — Budget raster + C2 admissibility fix (`7b1ef9f`)
 
-## 2026-07-14 — C2 thinking-closure metric comparison (ad-hoc)
+**Pre-declared criterion:** ≥90% parseable thinking-closure per cell/domain on format_vc_probe (n≈30 steps/cell); no H2 metrics in decision path.
 
-Source: `phase1_20260714_075754` traces (`thinking_closure_comparison.json` on pod).  
-Criterion: `</think>` present in completion text.
+**Budget raster:** TW+ToH `cot_max_tokens` 1024 → 2048 → 4096 → **8192 (frozen)**. VC prompt fix (`711785e`: drop trailing `Confidence:`). C2 vote admissibility fix (`eac97cd`: vote only over closed+post_think samples).
 
-| Domain | Stage | step_any (≥1 sample) | winner_closed | all_samples (3/3) | avg closed/step |
-|--------|-------|---------------------:|--------------:|------------------:|----------------:|
-| TextWorld | C1 | 100% (30) | 100% | 100% | 1.0 / 1 |
-| TextWorld | C2 | 100% (30) | 100% | 96.7% | 2.97 / 3 |
-| ToH | C1 | 83.3% (30) | 83.3% | 83.3% | 1.0 / 1 |
-| ToH | C2 | **100%** | **80.0%** | **60.0%** | 2.43 / 3 |
+**Final run:** `phase1_20260714_083538` (~10.5 min, 18 ep, 179 steps — one ToH C2 ep ended at 9 steps).
 
-C1: single completion → all three definitions identical.  
-C2: prior session headline “100% ToH C2” used **step_any_closed** (optimistic). **Winner_closed** (what executes) = 80%; **all_samples** = 60%.  
-ToH C2 mismatches: 12/30 steps had ≥1 closed sample but not all 3; **6/30** steps had an unclosed **winner** despite another sample being closed.
+| Metric | TextWorld | Tower of Hanoi | Notes |
+|--------|-----------|----------------|-------|
+| `truncation_no_action` (C2) | **0/30** | **0/29** | Post-admissibility; meaningful gate metric |
+| C1 thinking closed | **93.3%** (28/30) | **100%** (30/30) | Wilson ~78–98% @ n=30 — not separable from 90% |
+| avg `n_samples_admissible` (C2) | **2.87** | **2.97** | Requested N=3; rejected samples still billed |
+| VC parsed | **179/179** (100%) | same run | |
+| `winner_closed` (C2) | — | — | **By construction 100% after `eac97cd`** — not evidence |
+
+**TW C1 failures (2/30):** Both in `textworld_2_C1` steps 8–9; **`tokens_generated=8192` exactly** — hard cap hits mid-reasoning, no `</think>`. Not a regression vs 4096; run-to-run variance at T=0.5 + batched fp16. Belastbare C1-closure-Rate → Phase 1 full sample.
+
+**Step-label distribution (8192 run, all stages):**
+
+| Domain | optimal | legal | illegal | n |
+|--------|--------:|------:|--------:|--:|
+| TextWorld | 2.2% | 71.1% | 26.7% | 90 |
+| ToH | 34.8% | 40.4% | 24.7% | 89 |
+
+ToH is **not** collapsed near 90–95% optimal (y+ ≈35%); TW optimal rate very low in this probe — AUROC smoke here is format/ plumbing only. Episode success: ToH 2/9 (inst 1 under C1+C2); not a Gate-C-2 criterion.
+
+**Prose follow-up (freeze-relevant):** §5.3 C2 must state: N=3 generations always emitted and token-billed; majority vote over **admissible** candidates only; effective N logged per step. Limitation → §5.9.
+
+## 2026-07-14 — C2 thinking-closure metric comparison (pre-admissibility fix)
+
+Source: `phase1_20260714_075754` @ 4096, **before** `eac97cd`.  
+**Do not use `winner_closed` post-fix as empirical metric** (tautology after admissibility gate).
+
+| Domain | Stage | step_any (≥1 sample) | winner_closed | all_samples (3/3) |
+|--------|-------|---------------------:|--------------:|------------------:|
+| TextWorld | C1 | 100% | 100% | 100% |
+| TextWorld | C2 | 100% | 100% | 96.7% |
+| ToH | C1 | 83.3% | 83.3% | 83.3% |
+| ToH | C2 | 100% | **80.0%** | 60.0% |
+
+Pre-fix ToH C2: 6/30 steps had unclosed **winner** despite another sample closed → motivated `eac97cd`.
 
 ## 2026-07-14 — C2 vote admissibility fix
 
