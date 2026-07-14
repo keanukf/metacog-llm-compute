@@ -296,7 +296,6 @@ def main() -> None:
                     artifact_path,
                     domain=str(dom),
                     signal=sig,
-                    allow_legacy_pooled_ecdf=False,
                 )
 
     progress_every = (

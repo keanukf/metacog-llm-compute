@@ -4,7 +4,7 @@ Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit 
 
 ## 2026-07-14 — Gate C close: legacy ECDF hardening, sidecar verification, ECDF occupancy
 
-**P1 — Legacy `ecdf_ref` Ladepfad:** Stilles Replizieren der gepoolten ECDF auf alle Stufen **entfernt**. Artefakte ohne `ecdf_by_stage` → `ValueError` (nicht Phase-1-tauglich). Pilot-only: `allow_legacy_pooled_ecdf=True` mit `UserWarning`. `run_phase2.py` setzt Flag **nie**.
+**P1 — Legacy `ecdf_ref` Ladepfad:** Stilles Replizieren der gepoolten ECDF auf alle Stufen **entfernt**. Artefakte ohne `ecdf_by_stage` → `ValueError` (Default `allow_legacy_pooled_ecdf=False` in `load_policy`). Pilot-only: `load_policy_pilot()` setzt explizit `True` + `UserWarning`.
 
 **P2 — Reasoning-Logprobs in Sidecars (105004, pod-verifiziert):** **Ja, bereits enthalten** — nicht nur Action-Tokens.
 - C1: `steps[].logprob_tokens` = volle Completion (Schema v1). Beispiel `ep_textworld_0_C1_0`: 177 Tokens, ~173 im Thinking-Block, ~4 Action; first token ``.

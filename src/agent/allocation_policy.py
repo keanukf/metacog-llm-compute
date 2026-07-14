@@ -108,6 +108,7 @@ def load_policy(
     signal: str,
     allow_legacy_pooled_ecdf: bool = False,
 ) -> FrozenPolicy:
+    """Load a frozen policy artifact. Default rejects legacy pooled ``ecdf_ref``."""
     obj = json.loads(Path(path).read_text(encoding="utf-8"))
     d = obj["by_domain"][domain][signal]
     return FrozenPolicy(
@@ -120,6 +121,21 @@ def load_policy(
         theta1=float(d["theta1"]),
         theta2=float(d["theta2"]),
         direction=str(d["direction"]),
+    )
+
+
+def load_policy_pilot(
+    path: str | Path,
+    *,
+    domain: str,
+    signal: str,
+) -> FrozenPolicy:
+    """Pilot-only reload of pre-stage-wise ``ecdf_ref`` artifacts (explicit opt-in)."""
+    return load_policy(
+        path,
+        domain=domain,
+        signal=signal,
+        allow_legacy_pooled_ecdf=True,
     )
 
 
