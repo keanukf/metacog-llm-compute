@@ -6,11 +6,11 @@ Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit 
 
 **Zweck:** Abhängige Variable reparieren — TW-`optimal` von score-basiert auf quest-Restdistanz (`len(policy_commands)`) umstellen, analog ToH (strikt reduziert Restdistanz). **Begründung ausschließlich Konstruktvalidität:** (1) score-basiertes Label klassifizierte korrekte Navigationsschritte als `legal` → negative Klasse unter `y_optimal` kontaminiert (H1a); (2) TW und ToH maßen unter gleichem Label-Namen verschiedene Konstrukte (H4 DiD). **Nicht** begründet mit beobachteten Signal- oder AUROC-Werten.
 
-**Reproduzierbarkeit:** Label-Re-Run `phase1_20260714_100023` lief auf Pod **vor** Commit `9d994b8`, aber `src/environments/textworld_env.py` war per scp byte-identisch zur committeten Datei (MD5 `ef39ff274c2bdf3c106ef34e6cb6ece7`, lokal vs. Pod pre-pull verifiziert). Artefakt referenzierbar unter diesem Commit; kein Re-Run nötig.
+**Reproduzierbarkeit:** Label-Re-Run **`phase1_20260714_100023`** lief auf Pod mit scp-Overlay vor Commit `9d994b8`. Pre-commit `ruff format` änderte danach nur Whitespace in `_score_progress_step` (scp MD5 `ef39ff27…` vs. Commit `9d994b8` MD5 `b37e9e9f…`; git diff = eine mehrzeilige Return-Expression, **keine Label-Logik**). **Kein Re-Run nötig** — semantisch identisch, akzeptiert. Pod @ `6eb0f5d` gepullt; Artefakt `100023` referenzierbar unter `9d994b8`/`6eb0f5d`.
 
 | Bereich | Ergebnis |
 |---------|----------|
-| Commit | **`9d994b8`** — `fix(environments): label TextWorld optimal via quest rest distance` |
+| Commits | **`9d994b8`** (Implementierung) + **`6eb0f5d`** (Log-Anker) |
 | Label-Regel TW | `optimal` iff ausführbar **und** `dist_after < dist_before` (strikt); `legal` iff ausführbar und dist ≥ vorher; `illegal` unverändert; `unlabeled` + `label_reason` wenn dist nicht berechenbar oder `policy_commands==[]` ohne `won` |
 | Terminalschritt | `dist 1→0`, `won=True`, `policy=[]` → **optimal** (kein Unlösbar-Sonderfall) |
 | Reason-Codes | `quest_distance_unavailable`, `quest_distance_empty_unwon` — **unit-getestet**, in `100023` **nicht ausgelöst** (0/90 TW-Steps); nicht als Feldbeobachtung führen |

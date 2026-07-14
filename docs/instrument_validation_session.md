@@ -31,7 +31,7 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 
 **Change:** `textworld_env.py` — `correctness` from `len(policy_commands)` (TextWorld quest solver), not score increase. `optimal` iff executable and `dist_after < dist_before` (strict). `score_progress_step` retained as descriptive side variable.
 
-**Re-run:** `phase1_20260714_100023` — same `format_vc_probe` @ 8192, max_steps=10, 18 ep, 13 min. **Code anchor:** commit `9d994b8`; run executed pre-commit on scp-identical `textworld_env.py` (MD5 `ef39ff274c2bdf3c106ef34e6cb6ece7`).
+**Re-run:** `phase1_20260714_100023` — same `format_vc_probe` @ 8192, max_steps=10, 18 ep, 13 min. **Code anchor:** `9d994b8` / `6eb0f5d`. Run pre-commit on scp overlay semantically identical to commit (only `ruff format` whitespace in `_score_progress_step`; MD5 `ef39ff27…` vs `b37e9e9f…`).
 
 | Domain | optimal | legal | illegal | unlabeled | n | **n_positive** |
 |--------|--------:|------:|--------:|----------:|--:|-----------------:|
