@@ -90,12 +90,17 @@ def test_tle_score_at_k_matches_episode_mean_at_k20() -> None:
 
 
 def test_pick_logprob_tokens_prefers_reference_match() -> None:
-    low = [{"token": "A->B", "logprob": 0.0, "top_logprobs": _TOP}]
-    high = [
-        {"token": "<think>", "logprob": 0.0, "top_logprobs": _TOP},
-        {"token": "</think>", "logprob": 0.0, "top_logprobs": _TOP},
-        {"token": "A->C", "logprob": 0.0, "top_logprobs": _TOP},
+    high_action_top = [
+        {"token": "a", "logprob": -0.01},
+        {"token": "b", "logprob": -0.01},
+        {"token": "c", "logprob": -0.01},
     ]
+    low_action_top = [
+        {"token": "A", "logprob": -0.001},
+        {"token": "B", "logprob": -8.0},
+    ]
+    high = [{"token": "A->C", "logprob": 0.0, "top_logprobs": high_action_top}]
+    low = [{"token": "A->B", "logprob": 0.0, "top_logprobs": low_action_top}]
     ref = tle_mean_entropy_at_k_from_logprob_tokens(high, k=20)
     picked = _pick_logprob_tokens([low, high], reference_mean_entropy=ref, k=20)
     assert picked == high
