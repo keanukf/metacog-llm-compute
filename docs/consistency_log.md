@@ -2,6 +2,39 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-14 — TextWorld DV repair: quest-distance labels (`9d994b8`)
+
+**Zweck:** Abhängige Variable reparieren — TW-`optimal` von score-basiert auf quest-Restdistanz (`len(policy_commands)`) umstellen, analog ToH (strikt reduziert Restdistanz). **Begründung ausschließlich Konstruktvalidität:** (1) score-basiertes Label klassifizierte korrekte Navigationsschritte als `legal` → negative Klasse unter `y_optimal` kontaminiert (H1a); (2) TW und ToH maßen unter gleichem Label-Namen verschiedene Konstrukte (H4 DiD). **Nicht** begründet mit beobachteten Signal- oder AUROC-Werten.
+
+**Reproduzierbarkeit:** Label-Re-Run `phase1_20260714_100023` lief auf Pod **vor** Commit `9d994b8`, aber `src/environments/textworld_env.py` war per scp byte-identisch zur committeten Datei (MD5 `ef39ff274c2bdf3c106ef34e6cb6ece7`, lokal vs. Pod pre-pull verifiziert). Artefakt referenzierbar unter diesem Commit; kein Re-Run nötig.
+
+| Bereich | Ergebnis |
+|---------|----------|
+| Commit | **`9d994b8`** — `fix(environments): label TextWorld optimal via quest rest distance` |
+| Label-Regel TW | `optimal` iff ausführbar **und** `dist_after < dist_before` (strikt); `legal` iff ausführbar und dist ≥ vorher; `illegal` unverändert; `unlabeled` + `label_reason` wenn dist nicht berechenbar oder `policy_commands==[]` ohne `won` |
+| Terminalschritt | `dist 1→0`, `won=True`, `policy=[]` → **optimal** (kein Unlösbar-Sonderfall) |
+| Reason-Codes | `quest_distance_unavailable`, `quest_distance_empty_unwon` — **unit-getestet**, in `100023` **nicht ausgelöst** (0/90 TW-Steps); nicht als Feldbeobachtung führen |
+| Score | `score_progress_step` (bool) als deskriptive Nebenvariable; nicht für `correctness` |
+| EnvInfos | `policy_commands=True`, `intermediate_reward=True` |
+| Unit-Tests | `tests/test_textworld_label.py` |
+| Re-Run Probe | `phase1_20260714_100023` — `format_vc_probe`, cot_max_tokens=8192, max_steps=10 |
+
+**Label-Verteilung (Re-Run, n=90 Steps/Domain, max 10 Steps/Episode):**
+
+| Domain | optimal | legal | illegal | unlabeled | **n_positive** |
+|--------|--------:|------:|--------:|----------:|---------------:|
+| TextWorld (neu) | 37.8% | 34.4% | 27.8% | 0 | **34** |
+| TextWorld (alt, score @ 083538) | 2.2% | 71.1% | 26.7% | — | **2** |
+| ToH (unverändert) | 26.7% | 48.9% | 24.4% | 0 | **24** |
+
+**FREEZE-REVIEW / §5.9 (Thesis-Repo, nicht Code):**
+- Informationsbeschaffung (`look`/`inventory`/`examine`) distanzneutral → TW `legal`, in ToH absent; Observability-Asymmetrie (H4); `optimal_or_legal`-Sensitivität.
+- **Rückkehr belohnt:** Label = Fortschritt vom aktuellen Zustand, nicht „auf globalem Optimalpfad“. Fehlzug (+1 dist) + Rückweg (−1 dist) → Rückweg `optimal`; Oszillation erzeugt alternierende Labelsequenz (ToH analog). `optimal`-Rate ≠ Lösungsqualität (Ergebnisteil); für H1a korrekt (Schrittkorrektheit relativ zum Zustand). **H3:** zeitliche Autokorrelation in Labels bei Oszillation — neben Solution-Space-Compression-Confound in §5.9 benennen; Inferenz via Cluster-Bootstrap/GEE abgefangen, Interpretationshinweis nötig.
+- Episodenlänge TW: §5.5 8–15 vs. Probe 15–20+ → Phase-0-Kalibrierung; `position_norm` (H3).
+- Instanz-Heterogenität: Reset-Restdistanzen 7/4/7.
+
+**Nächster Schritt:** C-1 freeze metadata; C-6 topk (H1a-DV jetzt valide).
+
 ## 2026-07-14 — Gate C-2/C-4 budget raster + C2 admissibility (`7b1ef9f`)
 
 **Zweck:** Thinking-Budget einfrieren; C2-Vote-Pipeline korrigieren; format_vc_probe abschließen ohne H2-Metriken im Entscheidungspfad.
