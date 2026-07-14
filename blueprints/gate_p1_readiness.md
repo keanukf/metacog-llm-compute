@@ -4,7 +4,7 @@ Stand: 2026-07-06 (rev. 2). Zweck: Ein einziges Dokument, das entscheidet, ob di
 
 **Entscheidungsregel:** Phase 1 startet, wenn alle Punkte in Gate A bis F mit Status HART erfüllt sind. WEICH-Punkte dürfen offen sein, werden aber vor dem Start explizit als akzeptiertes Risiko in dieses Dokument eingetragen (Datum + Begründung). Jeder HART-Punkt produziert ein archiviertes Evidenz-Artefakt.
 
-**Statusübersicht:** Gate A abgeschlossen (Commit `c0d4067`, Prosa-Freeze Kap. 5). Gate B abgeschlossen (Merge `6ca2857`, Suite lokal + Pod grün, Persistenz- und Roundtrip-Nachweis). Offen: Gate C, D, E, F.
+**Statusübersicht:** Gate A abgeschlossen (Commit `c0d4067`, Prosa-Freeze Kap. 5). Gate B abgeschlossen (Merge `6ca2857`, Suite lokal + Pod grün, Persistenz- und Roundtrip-Nachweis). Gate C abgeschlossen (Merge `9f8dafd`, C-0…C-6 auf Pod 5090; 317 pytest grün). Offen: Gate D, E, F.
 
 ---
 
@@ -36,27 +36,27 @@ Begründung: Alle Lokalpilot-Evidenz (Qwen3-4B, MLX/LM Studio) und der Gate-B-Sm
 - [x] **HART.** Pod (5090) hoch, Qwen3-8B auf Network Volume; Config = `experiment_core.yaml`; `logprobs_mode="raw_logprobs"` auf der Engine gepinnt; `dtype=float16` (nicht `fp16`); History-Guard aktiv (kein `--allow-history-truncation`); parallelisiertes vLLM-Backend gestartet und erreichbar; `hf_model_card_gate.py` als Read-Only-Check, der Qwen3-8B nicht über die Thinking-Heuristik flaggt (Dense-vs-MoE ist das Kriterium, Thinking ist für C1 erforderlich). Kein Abbruchkriterium außer: Modell lädt, Backend antwortet, Config ist die richtige. *Evidenz: `run_metadata` des C-0-Checks.* (2026-07-12 Pod-Session)
 
 ### C-1 — Backend-Parität, Kriterien 1 + 2 + Batch-Invarianz (billig, HARTES STOPP-SIGNAL)
-- [ ] **HART.** `verify_backend_parity.py --backend server` auf dem Pod. Drei entkoppelte Kriterien, jeweils separates Pass/Fail:
+- [x] **HART.** `verify_backend_parity.py --backend server` auf dem Pod. Drei entkoppelte Kriterien, jeweils separates Pass/Fail:
   1. **K-Coverage** ≥ 20 Top-Logprobs an den Action-Token-Positionen.
   2. **Temperatur-Invarianz** der TLE: identische renormalisierte Entropie bei T=0.3 vs. T=1.0 auf dem festen Probe-Set (belegt die Skalen-Invarianz aus §5.6, §5.2.1).
   3. **Batch-Invarianz (neu, wegen Parallelisierung):** derselbe Probe-Prompt liefert innerhalb der preregistrierten Toleranz (§5.7-Schwelle, `TLE_INVARIANCE_EPS_BITS`) identische Top-Logprobs, ob allein oder in einem gemischten Batch verarbeitet. Grund: Das parallelisierte Backend batcht Sequenzen nebenläufig; fp16-Reduktions-Nichtdeterminismus über wechselnde Batch-Zusammensetzungen darf die TLE-Messung einer Aktion nicht verschieben. Ohne diesen Nachweis ist die Cross-Episode-Vergleichbarkeit von TLE unter Batching nicht gesichert.
   - **Stopp:** Fällt eines der drei Kriterien, bricht Gate C hier ab, bevor eine echte Episode läuft. Batch-Invarianz-Fail heißt entweder deterministische Batching-Einstellungen erzwingen (z. B. feste Batch-Grenzen, `enforce_eager`, Seed-Pinning) oder die Toleranz empirisch als Rausch-Floor neu begründen und preregistrieren. *Evidenz: `data/results/backend_parity_<UTC>.json`, referenziert in §5.7.5.*
-  - **2026-07-12:** Provisorischer PASS auf Pod — **invalidiert 2026-07-13** wegen serialisiertem `ServerBackend`-Client; Re-run auf Branch `perf/vllm-server-concurrency` erforderlich.
+  - **2026-07-14:** PASS @ N=32, eps=0.05 (committed-action probes); `backend_parity_20260714T104959Z.json`; siehe Consistency-Log.
 
 ### C-2 — Format-Compliance-Probe, klein (billig-mittel, HARTES STOPP-SIGNAL)
-- [ ] **HART.** Wenige Episoden pro Domäne, nur Mechanik, kein Signal: C1 erzeugt einen Think-Block und eine als erste nichtleere Zeile nach `</think>` parsebare Aktion; keine Reasoning-Leakage in den Action-Slot; VC-Follow-up liefert überhaupt einen parsebaren Integer. Deckt die aus dem 4B-Pilot bekannten Fehlerbilder (leere Aktionen, Prompt-Echo, VC-immer-null, Thinking flutet Aktion) auf dem 8B ab. **Stopp:** Kein sauberes C1-Parsing → zuerst Config reparieren (`chat_template: true`, `action_stop`, `followup_max_tokens` auf den Nicht-Pilot-Wert), bevor der teure Signal-Smoke läuft. *Evidenz: Probe-Report.*
+- [x] **HART.** Wenige Episoden pro Domäne, nur Mechanik, kein Signal: C1 erzeugt einen Think-Block und eine als erste nichtleere Zeile nach `</think>` parsebare Aktion; keine Reasoning-Leakage in den Action-Slot; VC-Follow-up liefert überhaupt einen parsebaren Integer. Deckt die aus dem 4B-Pilot bekannten Fehlerbilder (leere Aktionen, Prompt-Echo, VC-immer-null, Thinking flutet Aktion) auf dem 8B ab. **Stopp:** Kein sauberes C1-Parsing → zuerst Config reparieren (`chat_template: true`, `action_stop`, `followup_max_tokens` auf den Nicht-Pilot-Wert), bevor der teure Signal-Smoke läuft. *Evidenz: Probe-Report.*
 
 ### C-3 — ToH-Parseability (billig, HARTES STOPP-SIGNAL)
-- [ ] **HART.** ToH-Parseability > 80 % mit Qwen3-8B bei C0 (20 Episoden, 3 Disks). Unterschreitung → `include_valid_moves`-Fallback aktivieren und als preregistrierte Konfigurationsänderung dokumentieren. *Evidenz: Pilot-Summary.* (2026-07-12: 100 % — **Re-run nach perf fix**)
+- [x] **HART.** ToH-Parseability > 80 % mit Qwen3-8B bei C0 (20 Episoden, 3 Disks). Unterschreitung → `include_valid_moves`-Fallback aktivieren und als preregistrierte Konfigurationsänderung dokumentieren. *Evidenz: Pilot-Summary.* (2026-07-14: parse_rate=1.0, `toh_parse_probe`)
 
 ### C-4 — VC-Validitäts-Screen auf finaler Elicitation-Config (mittel, KIPP-PUNKT)
-- [ ] **HART.** Auf Qwen3-8B mit finaler Config (probscore-Prompt, `judged_context=action_only`, Retry bei T=0, `followup_max_tokens` auf Nicht-Pilot-Wert): Parse-Rate ≥ 90 % und Varianz-Screen aus `preanalysis_screen.py` (Anteil modaler Wert, Wertespektrum). Angesichts des `null`-VC-Musters der Smoke-Fixture ist dies ein realer Kipp-Punkt. Degeneriertheit ist per §5.2.2 ein berichtbarer Befund und kein automatischer Startblocker, aber der Screen muss **vor** dem Freeze laufen, damit die Elicitation nicht nach Datensichtung angepasst wird. *Evidenz: Screen-Report.*
+- [x] **HART.** Auf Qwen3-8B mit finaler Config (probscore-Prompt, `judged_context=action_only`, Retry bei T=0, `followup_max_tokens` auf Nicht-Pilot-Wert): Parse-Rate ≥ 90 % und Varianz-Screen aus `preanalysis_screen.py` (Anteil modaler Wert, Wertespektrum). Angesichts des `null`-VC-Musters der Smoke-Fixture ist dies ein realer Kipp-Punkt. Degeneriertheit ist per §5.2.2 ein berichtbarer Befund und kein automatischer Startblocker, aber der Screen muss **vor** dem Freeze laufen, damit die Elicitation nicht nach Datensichtung angepasst wird. *Evidenz: Screen-Report.*
 
 ### C-5 — TLE-Signal-Smoke, AUROC (teuer, HERZSTÜCK, KIPP-PUNKT)
-- [ ] **HART.** Der eigentliche Lauf: genug Episoden über C0/C1/C2 in beiden Domänen, um in einem Rutsch zu liefern: TLE-Step-Level-AUROC gegen `y_optimal` (Ziel > 0.6 in mindestens einer Domäne), die Logprob-Sidecars für C-6, den Durchsatz für Gate F und eine Difficulty-Verteilungs-Vorschau für Gate D. **Kipp-Punkt:** AUROC < 0.6 in beiden Domänen ist kein automatisches No-Go, erzwingt aber die Aggregations-/Prompt-/K-Prüfung vor dem Commit der vollen Phase-1-Stunden. Direkter Bezug zur Smoke-Fixture: liegt TLE auf dem 8B ähnlich flach (~1e-4 bit) und ohne Trennung zwischen optimal und illegal, ist das das Frühwarnsignal, das hier sichtbar werden muss, nicht erst nach der vollen Erhebung. *Evidenz: Signal-/Kalibrierungs-Summary.*
+- [x] **HART.** Der eigentliche Lauf: genug Episoden über C0/C1/C2 in beiden Domänen, um in einem Rutsch zu liefern: TLE-Step-Level-AUROC gegen `y_optimal` (Ziel > 0.6 in mindestens einer Domäne), die Logprob-Sidecars für C-6, den Durchsatz für Gate F und eine Difficulty-Verteilungs-Vorschau für Gate D. **Kipp-Punkt:** AUROC < 0.6 in beiden Domänen ist kein automatisches No-Go, erzwingt aber die Aggregations-/Prompt-/K-Prüfung vor dem Commit der vollen Phase-1-Stunden. Direkter Bezug zur Smoke-Fixture: liegt TLE auf dem 8B ähnlich flach (~1e-4 bit) und ohne Trennung zwischen optimal und illegal, ist das das Frühwarnsignal, das hier sichtbar werden muss, nicht erst nach der vollen Erhebung. *Evidenz: Signal-/Kalibrierungs-Summary.*
 
 ### C-6 — K-Sensitivitätssweep (billig, aus C-5-Daten, kein neuer Lauf)
-- [ ] **HART.** `sweep_topk_sensitivity.py` rekonstruiert TLE für K ∈ {5, 10, 20} aus den C-5-Sidecars und rechnet H1a-AUROC pro K und Domäne. §5.2.1 verspricht diesen Sweep ausdrücklich vor der Hauptdatenerhebung; K wird danach eingefroren. Kommt nach C-5, weil es dessen Sidecars konsumiert. *Evidenz: Sweep-JSON + Einzeiler im Consistency-Log.*
+- [x] **HART.** `sweep_topk_sensitivity.py` rekonstruiert TLE für K ∈ {5, 10, 20} aus den C-5-Sidecars und rechnet H1a-AUROC pro K und Domäne. §5.2.1 verspricht diesen Sweep ausdrücklich vor der Hauptdatenerhebung; K wird danach eingefroren. Kommt nach C-5, weil es dessen Sidecars konsumiert. *Evidenz: Sweep-JSON + Einzeiler im Consistency-Log.*
 
 **Effizienz:** C-0 bis C-6 in einer Pod-Session; die harten Stopps (C-1, C-2, C-3) sind echte Abbruchpunkte, nicht nachträgliche Häkchen. Der teure Lauf ist ausschließlich C-5.
 
@@ -82,9 +82,9 @@ Begründung: Preregistrierungsdisziplin verlangt eine vor den Daten lauffähige 
 
 ## Gate F — Ops und Budget
 
-- [ ] **HART — Budget-Neuschätzung aus gemessenem gebatchtem Durchsatz.** Die alten 16 h/31 h-Schätzungen (`infrastructureplan_pilot.md`, als SUPERSEDED markiert) beruhen auf Qwen2.5-3B, 120 tok/s, ~80 Output-Tokens/Call, RTX 3090, **sequenziell**. Alle vier Annahmen sind überholt: Qwen3-8B, C1/C2 mit `cot_max_tokens` emittieren ein Vielfaches der Output-Tokens, 5090 statt 3090, und Continuous Batching statt sequenzieller Aufrufe. Aus C-5: gemessener **gebatchter** Durchsatz (effektive Episoden/Stunde auf der 5090) und mittlere Output-Tokens pro Stage → Phase-1- und Phase-2-Stunden und Kosten neu rechnen; gegen Restguthaben (~9 EUR) halten, Top-up-Entscheidung vor dem Lauf treffen. *Evidenz: aktualisierte Budgettabelle.* Vorläufige Formel in `docs/instrument_validation_session.md` § Gate F (pending C-5 ep/h).
+- [x] **HART — Budget-Neuschätzung aus gemessenem gebatchtem Durchsatz.** C-5 `105004`: **~93 ep/h** @ 20 steps, N=32 → P1 ~16 h + P2 ~32 h ≈ **48 h GPU** (4.500 Episoden). Speicher: Sidecars aus (~522 GB bei vollem Dump); Produktion mit `save_logprob_distributions: false` (~0.1 GB). *Evidenz: Consistency-Log @ `9f8dafd`, `docs/instrument_validation_session.md` § Gate F.* **Offen:** Kosten vs. Restguthaben (~9 EUR) → Top-up vor Phase 1.
 - [ ] **HART — Resume-Korrektheit unter Nebenläufigkeit (angepasst wegen Parallelisierung).** Nicht mehr nur „max. eine Episode verloren": Bei parallelisiertem Backend sind zum Crash-Zeitpunkt mehrere Episoden in flight. Test: laufenden gebatchten Smoke hart abbrechen, mit `--resume` fortsetzen; kein halb geschriebenes Episode-JSON, kein Doppel-Eintrag, kein übersprungenes Work-Item über `list_completed_episodes`. Schwere Crash-Resilienz ist per Projektentscheidung deprioritisiert, aber die Resume-Korrektheit im nebenläufigen Fall bleibt HART, weil jetzt mehr gleichzeitig offen ist. *Evidenz: Einzeiler im Consistency-Log.*
-- [ ] **HART — Run-Hygiene auf dem Pod.** Modell vorab auf dem Network Volume; Langfuse-Keys gesetzt oder Tracing bewusst aus (dokumentiert); `RESULTS_DIR` auf `/workspace`; History-Guard aktiv; Logprob-Sidecars mindestens für den K-Sweep aktiv, Entscheidung für den vollen Phase-1-Lauf dokumentiert; parallelisiertes Backend mit den in C-1 als batch-invariant verifizierten Einstellungen. *Evidenz: `run_metadata` des ersten Phase-1-Blocks.*
+- [ ] **HART — Run-Hygiene auf dem Pod.** Modell vorab auf dem Network Volume; Langfuse-Keys gesetzt oder Tracing bewusst aus (dokumentiert); `RESULTS_DIR` auf `/workspace`; History-Guard aktiv; **Sidecars aus für volle Phase 1/2** (K=20 aus C-6-Smoke eingefroren; ~116 MB/ep bei Sidecar-Dump); parallelisiertes Backend mit den in C-1 als batch-invariant verifizierten Einstellungen. *Evidenz: `run_metadata` des ersten Phase-1-Blocks — ausstehend.*
 - [ ] **WEICH — Block-Aufteilung.** TextWorld und ToH als getrennte Blöcke (Resume-Grenzen, Fehlerisolation); `errors.jsonl` nach jedem Block sichten, Reruns nur für dokumentierte Infrastrukturfehler (§5.8-Regel).
 
 ---
@@ -107,10 +107,10 @@ Begründung: Preregistrierungsdisziplin verlangt eine vor den Daten lauffähige 
 |------|--------|--------|
 | A | Preregistrierungs-Freeze (Prosa) | **abgeschlossen** (`c0d4067`) |
 | B | Code-Readiness | **abgeschlossen** (`6ca2857`) |
-| C | Instrument-Validierung (5090, parallel vLLM): C-0…C-6 | offen |
+| C | Instrument-Validierung (5090, parallel vLLM): C-0…C-6 | **abgeschlossen** (`9f8dafd`) |
 | D | Schwierigkeitskalibrierung + Manifeste | offen |
 | E | Analyse-Rehearsal | offen |
-| F | Ops + Budget (5090, Batching) | offen |
+| F | Ops + Budget (5090, Batching) | **teilweise** (Budget/Speicher @ `9f8dafd`; Resume + Run-Hygiene offen) |
 
 **GO** = alle HART-Punkte abgehakt, jedes Evidenz-Artefakt archiviert, WEICH-Punkte erledigt oder mit Datum und Begründung als akzeptiert eingetragen. Danach: Freeze-Tag setzen, ersten Phase-1-Block starten, dieses Dokument mit dem Tag-Hash abschließen. Änderungen danach nur als datiertes Amendment.
 

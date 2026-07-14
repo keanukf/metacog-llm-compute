@@ -56,4 +56,4 @@ ToH C2 under `legal_or_optimal` collapse: `n_neg = 1` on 72 pilot episodes. Prer
 
 1. Unit tests green  
 2. Re-freeze **K = 20** (C-6 reconciled; independent of ECDF fix)  
-3. Close Gate C
+3. ~~Close Gate C~~ **Done** @ merge `9f8dafd`

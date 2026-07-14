@@ -2,6 +2,35 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-14 — Gate C merge + Pod main (`9f8dafd`)
+
+**Merge:** PR #21 → `main` @ `9f8dafd` (22 Commits: Gate C instrument validation, stage-wise ECDF, legacy ECDF hardening, vLLM concurrency).
+
+**Pod:** `213.173.103.203:46239` — `git checkout main && pull` → `9f8dafd`; **`317 passed`** pytest (14.4s, venv `/root/venv-metacog`).
+
+**Gate C:** **Done** (final, auf `main` verankert). Evidenz: `docs/instrument_validation_session.md`, `docs/freeze_review_5_4_stage_wise_ecdf.md`, C-5 `phase1_20260714_105004`.
+
+**Gate F — Budget (C-5 ep/h, `@20` steps, N=32):**
+
+| Item | Episodes | ep/h | Wall (h) |
+|------|---------:|-----:|---------:|
+| Phase 1 | 1,500 | 93 | ~16.1 |
+| Phase 2 | 3,000 | 93 | ~32.3 |
+| **P1+P2** | **4,500** | **93** | **~48.4** |
+
+Quelle: `105004` — 72 ep, 47m 42s wall. Kurz-Sweep `@8` steps: ~192 ep/h (`throughput_sweep_post_perf.json`) — nur Planungs-Obergrenze, nicht Phase-1/2-Extrapolation.
+
+**Gate F — Speicher (Sidecars, `105004`):**
+
+| Modus | MB/ep (Ø) | P1 (1.5k) | P2 (3k) | P1+P2 |
+|-------|----------:|----------:|--------:|------:|
+| Episode-JSON only (`save_logprob_distributions: false`, Produktion) | ~0.02 | ~0.03 GB | ~0.06 GB | **~0.1 GB** |
+| Sidecars ON (Smoke/C-6, volle Reasoning-Logprobs) | ~116 | ~174 GB | ~348 GB | **~522 GB** |
+
+C1/C2 dominieren (TW C2 ~154 MB/ep, ToH C2 ~385 MB/ep); C0 ~0.1–0.2 MB/ep. **Entscheidung Gate F Run-Hygiene:** Sidecars **aus** für volle Phase 1/2 (`experiment_core.yaml` Default); K=20 aus C-6-Smoke eingefroren. Sidecars nur für gezielte Probes/Audit — nicht 4.5k Episoden auf Pod-PV.
+
+**Nächster Schritt:** Gate **D** (TW/ToH Difficulty-Sweep + Manifeste), **E** (Analyse-Rehearsal E2E), **F** (Resume-Test, Run-Hygiene, Top-up vs ~48 h GPU).
+
 ## 2026-07-14 — Gate C close: legacy ECDF hardening, sidecar verification, ECDF occupancy
 
 **P1 — Legacy `ecdf_ref` Ladepfad:** Stilles Replizieren der gepoolten ECDF auf alle Stufen **entfernt**. Artefakte ohne `ecdf_by_stage` → `ValueError` (Default `allow_legacy_pooled_ecdf=False` in `load_policy`). Pilot-only: `load_policy_pilot()` setzt explizit `True` + `UserWarning`.

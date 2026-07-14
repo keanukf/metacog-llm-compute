@@ -4,7 +4,7 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 
 | Field | Value |
 |-------|-------|
-| Host | RunPod 5090 (`213.173.111.21`, online 2026-07-13) |
+| Host | RunPod 5090 (`213.173.103.203:46239`, online 2026-07-14) |
 | Started | 2026-07-12 |
 | Branch (code) | `perf/vllm-server-concurrency` @ `3be18f0` (pod pulled post C-5/C-6 pre-declaration) |
 | Results root | `/workspace/metacog-llm-compute/data/results/instrument_validation` |
@@ -247,18 +247,31 @@ Domain probes (`tw_short`, `toh_short`) stay well under eps at all N. Failure is
 
 Flat ~88–92 tok/s indicated HTTP serialization, not GPU saturation.
 
-## Gate F budget (preliminary, pending C-5 ep/h)
+## Gate F budget (@ C-5 `105004`, merge `9f8dafd`)
 
 | Item | Value |
 |------|-------|
 | Phase 1 episodes | 1,500 |
 | Phase 2 episodes | 3,000 |
 | Total | 4,500 |
-| Pre-fix ep/h (post C1/C2 token fix, 8-step smoke) | ~27–30 |
-| Rough wall-time pre-fix | ~150–170 h |
-| Target post perf-fix | Re-measure; expect multi× if tok/s scales with real batching |
+| **Measured ep/h (C-5, 20 steps, N=32)** | **~93** (72 ep, 47m 42s wall) |
+| Short smoke ep/h (8 steps, N=32) | ~192 (throughput_sweep_post_perf — upper bound only) |
+| **Wall-time estimate (P1+P2 @ 93 ep/h)** | **~48 h** |
+| Phase 1 only | ~16 h |
+| Phase 2 only | ~32 h |
 
-Formula: `wall_hours ≈ total_episodes / measured_ep_per_hour` (from C-5 or throughput probe at production step count).
+Formula: `wall_hours ≈ total_episodes / measured_ep_per_hour`.
+
+### Storage (@ sidecar dump `105004`, 72 ep)
+
+| Mode | MB/ep (mean) | P1 (1.5k) | P2 (3k) | P1+P2 |
+|------|-------------:|----------:|--------:|------:|
+| Episode JSON only (`save_logprob_distributions: false`) | ~0.02 | ~0.03 GB | ~0.06 GB | **~0.1 GB** |
+| Full logprob sidecars (C-5/C-6 smoke) | ~116 | ~174 GB | ~348 GB | **~522 GB** |
+
+C2 ToH sidecars dominate (~386 MB/ep); C0 negligible (~0.1 MB/ep). **Production decision:** sidecars **off** for full Phase 1/2; K=20 frozen from C-6 smoke. Sidecars only for targeted probes — not 4.5k episodes on pod PV.
+
+**Open:** GPU cost vs. ~9 EUR balance → top-up before Phase 1 block.
 
 ## 2026-07-12 session detail (archive)
 
