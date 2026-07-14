@@ -1,22 +1,37 @@
 [
   {
     "id": "tw_short",
-    "prompt": "You are in a kitchen. Exits: north.\n\nChoose one valid game action on a single line."
+    "prompt": "You are in a kitchen. Exits: north.\n\nChoose one valid game action on a single line.",
+    "gating": true,
+    "role": "committed_action",
+    "note": "TextWorld-representative: elicits a single committed action token window."
   },
   {
     "id": "toh_short",
-    "prompt": "Tower of Hanoi state:\nPeg A: [3, 2, 1]\nPeg B: []\nPeg C: []\n\nOutput one move A->C format only."
+    "prompt": "Tower of Hanoi state:\nPeg A: [3, 2, 1]\nPeg B: []\nPeg C: []\n\nOutput one move A->C format only.",
+    "gating": true,
+    "role": "committed_action",
+    "note": "Tower-of-Hanoi-representative: elicits a single committed move token window."
   },
   {
     "id": "minimal_1",
-    "prompt": "Reply with one word: north"
+    "prompt": "Reply with one word: north",
+    "gating": true,
+    "role": "committed_action",
+    "note": "Constrained single-token action; synthetic but action-representative."
   },
   {
     "id": "minimal_2",
-    "prompt": "Single line action: look"
+    "prompt": "Single line action: look",
+    "gating": true,
+    "role": "committed_action",
+    "note": "Constrained single-line action; synthetic but action-representative."
   },
   {
     "id": "minimal_3",
-    "prompt": "Action: inventory"
+    "prompt": "Action: inventory",
+    "gating": false,
+    "role": "diagnostic_free_generation",
+    "note": "Underspecified prompt: model produces free-form multi-token rambling rather than a committed action, so its under-load dTLE reflects generation-sequence divergence, not committed-action-window numerics. Reported for transparency; NOT part of the batch-invariance gate (out of scope for the committed-action TLE contract)."
   }
 ]

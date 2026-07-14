@@ -293,7 +293,9 @@ def main() -> None:
                 if sig is None:
                     continue
                 policies_by_key[(str(dom), str(strat))] = load_policy(
-                    artifact_path, domain=str(dom), signal=sig
+                    artifact_path,
+                    domain=str(dom),
+                    signal=sig,
                 )
 
     progress_every = (

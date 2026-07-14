@@ -154,16 +154,53 @@ This resets **tracked** files only. Ignored paths such as `data/results/` and `.
 
 ## Step 6 — Set up the environment on the pod
 
-On the pod, from the repo root:
+On a **new pod** (fresh container disk), one command from the repo root on `/workspace`:
 
 ```bash
-cd /workspace/metacog-llm-compute
+cd /workspace/metacog-llm-compute   # skip clone if the volume already has the repo
 bash scripts/setup_cloud.sh
 ```
 
+`setup_cloud.sh` prepares a **runnable pod** (secrets, SSH, Python env, model cache). It does **not** start vLLM or run Gate C / probes — you choose what to run afterward.
+
+| Step | What |
+|------|------|
+| `source /workspace/secrets/env.sh` | HF_TOKEN, Langfuse, etc. |
+| GitHub deploy key | copies `/workspace/secrets/runpod_github_ed25519` → `~/.ssh/` |
+| Git sync | `git fetch origin`, then **ff-only pull on the branch already checked out** (no branch switch). Optional override: `GIT_BRANCH=main` |
+| venv | `/root/venv-metacog` on **container disk** |
+| Caches | `HF_HOME=/root/.cache/huggingface`, `PIP_CACHE_DIR=/root/.cache/pip` (not `/workspace`) |
+| deps + model | `requirements.txt` + optional `Qwen/Qwen3-8B` pre-download |
+
+**Skip flags** (e.g. stopped pod with venv + model still on container disk):
+
+```bash
+SKIP_MODEL_DOWNLOAD=1 bash scripts/setup_cloud.sh
+# SKIP_GIT_SYNC=1   — no fetch/pull (deploy key still installed)
+# SKIP_VENV=1       — reuse existing venv
+```
+
+**Switch branch before setup** (if you want a different branch than the one on disk):
+
+```bash
+cd /workspace/metacog-llm-compute
+git checkout main   # or any branch you use
+bash scripts/setup_cloud.sh
+# or one-shot: GIT_BRANCH=main bash scripts/setup_cloud.sh
+```
+
+**New SSH session** (after setup):
+
+```bash
+cd /workspace/metacog-llm-compute
+source scripts/activate_pod_env.sh
+```
+
+Start **vLLM serve** separately when you need GPU inference — see `docs/runpod.md`.
+
 This installs the **pinned** dependency set from `requirements.txt` (includes `vllm`, `transformers`, `textworld`, `numpy`, `pandas`, `scipy`, `pyyaml`, test deps, etc.).
 
-**Optional — pre-download the model** (saves time during the pilot; `scripts/setup_cloud.sh` does this unless `SKIP_MODEL_DOWNLOAD=1`. If `MODEL_NAME` is unset, it uses the **first** model in `configs/models_runpod.yaml`):
+**Optional — pre-download only** (if you already ran setup and only need weights):
 
 ```bash
 export MODEL_NAME="Qwen/Qwen3-8B"
@@ -171,7 +208,7 @@ export SKIP_MODEL_DOWNLOAD=0
 bash scripts/setup_cloud.sh
 ```
 
-Store the model on the network volume (e.g. under `/workspace`) so it persists.
+Store models on the **container disk** (`HF_HOME=/root/.cache/huggingface`) so the 10 GB network volume is not filled; results stay under `/workspace/metacog-llm-compute/data/results`.
 
 ## Step 6b — Generate TextWorld games (required before TextWorld pilot)
 
@@ -391,12 +428,20 @@ vllm serve Qwen/Qwen3-8B \
   --max-model-len 16384 \
   --logprobs-mode raw_logprobs \
   --attention-backend TRITON_ATTN \
+  --gpu-memory-utilization 0.92 \
+  --max-num-seqs 32 \
+  --max-num-batched-tokens 8192 \
+  --enable-prefix-caching \
   --port 8000
 ```
 
+Tune `--max-num-seqs` to at least your chosen `execution.max_concurrent_episodes` (after throughput sweep). Raise `--gpu-memory-utilization` toward `0.95` only if the pod stays stable (watch for KV preemption/OOM). **Freeze** attention backend and prefix-caching settings before `verify_backend_parity.py` — changing them later requires re-running parity.
+
 **5090 / Blackwell workaround:** On some RunPod images the default `FLASH_ATTN` (FlashAttention-2) path fails at engine init with `cudaErrorUnsupportedPtxVersion` (`the provided PTX was compiled with an unsupported toolchain`). The model loads fine; the crash is in the FA2 kernels. Use `--attention-backend TRITON_ATTN` (or `FLASHINFER`) instead. Re-verify logprobs after switching backends.
 
-Set in YAML (`execution.server_url: "http://127.0.0.1:8000/v1"`) or export before runners. C2 `generate_many` is **sequential** — effective concurrent sequences ≈ `execution.max_concurrent_episodes`, not ×3.
+Set in YAML (`execution.server_url: "http://127.0.0.1:8000/v1"`) or export before runners. The Python client (`ServerBackend`) must **not** serialize HTTP POSTs — parallel episode threads rely on vLLM continuous batching. C2 uses one request with `n=3` samples when the server supports it.
+
+Optional: `execution.server_timeout_s` in YAML (default 600s) for long C2 thinking generations under load.
 
 ### Validation regime: plumbing smoke vs TLE invariance under load
 
@@ -413,10 +458,76 @@ python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --output-dir da
 python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --real --output-dir data/results/smoke_parallel
 
 # TLE invariance validation (production N, saturated pool):
+python scripts/verify_backend_parity.py --backend server \
+  --config configs/experiment_core.yaml \
+  --output-dir data/results/instrument_validation
+# Legacy wrapper (delegates to verify_backend_parity):
 python scripts/run_tle_invariance_validation.py --config configs/experiment_core.yaml \
-  --output data/results/tle_invariance_report.json
-python scripts/verify_backend_parity.py --backend server --config configs/experiment_core.yaml
+  --output data/results/instrument_validation/tle_invariance_report.json
 ```
+
+### Instrument validation session (5090 pod)
+
+After connecting Cursor via SSH Remote to `/workspace/metacog-llm-compute`:
+
+**Order matters:** pick production `max_concurrent_episodes` from measured throughput *before* backend parity (batch invariance must use the N you will run in Phase 1).
+
+```bash
+bash scripts/instrument_validation_preflight.sh
+# Terminal A: vllm serve … (see above; pin --revision to match experiment_core.yaml)
+# Terminal B — results under data/results/instrument_validation/
+
+# 1) Plumbing + thinking check
+python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --real \
+  --output-dir data/results/instrument_validation/smoke_parallel
+
+# 2) Throughput sweep — choose N (try 8,16,24,32 after server concurrency fix; extend if headroom)
+python scripts/measure_concurrent_throughput.py --real \
+  --candidates 8,16,24,32 \
+  --output data/results/instrument_validation/throughput_sweep.json
+# Set execution.max_concurrent_episodes in experiment_core.yaml + dev configs to chosen N
+
+# 3) Backend parity at production N (hard stop if FAIL)
+python scripts/verify_backend_parity.py --backend server \
+  --config configs/experiment_core.yaml \
+  --output-dir data/results/instrument_validation
+
+# 4) Format/VC probe — check vc_rate + traces; preanalysis AUROC is smoke-only here
+python scripts/run_phase1.py --config configs/dev/format_vc_probe.yaml --real \
+  --checkpoint-dir data/results/instrument_validation
+PROBE=$(ls -td data/results/instrument_validation/phase1_* | head -1)
+python scripts/audit_pilot_signals.py "$PROBE" --json
+python -m src.analysis.preanalysis_screen "$PROBE"   # AUROC marked (smoke) if n<50
+
+# 5) ToH parse probe
+python scripts/run_phase1.py --config configs/dev/toh_parse_probe.yaml --real \
+  --checkpoint-dir data/results/instrument_validation
+
+# 6) Signal smoke — extrapolate wall time from probe ep/h before starting
+python scripts/run_phase1.py --config configs/dev/signal_smoke.yaml --real \
+  --checkpoint-dir data/results/instrument_validation
+RUN=$(ls -td data/results/instrument_validation/phase1_* | head -1)
+python -m src.analysis.preanalysis_screen "$RUN"
+python scripts/sweep_topk_sensitivity.py "$RUN" --output "$RUN/topk_sensitivity.json"
+```
+
+Dev configs: `format_vc_probe.yaml`, `toh_parse_probe.yaml`, `signal_smoke.yaml` (72 episodes, 1 run/condition).
+Track progress in `docs/instrument_validation_session.md` (not committed).
+Gate checklist: `blueprints/gate_p1_readiness.md` (Gate C), `docs/consistency_log.md`.
+
+**One-shot after `perf/vllm-server-concurrency` merge on pod:**
+
+```bash
+bash scripts/run_instrument_validation_after_perf.sh
+```
+
+This runs re-sweep → `apply_production_n.py` → parity → format_vc_probe → toh_parse_probe → (optional) signal_smoke.
+
+**Production N:** Do not freeze `max_concurrent_episodes` at a guess (e.g. 3). Sweep first; if Phase 1 later uses a higher N, re-run parity. Running parity at lower N than production limits generalizability — document as limitation if unavoidable.
+
+**Attention backend:** If you switch `TRITON_ATTN` → `FLASHINFER` (or back) after a passed parity run, **re-run** `verify_backend_parity.py` — backends can change numerics.
+
+**Budget / time:** Rough ep/h from the sweep × planned episodes is enough for planning; no need to optimize to the last euro. After `format_vc_probe`, extrapolate C-5 duration before launching `signal_smoke`.
 
 Block before Smoke `--real` GO: `enable_thinking` must produce thinking blocks on the server (C1/C2 degrade silently otherwise).
 

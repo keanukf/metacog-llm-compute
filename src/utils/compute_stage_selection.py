@@ -88,25 +88,26 @@ def resolve_compute_stages_for_domain(
     *,
     domain: str | None,
     default: Iterable[str] = _VALID_STAGES,
+    config_key: str = "pilot",
 ) -> list[str]:
     """
     Resolve enabled compute stages for a given domain.
 
-    Supported config shapes (all under config["pilot"]):
+    Supported config shapes (under config[config_key], typically ``pilot`` or ``phase1``):
       - compute_stages: 3 | 2 | 1 (or "3"/"2"/"1")
       - compute_stages: "C0" | "C0,C2" | ["C0","C2"]
       - compute_stages_by_domain: {textworld: "C0", tower_of_hanoi: ["C0","C1"]}
       - compute_stages: {textworld: "C0"}  (legacy-ish convenience)
     """
-    pilot = config.get("pilot") or {}
+    section = config.get(config_key) or {}
     default_list = _validate_and_order(list(default))
 
-    by_dom = pilot.get("compute_stages_by_domain")
+    by_dom = section.get("compute_stages_by_domain")
     if domain and isinstance(by_dom, dict) and domain in by_dom:
         stages = _validate_and_order(_parse_stage_list(by_dom[domain]))
         return stages if stages else default_list
 
-    raw = pilot.get("compute_stages")
+    raw = section.get("compute_stages")
     if isinstance(raw, dict) and domain and domain in raw:
         stages = _validate_and_order(_parse_stage_list(raw[domain]))
         return stages if stages else default_list

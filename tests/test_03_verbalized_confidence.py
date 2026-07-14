@@ -60,3 +60,13 @@ def test_bare_number_pattern():
     val, pat = parse_confidence_with_meta("75")
     assert val == 75.0
     assert pat == "bare_number"
+
+
+def test_parse_confidence_rejects_bare_confidence_label_echo():
+    assert parse_confidence("Confidence:") is None
+
+
+def test_parse_confidence_multiline_confidence_label():
+    val, pat = parse_confidence_with_meta("Confidence:\n90")
+    assert val == 90.0
+    assert pat == "bare_number"

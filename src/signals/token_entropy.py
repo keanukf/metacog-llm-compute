@@ -136,6 +136,135 @@ def extract_tle_from_response(
     return compute_tle(logprobs)
 
 
+def text_from_logprob_tokens(logprobs: list[dict[str, Any]]) -> str:
+    """Reconstruct completion text from token records (for action-window slicing)."""
+    return "".join(str(r.get("token", "")) for r in logprobs if isinstance(r, dict))
+
+
+def slice_action_logprob_tokens(
+    logprobs: list[dict[str, Any]] | list[float] | None,
+    text: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Return logprob records for the committed-action token window only.
+
+    Matches ``extract_action_tle_from_response``: after ``</think>`` if present,
+    otherwise the first non-empty line through its terminating newline (or end).
+    """
+    if logprobs is None or not logprobs:
+        return []
+    if not isinstance(logprobs, list):
+        return []
+
+    dict_rows = [x for x in logprobs if isinstance(x, dict)]
+    if not dict_rows:
+        return []
+
+    has_token_text = all(isinstance(x.get("token"), str) for x in dict_rows)
+    if not has_token_text:
+        return dict_rows
+
+    completion = text if text is not None else text_from_logprob_tokens(dict_rows)
+    out_text = (completion or "").lstrip()
+
+    think_close_idx = (completion or "").lower().rfind("</think>")
+    if think_close_idx >= 0:
+        target_start = think_close_idx + len("</think>")
+        while target_start < len(completion) and completion[target_start] in {
+            "\n",
+            "\r",
+            " ",
+            "\t",
+        }:
+            target_start += 1
+        cursor = 0
+        started = False
+        action_slice: list[dict[str, Any]] = []
+        for rec in dict_rows:
+            if not isinstance(rec, dict):
+                continue
+            tok = str(rec.get("token", ""))
+            start = cursor
+            end = start + len(tok)
+            cursor = end
+            if end <= target_start:
+                continue
+            if not started:
+                if tok.strip() == "":
+                    continue
+                started = True
+            action_slice.append(rec)
+            if started and ("\n" in tok):
+                break
+        return action_slice
+
+    is_multiline = "\n" in out_text
+    if is_multiline:
+        started = False
+        action_slice = []
+        for rec in dict_rows:
+            if not isinstance(rec, dict):
+                continue
+            tok = str(rec.get("token", ""))
+            if not started:
+                if tok.strip() == "":
+                    continue
+                started = True
+            action_slice.append(rec)
+            if started and ("\n" in tok):
+                break
+        return action_slice
+
+    started = False
+    action_slice = []
+    for rec in dict_rows:
+        if not isinstance(rec, dict):
+            continue
+        tok = str(rec.get("token", ""))
+        if not started:
+            if tok.strip() == "":
+                continue
+            started = True
+        action_slice.append(rec)
+        if started and ("\n" in tok):
+            break
+    return action_slice
+
+
+def mean_entropy_at_top_k(
+    logprob_tokens: list[dict[str, Any]],
+    k: int,
+) -> float | None:
+    """Mean Shannon entropy over action tokens, each truncated to top-k logprobs."""
+    if not logprob_tokens or k <= 0:
+        return None
+    entropies: list[float] = []
+    for rec in logprob_tokens:
+        if not isinstance(rec, dict):
+            continue
+        top = rec.get("top_logprobs")
+        if not isinstance(top, list) or not top:
+            continue
+        trimmed = top[:k]
+        if len(trimmed) < 2:
+            continue
+        entropies.append(entropy_shannon_from_top_logprobs(trimmed))
+    if not entropies:
+        return None
+    return sum(entropies) / len(entropies)
+
+
+def tle_mean_entropy_at_k_from_logprob_tokens(
+    logprob_tokens: list[dict[str, Any]] | None,
+    k: int,
+    *,
+    text: str | None = None,
+) -> float | None:
+    """Committed-action mean entropy at top-k (matches runtime TLE window, variable K)."""
+    action_slice = slice_action_logprob_tokens(logprob_tokens, text=text)
+    return mean_entropy_at_top_k(action_slice, k)
+
+
 def extract_action_tle_from_response(
     text: str,
     logprobs: list[dict[str, Any]] | list[float] | None,
@@ -163,58 +292,19 @@ def extract_action_tle_from_response(
     )
     out_text = (text or "").lstrip()
 
-    think_close_idx = (text or "").lower().rfind("</think>")
-    if think_close_idx >= 0:
+    if (text or "").lower().rfind("</think>") >= 0:
         if not has_token_text:
             return None
-        target_start = think_close_idx + len("</think>")
-        while target_start < len(text) and (text[target_start] in {"\n", "\r", " ", "\t"}):
-            target_start += 1
-        # Slice tokens starting at target_start until newline (or end).
-        cursor = 0
-        started = False
-        thinking_slice: list[dict[str, Any]] = []
-        for rec in logprobs:
-            if not isinstance(rec, dict):
-                continue
-            tok = str(rec.get("token", ""))
-            start = cursor
-            end = start + len(tok)
-            cursor = end
-            if end <= target_start:
-                continue
-            if not started:
-                if tok.strip() == "":
-                    continue
-                started = True
-            thinking_slice.append(rec)
-            if started and ("\n" in tok):
-                break
-        return compute_tle(thinking_slice) if thinking_slice else None
+        action_slice = slice_action_logprob_tokens(logprobs, text=text)
+        return compute_tle(action_slice) if action_slice else None
 
     is_multiline = "\n" in out_text
-    # If we don't have token strings, we can only be safe for single-line outputs.
     if not has_token_text:
         if is_multiline:
             return None
         return compute_tle(logprobs)
 
-    # Find the first non-empty line start and slice until its terminating newline (or end).
-    started = False
-    action_slice: list[dict[str, Any]] = []
-    for rec in logprobs:
-        if not isinstance(rec, dict):
-            continue
-        tok = str(rec.get("token", ""))
-        if not started:
-            # Skip leading whitespace/newlines until we hit real content.
-            if tok.strip() == "":
-                continue
-            started = True
-        action_slice.append(rec)
-        if started and ("\n" in tok):
-            break
-
+    action_slice = slice_action_logprob_tokens(logprobs, text=text)
     if not action_slice:
         return None
     return compute_tle(action_slice)

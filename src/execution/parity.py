@@ -127,6 +127,13 @@ def run_batch_invariance_probe(
     Batch-invariance probe: |dTLE(solo vs under_load)| over probes and load constellations.
 
     Primary metric: ``mean_entropy`` at committed-action window.
+
+    The gate is scoped to committed-action-representative probes (``gating`` truthy,
+    default ``True``). Probes flagged ``gating: false`` (e.g. underspecified prompts
+    that elicit free-form multi-token generation rather than a single committed action)
+    are still measured and reported under ``details``/``diagnostic_*`` for transparency,
+    but do not drive ``passed`` — they are out of scope for the committed-action TLE
+    contract that the experiment actually relies on.
     """
     solo = measure_solo_baselines(backend, probes, temperature=temperature, max_tokens=max_tokens)
     constellations = [
@@ -143,13 +150,20 @@ def run_batch_invariance_probe(
             LoadConstellation(f"pool{max_concurrent_episodes}_long", max_concurrent_episodes, 96)
         )
 
+    gating_ids = {
+        str(p.get("id") or p.get("prompt", "")[:20]) for p in probes if p.get("gating", True)
+    }
+
     max_dtle = 0.0
     max_dtle_secondary = 0.0
     worst: dict[str, Any] | None = None
+    diagnostic_max_dtle = 0.0
+    diagnostic_worst: dict[str, Any] | None = None
     details: list[dict[str, Any]] = []
 
     for probe in probes:
         pid = str(probe.get("id") or probe.get("prompt", "")[:20])
+        is_gating = pid in gating_ids
         base_mean = solo.get(pid, {}).get("mean_entropy")
         base_max = solo.get(pid, {}).get("max_entropy")
         if base_mean is None:
@@ -172,6 +186,7 @@ def run_batch_invariance_probe(
             )
             row = {
                 "probe_id": pid,
+                "gating": is_gating,
                 "constellation_id": const.constellation_id,
                 "pool_size": const.pool_size,
                 "filler_max_tokens": const.filler_max_tokens,
@@ -181,11 +196,17 @@ def run_batch_invariance_probe(
                 "dtle_max": d_max,
             }
             details.append(row)
-            if d_mean is not None and d_mean > max_dtle:
-                max_dtle = d_mean
-                worst = row
-            if d_max is not None and d_max > max_dtle_secondary:
-                max_dtle_secondary = d_max
+            if d_mean is not None:
+                if is_gating:
+                    if d_mean > max_dtle:
+                        max_dtle = d_mean
+                        worst = row
+                    if d_max is not None and d_max > max_dtle_secondary:
+                        max_dtle_secondary = d_max
+                else:
+                    if d_mean > diagnostic_max_dtle:
+                        diagnostic_max_dtle = d_mean
+                        diagnostic_worst = row
 
     threshold = float(eps) if eps is not None else resolve_tle_invariance_eps([])
     passed = max_dtle <= threshold
@@ -194,6 +215,14 @@ def run_batch_invariance_probe(
         "max_dtle": max_dtle,
         "max_dtle_secondary": max_dtle_secondary,
         "worst_constellation": worst,
+        "gating_probe_ids": sorted(gating_ids),
+        "diagnostic_max_dtle": diagnostic_max_dtle,
+        "diagnostic_worst_constellation": diagnostic_worst,
+        "gate_scope_note": (
+            "passed/max_dtle cover committed-action-representative probes only "
+            "(gating=true). diagnostic_* covers non-gating probes, reported for "
+            "transparency and not part of the pass criterion."
+        ),
         "eps": threshold,
         "details": details,
         "solo_baselines": solo,

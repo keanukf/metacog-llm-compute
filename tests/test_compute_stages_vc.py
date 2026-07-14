@@ -95,6 +95,50 @@ def test_thinking_flags_c1_reason_only():
     assert m.seen == [True]
 
 
+def test_c1_thinking_call_ignores_action_stop():
+    class _M:
+        def __init__(self) -> None:
+            self.kwargs: list[dict] = []
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.kwargs.append(dict(kwargs))
+            return "<think>x</think>\ngo east", ([{"logprob": -0.1}] * 5 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn("C1", vc_mode="none", action_stop=["\n"], c1_cot_max_tokens=512)
+    step("obs", [], m)
+    assert m.kwargs[0].get("stop") is None
+    assert m.kwargs[0]["max_tokens"] == 512
+    assert m.kwargs[0]["enable_thinking"] is True
+
+
+def test_c2_sample_uses_cot_max_tokens_not_action_cap():
+    class _M:
+        def __init__(self) -> None:
+            self.kwargs: list[dict] = []
+
+        def generate(self, prompt: str, logprobs: bool = False, **kwargs):
+            self.kwargs.append(dict(kwargs))
+            return "<think>plan</think>\ngo north", ([{"logprob": -0.1}] * 4 if logprobs else None)
+
+    m = _M()
+    step = get_step_fn(
+        "C2",
+        vc_mode="none",
+        action_max_tokens=32,
+        action_stop=["\n"],
+        c2_cot_max_tokens=1024,
+        c2_n_samples=2,
+        c2_tie_break_seed="seed",
+    )
+    step("obs", [], m)
+    assert len(m.kwargs) == 2
+    for kw in m.kwargs:
+        assert kw.get("stop") is None
+        assert kw["max_tokens"] == 1024
+        assert kw["enable_thinking"] is True
+
+
 def test_c1_single_call_commits_post_think_action():
     class _M:
         def __init__(self) -> None:
@@ -171,7 +215,8 @@ class _CountingModel:
         if VC_FOLLOWUP_PROMPT_MARKER in (prompt or ""):
             assert kwargs.get("enable_thinking") is False
             return "65", [{"logprob": -0.1}] * 2 if logprobs else None
-        return "A->C", [{"logprob": -0.5}] * 3 if logprobs else None
+        text = "<think>\nplan\n</think>\nA->C"
+        return text, [{"logprob": -0.5}] * 6 if logprobs else None
 
 
 def test_followup_triggers_two_lm_calls_per_step():
@@ -238,6 +283,9 @@ def test_c2_followup_adds_call_after_samples():
 
 
 def test_c2_n_samples_is_configurable_and_traced():
+    def _closed(action: str) -> str:
+        return f"<think>\nplan\n</think>\n{action}"
+
     class _M:
         def __init__(self) -> None:
             self.calls = 0
@@ -245,7 +293,8 @@ def test_c2_n_samples_is_configurable_and_traced():
         def generate(self, prompt: str, logprobs: bool = False, **kwargs):
             self.calls += 1
             # Make every sample identical so vote agreement is 1.0.
-            return "Go north.\nextra", ([{"logprob": -0.1}] * 2 if logprobs else None)
+            text = _closed("Go north") + "\nextra"
+            return text, ([{"logprob": -0.1}] * 6 if logprobs else None)
 
     m = _M()
     step = get_step_fn("C2", vc_mode="none", c2_n_samples=5, c2_tie_break_seed="seed")
@@ -262,9 +311,13 @@ def test_c2_vote_normalization_merges_surface_forms():
 
         def generate(self, prompt: str, logprobs: bool = False, **kwargs):
             self.i += 1
-            outs = ["Go north.", "go  north", "GO NORTH!"]
+            outs = [
+                "<think>\na\n</think>\nGo north.",
+                "<think>\nb\n</think>\ngo  north",
+                "<think>\nc\n</think>\nGO NORTH!",
+            ]
             text = outs[self.i - 1]
-            return text, ([{"logprob": -0.2}] * 2 if logprobs else None)
+            return text, ([{"logprob": -0.2}] * 6 if logprobs else None)
 
     m = _Seq()
     step = get_step_fn("C2", vc_mode="none", c2_n_samples=3, c2_tie_break_seed="seed")

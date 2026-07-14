@@ -172,12 +172,19 @@ def _make_realish_env(fake: _FakeGymEnv) -> TextWorldEnv:
 
 def test_correctness_uses_pre_step_admissible():
     fake = _FakeGymEnv()
-    fake._reset_result = ("reset", {"admissible_commands": ["eat lettuce", "look"], "score": 0})
+    fake._reset_result = (
+        "reset",
+        {
+            "admissible_commands": ["eat lettuce", "look"],
+            "policy_commands": ["go north"],
+            "score": 0,
+        },
+    )
     fake._step_result = (
         "*** You lost! ***",
         0.0,
         True,
-        {"admissible_commands": ["look"], "score": 0},
+        {"admissible_commands": ["look"], "policy_commands": ["go north"], "score": 0},
     )
 
     env = _make_realish_env(fake)
@@ -207,12 +214,15 @@ def test_info_lost_sets_task_lost_and_step_record():
 
 def test_info_won_sets_task_success_and_step_record():
     fake = _FakeGymEnv()
-    fake._reset_result = ("reset", {"admissible_commands": ["eat meal"], "score": 0})
+    fake._reset_result = (
+        "reset",
+        {"admissible_commands": ["eat meal"], "policy_commands": ["eat meal"], "score": 0},
+    )
     fake._step_result = (
         "*** You won! ***",
         1.0,
         True,
-        {"won": True, "admissible_commands": [], "score": 1},
+        {"won": True, "admissible_commands": [], "policy_commands": [], "score": 1},
     )
 
     env = _make_realish_env(fake)

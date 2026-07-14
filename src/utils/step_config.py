@@ -49,8 +49,8 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         - ``action_max_tokens`` (int, optional)
         - ``action_temperature`` (float, optional)
         - ``action_stop`` (list[str] | str | null, optional)
-        - ``cot_max_tokens`` (int, optional): C1 CoT generation cap for this domain
-          (overrides top-level ``c1.cot_max_tokens`` when set)
+        - ``cot_max_tokens`` (int, optional): C1/C2 CoT generation cap for this domain
+          (overrides top-level ``c1.cot_max_tokens`` / ``c2.cot_max_tokens`` when set)
 
     - VC signal extraction (signal-specific):
       ``config["vc"]`` with keys:
@@ -229,6 +229,13 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         c1_cot_max_tokens_raw = c1.get("cot_max_tokens")
     c1_cot_max_tokens = c1_cot_max_tokens_raw
 
+    c2_cot_max_tokens_raw = dom_cfg.get("cot_max_tokens") if isinstance(dom_cfg, dict) else None
+    if c2_cot_max_tokens_raw is None:
+        c2_cot_max_tokens_raw = c2.get("cot_max_tokens")
+    if c2_cot_max_tokens_raw is None:
+        c2_cot_max_tokens_raw = c1.get("cot_max_tokens")
+    c2_cot_max_tokens = c2_cot_max_tokens_raw
+
     c2_sample_temperature_raw = c2.get("sample_temperature", 0.7)
     hk_raw = dom_cfg.get("history_keep_last_pairs") if isinstance(dom_cfg, dict) else None
     history_keep_last_pairs: int | None
@@ -270,6 +277,7 @@ def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
         # C1 stage controls
         "c1_cot_temperature": float(c1_cot_temperature) if c1_cot_temperature is not None else None,
         "c1_cot_max_tokens": int(c1_cot_max_tokens) if c1_cot_max_tokens is not None else None,
+        "c2_cot_max_tokens": int(c2_cot_max_tokens) if c2_cot_max_tokens is not None else None,
         # History / memory controls (consumed by base_agent.run_episode / run_adaptive_episode).
         # These live under domain_prompts.<domain> so they're experiment-controlled and visible in YAML.
         "history_keep_last_pairs": history_keep_last_pairs,

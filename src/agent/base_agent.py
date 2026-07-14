@@ -405,9 +405,10 @@ def run_episode(
     finally:
         if trace_hook is not None:
             try:
-                succ = bool(getattr(env, "task_success", False)) or bool(
-                    getattr(env, "done", False)
-                )
+                if hasattr(env, "task_success"):
+                    succ = bool(getattr(env, "task_success"))
+                else:
+                    succ = bool(getattr(env, "done", False))
             except Exception:
                 succ = False
             final_tags: list[str] = []
@@ -514,6 +515,7 @@ def run_adaptive_episode(
     vc_followup_instruction: str | None = None,
     c1_cot_temperature: float | None = None,
     c1_cot_max_tokens: int | None = None,
+    c2_cot_max_tokens: int | None = None,
     c2_n_samples: int = 3,
     c2_tie_break_seed: str | int | None = None,
     c2_sample_temperature: float = 0.7,
@@ -570,6 +572,7 @@ def run_adaptive_episode(
                     vc_retry_on_parse_failure=vc_retry_on_parse_failure,
                     c1_cot_temperature=c1_cot_temperature,
                     c1_cot_max_tokens=c1_cot_max_tokens,
+                    c2_cot_max_tokens=c2_cot_max_tokens,
                 ),
             )
 
@@ -591,6 +594,7 @@ def run_adaptive_episode(
     stage_per_step: list[str] = []
     steps_detail: list[dict[str, Any]] = []
     signal: dict[str, Any] | None = None
+    signal_source_stage: str | None = None
     episode_fixed_stage: str | None = None
 
     trace_path: Path | None = None
@@ -639,6 +643,7 @@ def run_adaptive_episode(
                 rng,
                 policy=policy,
                 episode_fixed_stage=episode_fixed_stage,
+                signal_source_stage=signal_source_stage,
             )
             stage_per_step.append(stage)
             step_fn = resolve(stage)
@@ -840,6 +845,7 @@ def run_adaptive_episode(
             )
             steps += 1
             signal = _signal_for_next_step(tle, vc)
+            signal_source_stage = stage
             if strategy == "eager_style" and episode_fixed_stage is None and signal is not None:
                 from src.agent.allocator import eager_fixed_stage_from_signal
 
@@ -862,9 +868,10 @@ def run_adaptive_episode(
     finally:
         if trace_hook is not None:
             try:
-                succ = bool(getattr(env, "task_success", False)) or bool(
-                    getattr(env, "done", False)
-                )
+                if hasattr(env, "task_success"):
+                    succ = bool(getattr(env, "task_success"))
+                else:
+                    succ = bool(getattr(env, "done", False))
             except Exception:
                 succ = False
             final_tags: list[str] = []

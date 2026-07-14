@@ -300,6 +300,7 @@ def _raw_signal_from_row(row: dict[str, Any], signal: SignalType) -> float | Non
 def build_ecdf_ref(
     holdout_steps: Iterable[dict[str, Any]], *, signal: SignalType
 ) -> tuple[float, ...]:
+    """Pooled holdout ECDF (legacy / diagnostic). Prefer ``build_ecdf_ref_by_stage``."""
     xs: list[float] = []
     for r in holdout_steps:
         if not isinstance(r, dict):
@@ -308,6 +309,23 @@ def build_ecdf_ref(
         if v is not None:
             xs.append(v)
     return tuple(sorted(xs))
+
+
+def build_ecdf_ref_by_stage(
+    holdout_steps: Iterable[dict[str, Any]], *, signal: SignalType
+) -> dict[str, tuple[float, ...]]:
+    """Per compute-stage ECDF on Phase-1 holdout (thesis §5.4 stage-wise calibration)."""
+    by_stage: dict[str, list[float]] = {s: [] for s in ("C0", "C1", "C2")}
+    for r in holdout_steps:
+        if not isinstance(r, dict):
+            continue
+        stage = str(r.get("compute_stage", "")).upper()
+        if stage not in by_stage:
+            continue
+        v = _raw_signal_from_row(r, signal)
+        if v is not None:
+            by_stage[stage].append(v)
+    return {stage: tuple(sorted(vals)) for stage, vals in by_stage.items()}
 
 
 def _label_from_row(row: dict[str, Any], label_key: str) -> int | None:
@@ -427,15 +445,16 @@ def grid_search_thresholds(
     quantile_grid: tuple[float, ...] = DEFAULT_QUANTILE_GRID,
     label_key: str = "y_optimal",
 ) -> dict[str, Any]:
-    """Thesis §5.4: select (theta1, theta2) on holdout ECDF with step-level proxy objective."""
+    """Thesis §5.4: select (theta1, theta2) on stage-wise holdout ECDFs."""
     direction = _direction_for_signal(signal)
-    ecdf_ref = build_ecdf_ref(holdout_steps, signal=signal)
-    if len(ecdf_ref) < 10:
+    ecdf_by_stage = build_ecdf_ref_by_stage(holdout_steps, signal=signal)
+    total_holdout = sum(len(v) for v in ecdf_by_stage.values())
+    if total_holdout < 10:
         return {
             "signal": signal,
             "theta1": None,
             "theta2": None,
-            "ecdf_ref": list(ecdf_ref),
+            "ecdf_by_stage": {k: list(v) for k, v in ecdf_by_stage.items()},
             "direction": direction,
             "grid_table": [],
             "objective_definition": OBJECTIVE_DEFINITION,
@@ -451,7 +470,7 @@ def grid_search_thresholds(
             pol = FrozenPolicy(
                 signal=signal,
                 domain="",
-                ecdf_ref=ecdf_ref,
+                ecdf_by_stage=ecdf_by_stage,
                 theta1=float(t1),
                 theta2=float(t2),
                 direction=direction,
@@ -465,7 +484,8 @@ def grid_search_thresholds(
                 if raw is None:
                     continue
                 total += 1
-                stage = pol.stage(raw)
+                source_stage = str(row.get("compute_stage", "C0")).upper()
+                stage = pol.stage(raw, source_stage=source_stage)
                 try:
                     inst_raw = row.get("instance")
                     run_raw = row.get("run", 0)
@@ -506,7 +526,7 @@ def grid_search_thresholds(
         "signal": signal,
         "theta1": best["theta1"] if best else None,
         "theta2": best["theta2"] if best else None,
-        "ecdf_ref": list(ecdf_ref),
+        "ecdf_by_stage": {k: list(v) for k, v in ecdf_by_stage.items()},
         "direction": direction,
         "grid_table": grid_table,
         "objective_definition": OBJECTIVE_DEFINITION,
@@ -563,7 +583,7 @@ def build_policy_artifact(
                 **{
                     k: gs[k]
                     for k in (
-                        "ecdf_ref",
+                        "ecdf_by_stage",
                         "theta1",
                         "theta2",
                         "direction",

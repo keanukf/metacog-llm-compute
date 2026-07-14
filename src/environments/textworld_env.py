@@ -6,15 +6,20 @@ When game_file is set and textworld is installed, loads and plays real games.
 Per-step records in ``step_results`` mirror TowerOfHanoiEnv (``step_index``, ``action_raw``,
 ``action_parsed``, ``correctness``, ``state_before``, ``state_after``) plus optional
 ``reward``, ``score_*`` when the engine exposes them. TextWorld uses ``correctness`` in
-``{"optimal", "legal", "illegal"}`` with score-based progress:
-- optimal: score increased (primary label for calibration)
-- legal: admissible/no parser error, score unchanged
+``{"optimal", "legal", "illegal", "unlabeled"}`` with quest-distance progress via
+TextWorld's ``policy_commands`` (quest solver rest plan, not walkthrough oracle):
+- optimal: executable move that strictly reduces ``len(policy_commands)``
+- legal: executable, quest distance unchanged or increased
 - illegal: parser error or unrecognized action
+- unlabeled: quest distance not computable (see ``label_reason``; excluded from calibration)
+
+``score_progress_step`` (bool) records score increase as a descriptive side variable only.
 
 Labeling edge cases (preregistered):
 - Illegal detection uses the **pre-step** admissible-command cache plus parser-feedback heuristics.
-- ``score_delta < 0`` (if the engine reports it) is labeled **legal**, not optimal; thesis defines
-  optimal only via score increase.
+- Winning step: ``policy_commands == []`` with ``won=True`` is optimal when ``dist_after < dist_before``.
+- ``policy_commands == []`` with ``not won`` → ``unlabeled`` / ``quest_distance_empty_unwon``.
+- Missing ``policy_commands`` in info → ``unlabeled`` / ``quest_distance_unavailable``.
 """
 
 from __future__ import annotations
@@ -165,6 +170,44 @@ def _load_sidecar(game_file: str | None) -> dict[str, Any] | None:
     return None
 
 
+def _quest_distance_from_info(info: dict[str, Any]) -> int | None:
+    """Rest quest distance from TextWorld ``policy_commands`` (solver plan length)."""
+    raw = info.get("policy_commands")
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        return None
+    return len([str(x) for x in raw if str(x).strip()])
+
+
+def _score_progress_step(
+    score_before: float | None,
+    score_after: float | None,
+) -> bool:
+    return score_before is not None and score_after is not None and score_after > score_before
+
+
+def _classify_quest_correctness(
+    *,
+    dist_before: int | None,
+    dist_after: int | None,
+    won: bool,
+) -> tuple[str, str | None]:
+    """
+    Distance-based step label using TextWorld quest solver rest plan.
+
+    Optimal when dist strictly decreases (not necessarily by exactly 1).
+    Empty policy after a win is the terminal optimal step (dist_before > dist_after).
+    """
+    if dist_before is None or dist_after is None:
+        return "unlabeled", "quest_distance_unavailable"
+    if dist_after == 0 and not won:
+        return "unlabeled", "quest_distance_empty_unwon"
+    if dist_after < dist_before:
+        return "optimal", None
+    return "legal", None
+
+
 class TextWorldEnv:
     """
     Environment interface: reset() -> first observation, step(action) -> next observation.
@@ -194,6 +237,7 @@ class TextWorldEnv:
         # Cache admissible commands from the *previous* state so we can assess whether
         # the submitted action was parser-legal at the time it was chosen.
         self._last_admissible: Any = None
+        self._last_quest_distance: int | None = None
         self.sidecar_metadata: dict[str, Any] | None = _load_sidecar(game_file)
         self.walkthrough: list[str] = []
         if isinstance(self.sidecar_metadata, dict):
@@ -219,6 +263,8 @@ class TextWorldEnv:
                         max_score=True,
                         won=True,
                         lost=True,
+                        policy_commands=True,
+                        intermediate_reward=True,
                     )
                     env_id = textworld.gym.register_game(
                         self._game_file,
@@ -259,6 +305,7 @@ class TextWorldEnv:
         self.task_lost = False
         self._last_score = None
         self._last_admissible = None
+        self._last_quest_distance = None
         if self._use_real and self._gym_env is not None:
             with _textworld_load_section():
                 result = self._gym_env.reset()
@@ -272,6 +319,7 @@ class TextWorldEnv:
             self.observation = obs if isinstance(obs, str) else str(obs)
             self._last_score = self._parse_score(info)
             self._last_admissible = info.get("admissible_commands")
+            self._last_quest_distance = _quest_distance_from_info(info)
             if self._include_admissible_commands:
                 self.observation = _append_admissible_to_observation(self.observation, info)
             return self.observation
@@ -300,6 +348,9 @@ class TextWorldEnv:
             score_delta = (
                 None if score_before is None or score_after is None else score_after - score_before
             )
+            score_progress = _score_progress_step(score_before, score_after)
+            dist_before = self._last_quest_distance
+            dist_after = _quest_distance_from_info(info)
             admissible = pre_admissible
             use_admissible = admissible is not None
             if use_admissible:
@@ -315,33 +366,38 @@ class TextWorldEnv:
                 parsed = _normalize_command_key(action) if action.strip() else None
                 illegal = _suggests_unknown_command(info, self.observation) or reward < 0.0
 
-            if illegal:
-                correctness = "illegal"
-            else:
-                # Score-based policy requested for thesis: progress => optimal.
-                if (
-                    score_before is not None
-                    and score_after is not None
-                    and score_after > score_before
-                ):
-                    correctness = "optimal"
-                else:
-                    correctness = "legal"
-
             won_now = info.get("won") is True or info.get("game_won") is True
             lost_now = info.get("lost") is True or info.get("game_lost") is True
+
+            if illegal:
+                correctness = "illegal"
+                label_reason: str | None = None
+            else:
+                correctness, label_reason = _classify_quest_correctness(
+                    dist_before=dist_before,
+                    dist_after=dist_after,
+                    won=won_now,
+                )
+
             if won_now:
                 self.task_success = True
             if lost_now:
                 self.task_lost = True
             self._last_score = score_after
             self._last_admissible = info.get("admissible_commands")
+            if dist_after is not None:
+                self._last_quest_distance = dist_after
 
             rec: dict[str, Any] = {
                 "step_index": self.current_step,
                 "action_raw": action,
                 "action_parsed": parsed,
                 "correctness": correctness,
+                "label_reason": label_reason,
+                "quest_distance_before": dist_before,
+                "quest_distance_after": dist_after,
+                "optimal_moves_remaining": dist_after,
+                "score_progress_step": score_progress,
                 "state_before": state_before,
                 "state_after": self.observation,
                 "reward": reward,

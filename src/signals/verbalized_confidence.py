@@ -27,6 +27,27 @@ def parse_confidence(text: str) -> float | None:
     return val
 
 
+def _normalize_vc_completion_text(text: str) -> str:
+    """
+    Normalize VC follow-up completions before parsing.
+
+    Long task-context prompts sometimes elicit a bare ``Confidence:`` label echo
+    (no integer). Multiline ``Confidence:\\n90`` is collapsed to the numeric tail.
+    """
+    t = (text or "").strip()
+    if not t:
+        return t
+    if re.fullmatch(r"(?i)confidence\s*:?\s*", t):
+        return ""
+    multiline = re.match(
+        r"(?i)confidence\s*:\s*\n+\s*(\d{1,3}(?:\.\d+)?)\s*$",
+        t,
+    )
+    if multiline:
+        return multiline.group(1)
+    return t
+
+
 def parse_confidence_with_meta(text: str) -> tuple[float | None, str | None]:
     """
     Like ``parse_confidence`` but also returns which pattern matched (for transparency).
@@ -34,7 +55,8 @@ def parse_confidence_with_meta(text: str) -> tuple[float | None, str | None]:
     Returns:
         (value 0-100 or None, pattern name or None).
     """
-    if not text or not text.strip():
+    text = _normalize_vc_completion_text(text or "")
+    if not text:
         return None, None
     text = text.strip()
     patterns: list[tuple[str, str]] = [

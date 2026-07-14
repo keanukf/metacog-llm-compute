@@ -59,7 +59,8 @@ def c1_step_core(
     reason_temp = c1_cot_temperature
     if reason_temp is None:
         reason_temp = float(action_temperature) if action_temperature is not None else 0.5
-    gen_kw = _action_generate_kwargs(action_max_tokens, float(reason_temp), action_stop)
+    # Stop sequences apply to the full completion; they truncate native thinking blocks.
+    gen_kw = _action_generate_kwargs(action_max_tokens, float(reason_temp), None)
     gen_kw["max_tokens"] = reason_max_tokens
     gen_kw["enable_thinking"] = True
     text, logprobs = model.generate(reason_prompt, logprobs=True, **gen_kw)

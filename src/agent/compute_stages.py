@@ -64,6 +64,7 @@ def get_step_fn(
     vc_retry_on_parse_failure: bool = True,
     c1_cot_temperature: float | None = None,
     c1_cot_max_tokens: int | None = None,
+    c2_cot_max_tokens: int | None = None,
 ):
     """
     Return the step function for stage 'C0', 'C1', or 'C2'.
@@ -120,6 +121,7 @@ def get_step_fn(
                 action_max_tokens=action_max_tokens,
                 action_temperature=action_temperature,
                 action_stop=action_stop,
+                c2_cot_max_tokens=c2_cot_max_tokens,
                 followup_max_tokens=followup_max_tokens,
                 followup_temperature=followup_temperature,
                 vc_followup_logprobs=vc_followup_logprobs,
