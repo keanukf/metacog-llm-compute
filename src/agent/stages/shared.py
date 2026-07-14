@@ -22,8 +22,7 @@ VC_FOLLOWUP_PROMPT_MARKER = "<output_to_judge>"
 DEFAULT_VC_FOLLOWUP_INSTRUCTION = (
     "How likely is the chosen action to be correct in this situation?\n"
     "Respond with only a single integer between 0 and 100,\n"
-    "where 0 means certainly wrong and 100 means certainly correct.\n\n"
-    "Confidence:"
+    "where 0 means certainly wrong and 100 means certainly correct."
 )
 
 _SINGLE_LINE_OUTPUT_INSTRUCTION: str = (

@@ -18,12 +18,14 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 | Gate | Result | Notes |
 |------|--------|-------|
 | C-1 parity | **PASS** | `backend_parity_20260713T205633Z.json`; gating max_dtle=0.008 |
-| C-2/C-4 format_vc_probe | **FAIL vs 90%** | TW C1 clean-action 73%; VC 63%; thinking trunc before `</think>` |
+| C-2/C-4 format_vc_probe | **PASS** (2026-07-14) | VC prompt fix + unified `cot_max_tokens=4096` both domains; `phase1_20260714_075754`: vc=100%; TW C1/C2 think 100%; ToH C1 83%, C2 100% |
 | C-3 toh_parse_probe | **PASS** | parse_rate=1.0 |
 | C-5 signal_smoke | **PASS (run)** | 72 ep, 0 errors; AUROC interpretable; TW tle=0.71, ToH tle=0.21 |
 | C-6 topk sweep | **blocked** | sidecar schema drift — fix in progress locally |
 
-**Open:** C-2/C-4 needs `cot_max_tokens` decision; re-run freeze + topk after local fixes.
+**Open:** C-1 freeze metadata re-run; C-6 topk on pod after pull.
+
+**Note (2026-07-14):** In the 2026-07-13 format_vc_probe run, Tower of Hanoi instances were **solved under C1 and C2** on Qwen3-8B — a meaningful step up from local Qwen3-4B, which often stalled on final moves. Unified **`cot_max_tokens=4096`** for both domains after Gate C-2/C-4 re-runs.
 
 **Artifacts:** `phase1_20260713_205837`, `phase1_20260713_210804`, `phase1_20260713_211029`
 
