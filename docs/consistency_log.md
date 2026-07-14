@@ -2,6 +2,39 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-14 — Gate C close: C-6 reconciled, K=20 frozen, §5.4 TLE screen
+
+**Commit:** `bc0ef84` @ Pod — AUROC-Alignment + Regressionstest + Diagnose.
+
+**Blockierend 1 (Produktionspfad):** Regressionstest `test_c1_production_tle_excludes_thinking_first_token_regression` — beweist, dass `extract_action_tle_from_response` nur Action-Tokens nach `` mittelt; fehlschlägt bei First-Token-/Full-Sequence-Bug. Pod: grün.
+
+**C-6 (gefixter Sweep, Pod, volle 72 Sidecars, `105004`):**
+
+| Domain | K=5 | K=10 | K=20 | n | Δ vs H1a |
+|--------|----:|-----:|-----:|--:|---------:|
+| TextWorld | 0.618 | 0.618 | **0.619** | 703 | 0 |
+| ToH | 0.744 | 0.744 | **0.744** | 659 | 0 |
+
+K stabil (Δ≤0.001). **K=20 wieder eingefroren** (`inference.top_logprobs: 20`).
+
+**§5.4 TLE-Verteilung (`diagnose_tle_distribution.py`, `105004/tle_distribution.json`):**
+
+| Gruppe | n | median | pct < 1e-3 | distinct |
+|--------|--:|-------:|-----------:|---------:|
+| TW C0 | 224 | 0.021 | 17% | 182 |
+| TW C1 | 240 | 1.5e-6 | **97%** | 240 |
+| TW C2 | 240 | 5.1e-7 | **95%** | 240 |
+| ToH C0 | 240 | 0.066 | 19% | 227 |
+| ToH C1 | 205 | 6.7e-7 | **99.5%** | 205 |
+| ToH C2 | 214 | 1.7e-6 | **99%** | 214 |
+| pooled | 1363 | 3.9e-6 | 70% | 1308 |
+
+**Diagnose (kein Redesign):** C1/C2-TLE-Werte liegen fast ausschließlich unter 1e-3 bit (Median ~1e-6), aber sind **float-distinkt** (kein einzelnes Atom). AUROC funktioniert rangbasiert (ToH 0.744 trotz ~3e-6). **§5.4-Risiko:** ECDF-Schwellen auf gepoolter Holdout-Verteilung werden von der C1/C2-Near-Zero-Masse dominiert — vor Phase-1-Freeze: Tie-Breaking-Regel oder stage-aware Schwellenkalibrierung in Thesis §5.4 dokumentieren (FREEZE-REVIEW).
+
+**N-Konsistenz:** N=32, eps=0.05 — unverändert bestätigt.
+
+**Gate C:** **Done** (C-0…C-6). Gate F / lokale Sidecars nachziehen separat.
+
 ## 2026-07-14 — AUROC reconciliation (C-6 blocked; K unfreeze)
 
 **Problem:** Zwei Implementierungen lieferten unterschiedliche H1a-AUROCs auf demselben Run.

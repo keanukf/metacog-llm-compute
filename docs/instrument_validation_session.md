@@ -21,7 +21,11 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 
 **C-5 `105004`:** Pipeline + sidecars **Done**. Signal arm **Done** (quest-DV labels).
 
-**C-6:** **Blocked — AUROC reconciliation.** Alter Sweep (first Sidecar-Token, kein Action-Slice) wich von H1a ab (TW Δ≈0.06). Fix in Code; Re-Sweep pending. **K=20 unfreeze** bis Re-Sweep ≡ H1a.
+**C-6:** **Done** @ Pod — K∈{5,10,20}, beide Domänen, volle Sidecars. **K=20 frozen.** TW: 0.618/0.618/0.619; ToH: 0.744/0.744/0.744 (n=703/659). Δ=0 vs H1a.
+
+**§5.4 TLE screen:** `tle_distribution.json` — C1/C2: 95–99% Steps < 1e-3 bit, Median ~1e-6; C0 gesunde Streuung. Distinct-Werte hoch (kein Einzel-Atom). ECDF-Schwellen-Risiko → FREEZE-REVIEW §5.4.
+
+**Regressionstest:** `test_c1_production_tle_excludes_thinking_first_token_regression` — Produktionspfad schließt Thinking-First-Token aus.
 
 **H1a AUROC (kanonisch: score = −TLE mean entropy; `signal_discrimination_report` nach Fix):**
 
@@ -54,7 +58,7 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 | C-2/C-4 format_vc_probe | **C-2 pilot OK @ 8192** | Budget raster + admissibility fix; `phase1_20260714_083538` @ `7b1ef9f` — see 2026-07-14 section |
 | C-3 toh_parse_probe | **PASS** | parse_rate=1.0 |
 | C-5 signal_smoke | **Done** | `211029`: sidecars only (pre-DV); **`105004`**: full signal arm |
-| C-6 topk sweep | **blocked — reconcile** | Fix deployed; Re-Sweep pending; K unfrozen |
+| C-6 topk sweep | **Done — K=20 frozen** | Pod `105004/topk_sensitivity.json`; Δ≈0 vs H1a @ all K |
 
 **Open:** FREEZE-REVIEW §5.3 C2 (thesis repo); local disk full — 7/72 logprob sidecars not rsync'd (analysis ran on pod).
 
@@ -230,7 +234,7 @@ Domain probes (`tw_short`, `toh_short`) stay well under eps at all N. Failure is
 | format_vc_probe | C-2/C-4 | **PASS @ 8192** | `083538` budget/admissibility; `100023` post-DV labels |
 | toh_parse_probe | C-3 | **PASS** | parse_rate=1.0 |
 | signal_smoke | C-5 | **Done** | `105004` @ quest-DV + 8192; `211029` sidecars-only legacy |
-| topk sweep | C-6 | **blocked — reconcile** | Re-Sweep after sweep/H1a alignment fix |
+| topk sweep | C-6 | **Done — K=20 frozen** | Pod `105004`; stable K∈{5,10,20} |
 
 ## Throughput sweep pre-fix (2026-07-12 — superseded)
 
