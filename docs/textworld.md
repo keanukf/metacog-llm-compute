@@ -52,8 +52,10 @@ After generating the **50** immutable instances with chosen parameters, build **
 
 `src/environments/textworld_env.py` loads a `.z8`/`.ulx` and, when present, the **`textworld_{i}.meta.json` sidecar** (walkthrough kept for reference only; legacy `textworld_{i}.json` experiment-only files are still detected if they contain `generation_parameters`). Step labels use the **game engine**, not walkthrough matching (Cooking allows multiple valid orderings):
 
-- **`optimal`:** score increased after the step.
-- **`legal`:** admissible / no parser error, score unchanged.
+- **`optimal`:** quest rest distance strictly decreased (`len(policy_commands)` after < before).
+- **`legal`:** admissible / no parser error, quest distance unchanged or increased.
+- **`unlabeled`:** quest distance not computable (`label_reason` set; excluded from calibration).
+- **`score_progress_step`:** descriptive bool when game score increased (not used for correctness).
 - **`illegal`:** unrecognized command or error feedback.
 
 Phase runners resolve games from `paths.tasks_dir` in `experiment_core.yaml`: either `data/tasks/textworld_{i}.z8`/`.ulx` or **`data/tasks/textworld/textworld_{i}.z8`/`.ulx`** (see `src/utils/experiment_env.py`).

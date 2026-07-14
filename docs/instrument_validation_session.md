@@ -25,7 +25,23 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 
 **Open:** C-1 freeze metadata re-run; C-6 topk on pod; **FREEZE-REVIEW** §5.3 C2 definition (effective N); ToH difficulty / label balance check before full Phase 1.
 
-**Artifacts:** `phase1_20260713_205837`, `phase1_20260713_210804`, `phase1_20260713_211029`, `phase1_20260714_075754`, `phase1_20260714_083538`
+**Artifacts:** `phase1_20260713_205837`, `phase1_20260713_210804`, `phase1_20260713_211029`, `phase1_20260714_075754`, `phase1_20260714_083538`, `phase1_20260714_100023`
+
+## 2026-07-14 — TW quest-distance DV repair + label re-run
+
+**Change:** `textworld_env.py` — `correctness` from `len(policy_commands)` (TextWorld quest solver), not score increase. `optimal` iff executable and `dist_after < dist_before` (strict). `score_progress_step` retained as descriptive side variable.
+
+**Re-run:** `phase1_20260714_100023` — same `format_vc_probe` @ 8192, max_steps=10, 18 ep, 13 min.
+
+| Domain | optimal | legal | illegal | unlabeled | n | **n_positive** |
+|--------|--------:|------:|--------:|----------:|--:|-----------------:|
+| TextWorld (new) | 37.8% | 34.4% | 27.8% | 0 | 90 | **34** |
+| TextWorld (old score @ 083538) | 2.2% | 71.1% | 26.7% | — | 90 | **2** |
+| ToH (unchanged) | 26.7% | 48.9% | 24.4% | 0 | 90 | **24** |
+
+Run-to-run ToH shift vs 083538 (34.8% on n=89) is stochastic episode mix, not env change.
+
+**Freeze notes (Thesis §5.9):** TW info-gathering actions (`look`/`inventory`/`examine`) are distance-neutral → `legal` under primary collapse; action class absent in ToH (full observability). Defensible H4 confound; motivates preregistered `optimal_or_legal` sensitivity. **Episode length:** §5.5 target 8–15 steps; probe suggests 15–20+ for TW — Phase-0 calibration, affects `position_norm` (H3). **Instance heterogeneity:** reset quest distances 7/4/7 across probe instances.
 
 ## 2026-07-14 — Budget raster + C2 admissibility fix (`7b1ef9f`)
 
