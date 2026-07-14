@@ -15,30 +15,78 @@ def test_frozen_policy_percentile_and_stage():
     p = FrozenPolicy(
         signal="tle_mean_entropy",
         domain="textworld",
-        ecdf_ref=(0.2, 0.4, 0.6, 0.8),
+        ecdf_by_stage={
+            "C0": (0.2, 0.4, 0.6, 0.8),
+            "C1": (0.2, 0.4, 0.6, 0.8),
+            "C2": (0.2, 0.4, 0.6, 0.8),
+        },
         theta1=0.25,
         theta2=0.75,
         direction="higher_is_uncertain",
     )
-    assert p.percentile(0.4) == 0.375
-    assert p.stage(0.1) == "C0"
-    assert p.stage(0.5) == "C1"
-    assert p.stage(0.9) == "C2"
+    assert p.percentile(0.4, source_stage="C0") == 0.375
+    assert p.stage(0.1, source_stage="C0") == "C0"
+    assert p.stage(0.5, source_stage="C0") == "C1"
+    assert p.stage(0.9, source_stage="C0") == "C2"
+
+
+def test_stage_wise_ecdf_c1_low_raw_maps_to_mid_percentile():
+    """C1/C2 collapsed raw magnitudes stay rank-informative within stage."""
+    p = FrozenPolicy(
+        signal="tle_mean_entropy",
+        domain="textworld",
+        ecdf_by_stage={
+            "C0": (0.02, 0.05, 0.08),
+            "C1": (1e-6, 2e-6, 5e-6),
+            "C2": (1e-7, 2e-7, 3e-7),
+        },
+        theta1=0.25,
+        theta2=0.75,
+        direction="higher_is_uncertain",
+    )
+    assert p.percentile(2e-6, source_stage="C1") == 0.5
+    assert p.percentile(2e-6, source_stage="C0") < 0.2
+    assert p.stage(2e-6, source_stage="C1") == "C1"
+    assert p.stage(2e-6, source_stage="C0") == "C0"
 
 
 def test_load_policy_roundtrip():
     pol = load_policy(FIXTURE, domain="textworld", signal="tle_mean_entropy")
     assert pol.theta1 == 0.33
-    assert len(pol.ecdf_ref) == 9
+    assert len(pol.ecdf_by_stage["C0"]) == 9
+    assert len(pol.ecdf_ref) == 27
 
 
 def test_allocate_uses_policy_not_pilot_thresholds():
     pol = load_policy(FIXTURE, domain="textworld", signal="tle_mean_entropy")
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        stage = allocate({"mean_entropy": 0.95}, "adaptive_tle", policy=pol)
+        stage = allocate(
+            {"mean_entropy": 0.95},
+            "adaptive_tle",
+            policy=pol,
+            signal_source_stage="C0",
+        )
         assert not w
     assert stage == "C2"
+
+
+def test_allocate_uses_signal_source_stage_for_ecdf():
+    pol = load_policy(FIXTURE, domain="textworld", signal="tle_mean_entropy")
+    stage_c1 = allocate(
+        {"mean_entropy": 9e-6},
+        "adaptive_tle",
+        policy=pol,
+        signal_source_stage="C1",
+    )
+    stage_c0 = allocate(
+        {"mean_entropy": 9e-6},
+        "adaptive_tle",
+        policy=pol,
+        signal_source_stage="C0",
+    )
+    assert stage_c1 == "C2"
+    assert stage_c0 == "C0"
 
 
 def test_allocate_pilot_fallback_warns():

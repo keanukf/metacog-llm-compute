@@ -2,8 +2,30 @@
 
 from __future__ import annotations
 
-from src.analysis.thresholds import _match_proxy, build_ecdf_ref, grid_search_thresholds
+from src.analysis.thresholds import (
+    _match_proxy,
+    build_ecdf_ref,
+    build_ecdf_ref_by_stage,
+    grid_search_thresholds,
+)
 from src.utils.logging_utils import compact_episode_for_storage
+
+
+def test_build_ecdf_ref_by_stage_from_holdout():
+    rows = []
+    for stage in ("C0", "C1", "C2"):
+        for i in range(5):
+            rows.append(
+                {
+                    "holdout": True,
+                    "compute_stage": stage,
+                    "tle_mean_entropy": (0.5 if stage == "C0" else 1e-6) + i * 0.01,
+                }
+            )
+    by_stage = build_ecdf_ref_by_stage(rows, signal="tle_mean_entropy")
+    assert set(by_stage) == {"C0", "C1", "C2"}
+    assert len(by_stage["C0"]) == 5
+    assert by_stage["C1"][0] < 1e-3
 
 
 def test_build_ecdf_ref_from_holdout():
@@ -38,6 +60,7 @@ def test_grid_search_returns_36_candidates():
     assert out["theta1"] is not None
     assert len(out["grid_table"]) == 36
     assert out["objective_definition"] == "step_level_proxy_v1"
+    assert set(out["ecdf_by_stage"]) == {"C0", "C1", "C2"}
 
 
 def test_match_proxy_exact():

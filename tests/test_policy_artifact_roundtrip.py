@@ -40,9 +40,14 @@ def test_policy_artifact_roundtrip_from_real_steps(
     assert signal_block["objective_definition"] == "step_level_proxy_v1"
 
     pol = load_policy(artifact_path, domain=domain, signal="tle_mean_entropy")
-    ref = pol.ecdf_ref
+    stage_with_ref = max(pol.ecdf_by_stage.items(), key=lambda kv: len(kv[1]))
+    stage_name, ref = stage_with_ref
     assert len(ref) >= 3, "ECDF reference needs at least three values for low/mid/high stage checks"
 
     low, mid, high = ref[0], ref[len(ref) // 2], ref[-1]
-    stages = {pol.stage(low), pol.stage(mid), pol.stage(high)}
+    stages = {
+        pol.stage(low, source_stage=stage_name),
+        pol.stage(mid, source_stage=stage_name),
+        pol.stage(high, source_stage=stage_name),
+    }
     assert stages.issubset({"C0", "C1", "C2"})

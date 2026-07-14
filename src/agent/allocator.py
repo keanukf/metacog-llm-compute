@@ -63,6 +63,7 @@ def allocate(
     *,
     policy: FrozenPolicy | None = None,
     episode_fixed_stage: str | None = None,
+    signal_source_stage: str | None = None,
 ) -> str:
     """
     Choose compute stage (C0, C1, C2) for this step given strategy and optional signal.
@@ -74,11 +75,14 @@ def allocate(
         rng: Random generator for ``random`` strategy.
         policy: Frozen Phase-1 policy; when set, adaptive strategies use ``policy.stage()`` only.
         episode_fixed_stage: For ``eager_style`` after step 0 — fixed stage from step-0 signal.
+        signal_source_stage: Compute stage that produced ``signal`` (previous step); required for
+            stage-wise ECDF lookup when ``policy`` is set and ``signal`` is not None.
 
     Returns:
         ``"C0"`` | ``"C1"`` | ``"C2"``.
     """
     rng = rng or random.Random()
+    source_stage = (signal_source_stage or "C0").upper()
     if strategy == "always_c0":
         return "C0"
     if strategy == "always_c2":
@@ -92,7 +96,7 @@ def allocate(
             return episode_fixed_stage
         raw = _raw_signal_value(signal, strategy)
         if raw is not None and policy is not None:
-            return policy.stage(raw)
+            return policy.stage(raw, source_stage=source_stage)
         if raw is not None:
             return _pilot_threshold_stage(raw, strategy)
         return "C0"
@@ -101,7 +105,7 @@ def allocate(
         if raw is None:
             return "C0"
         if policy is not None:
-            return policy.stage(raw)
+            return policy.stage(raw, source_stage=source_stage)
         return _pilot_threshold_stage(raw, strategy)
     return "C0"
 
@@ -124,7 +128,7 @@ def eager_fixed_stage_from_signal(
     if raw is None:
         return None
     if policy is not None:
-        return policy.stage(raw)
+        return policy.stage(raw, source_stage="C0")
     return _pilot_threshold_stage(raw, "eager_style")
 
 

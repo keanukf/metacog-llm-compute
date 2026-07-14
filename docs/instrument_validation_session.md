@@ -21,11 +21,11 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 
 **C-5 `105004`:** Pipeline + sidecars **Done**. Signal arm **Done** (quest-DV labels).
 
-**C-6:** **Done** @ Pod — K∈{5,10,20}, beide Domänen, volle Sidecars. **K=20 frozen.** TW: 0.618/0.618/0.619; ToH: 0.744/0.744/0.744 (n=703/659). Δ=0 vs H1a.
+**Gate C:** **Done** — stage-wise ECDF allocator (§5.4 design fix). See `docs/freeze_review_5_4_stage_wise_ecdf.md`.
 
-**§5.4 TLE screen:** `tle_distribution.json` — C1/C2: 95–99% Steps < 1e-3 bit, Median ~1e-6; C0 gesunde Streuung. Distinct-Werte hoch (kein Einzel-Atom). ECDF-Schwellen-Risiko → FREEZE-REVIEW §5.4.
+**Within-stage AUROC (`optimal_only`, TLE):** siehe Consistency-Log. Kurz: ToH pooled 0.744 vs C2 within **0.594** (Pooling-Artefakt); Signal/Ordnung in jeder Stufe erhalten; C1/C2 TLE Median ~1e-6 vs C0 0.02–0.07.
 
-**Regressionstest:** `test_c1_production_tle_excludes_thinking_first_token_regression` — Produktionspfad schließt Thinking-First-Token aus.
+**C-6 / K:** Sweep reconciled; **K=20 re-frozen** (unabhängig von ECDF-Fix).
 
 **H1a AUROC (kanonisch: score = −TLE mean entropy; `signal_discrimination_report` nach Fix):**
 
@@ -58,7 +58,7 @@ Live log for RunPod 5090 instrument validation. Updated during the session.
 | C-2/C-4 format_vc_probe | **C-2 pilot OK @ 8192** | Budget raster + admissibility fix; `phase1_20260714_083538` @ `7b1ef9f` — see 2026-07-14 section |
 | C-3 toh_parse_probe | **PASS** | parse_rate=1.0 |
 | C-5 signal_smoke | **Done** | `211029`: sidecars only (pre-DV); **`105004`**: full signal arm |
-| C-6 topk sweep | **Done — K=20 frozen** | Pod `105004/topk_sensitivity.json`; Δ≈0 vs H1a @ all K |
+| C-6 topk sweep | **Done — K=20 frozen** | Pod `105004`; stage-wise ECDF allocator fix |
 
 **Open:** FREEZE-REVIEW §5.3 C2 (thesis repo); local disk full — 7/72 logprob sidecars not rsync'd (analysis ran on pod).
 
@@ -234,7 +234,7 @@ Domain probes (`tw_short`, `toh_short`) stay well under eps at all N. Failure is
 | format_vc_probe | C-2/C-4 | **PASS @ 8192** | `083538` budget/admissibility; `100023` post-DV labels |
 | toh_parse_probe | C-3 | **PASS** | parse_rate=1.0 |
 | signal_smoke | C-5 | **Done** | `105004` @ quest-DV + 8192; `211029` sidecars-only legacy |
-| topk sweep | C-6 | **Done — K=20 frozen** | Pod `105004`; stable K∈{5,10,20} |
+| topk sweep | C-6 | **Done — K=20 frozen** | Pod `105004`; stage-wise ECDF allocator |
 
 ## Throughput sweep pre-fix (2026-07-12 — superseded)
 

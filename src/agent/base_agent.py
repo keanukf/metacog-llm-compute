@@ -594,6 +594,7 @@ def run_adaptive_episode(
     stage_per_step: list[str] = []
     steps_detail: list[dict[str, Any]] = []
     signal: dict[str, Any] | None = None
+    signal_source_stage: str | None = None
     episode_fixed_stage: str | None = None
 
     trace_path: Path | None = None
@@ -642,6 +643,7 @@ def run_adaptive_episode(
                 rng,
                 policy=policy,
                 episode_fixed_stage=episode_fixed_stage,
+                signal_source_stage=signal_source_stage,
             )
             stage_per_step.append(stage)
             step_fn = resolve(stage)
@@ -843,6 +845,7 @@ def run_adaptive_episode(
             )
             steps += 1
             signal = _signal_for_next_step(tle, vc)
+            signal_source_stage = stage
             if strategy == "eager_style" and episode_fixed_stage is None and signal is not None:
                 from src.agent.allocator import eager_fixed_stage_from_signal
 

@@ -2,6 +2,48 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-14 — Stage-wise ECDF allocator (§5.4 design fix)
+
+**Entscheidung:** Stufenweise ECDF implementiert (`ecdf_by_stage`: C0/C1/C2 je Domain/Signal auf Phase-1-Holdout). θ₁/θ₂ unverändert auf Perzentilskala; Grid-Search unverändert bis auf stufenpassende ECDF pro Holdout-Row/`compute_stage`. Runtime: Perzentil des Signals aus Schritt *t* gegen ECDF der Stufe, in der Schritt *t* lief (`signal_source_stage`).
+
+**Begründung (mechanistisch, präregistrierungssauber):** Nach Reasoning-Trace kollabiert die Verteilung über die committed action — TLE misst in C1/C2 Verbalisierungssicherheit, in C0 Entscheidungssicherheit. Gepoolte ECDF verletzt stufenübergreifende Vergleichbarkeit (§5.4). Die Entscheidung stützt sich auf die **beobachtete Entropieverteilung** (Deskriptivstatistik) und Messtheorie, **nicht** auf Signal-Korrektheits-Zusammenhänge oder AUROC-Werte. `raw_logprobs`-Temperatur-Invarianz deckt die Verschiebung nicht ab (Entstehung im Reasoning, nicht Decoding).
+
+**Kein „A oder B":** Stufenweise ECDF ist Allocator-Konstruktion, damit ein negatives H2-Ergebnis ein Signalbefund bleibt und kein Artefakt kaputter Schwellenkalibrierung.
+
+**Deskriptive Pilot-Zahlen (105004, nicht zur Designbegründung):**
+- Within-stage TLE-AUROC: Signal/Ordnung in jeder Stufe erhalten; `n_positive` 19–28 → CI ~±0.10; keine feinaufgelösten Stufeneffekte.
+- TW C0 TLE 0.534 **nicht** als „near chance" gesichert.
+- **H1a-Spannung (Ergebnis, keine Designänderung):** VC > TLE bei C0 (TW 0.607 vs 0.534; ToH 0.790 vs 0.678).
+
+**Offen (§5.9):** ToH-C2 unter `legal_or_optimal`: `n_neg=1` auf 72 Pilot-Episoden — Sensitivitätsarm ggf. degeneriert; mit voller Phase-1-Instanzzahl prüfen.
+
+**Artefakt:** `docs/freeze_review_5_4_stage_wise_ecdf.md`
+
+**Gate C:** Allocator-Blocker **behoben** (Code). **K=20 re-eingefroren** (C-6 reconciled, unabhängig von ECDF). Gate C **Done** (313 pytest grün).
+
+## 2026-07-14 — Within-stage AUROC + Allocator-Blocker (`105004`)
+
+**Zweck:** Allocator-Konstruierbarkeit — gepoolte ECDF vs stufenweise ECDF (Designfix, kein empirisches „Wählen").
+
+**Korrektheitsrate (optimal):** TW ~11% alle Stufen; ToH C0 7.9% → C1 **43.4%** → C2 32.7%.
+
+**Within-stage AUROC (`optimal_only`, TLE / VC):**
+
+| Domain | Stage | n | n+ | TLE | VC |
+|--------|-------|--:|---:|----:|---:|
+| TW | C0 | 223 | 25 | 0.534 | 0.607 |
+| TW | C1 | 240 | 28 | 0.715 | 0.620 |
+| TW | C2 | 240 | 28 | 0.674 | 0.599 |
+| TW pooled | | 703 | 81 | 0.619 | 0.611 |
+| ToH | C0 | 240 | 19 | 0.678 | 0.790 |
+| ToH | C1 | 205 | 89 | 0.634 | 0.572 |
+| ToH | C2 | 214 | 70 | 0.594 | 0.691 |
+| ToH pooled | | 659 | 178 | **0.744** | 0.701 |
+
+**Befund:** ToH pooled 0.744 vs C2 within 0.594 — Pooling-Artefakt plausibel. Magnitude kollabiert in C1/C2 (Median ~1e-6), Ordnung erhalten → stufenweise ECDF als minimale Korrektur.
+
+**Gate C:** War offen (K-Freeze suspendiert). → Siehe Eintrag oben (stage-wise ECDF).
+
 ## 2026-07-14 — Gate C close: C-6 reconciled, K=20 frozen, §5.4 TLE screen
 
 **Commit:** `bc0ef84` @ Pod — AUROC-Alignment + Regressionstest + Diagnose.
@@ -15,7 +57,7 @@ Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit 
 | TextWorld | 0.618 | 0.618 | **0.619** | 703 | 0 |
 | ToH | 0.744 | 0.744 | **0.744** | 659 | 0 |
 
-K stabil (Δ≤0.001). **K=20 wieder eingefroren** (`inference.top_logprobs: 20`).
+K stabil (Δ≤0.001). **K=20 eingefroren** (re-confirmed after stage-wise ECDF allocator fix).
 
 **§5.4 TLE-Verteilung (`diagnose_tle_distribution.py`, `105004/tle_distribution.json`):**
 
@@ -29,15 +71,13 @@ K stabil (Δ≤0.001). **K=20 wieder eingefroren** (`inference.top_logprobs: 20`
 | ToH C2 | 214 | 1.7e-6 | **99%** | 214 |
 | pooled | 1363 | 3.9e-6 | 70% | 1308 |
 
-**Diagnose (kein Redesign):** C1/C2-TLE-Werte liegen fast ausschließlich unter 1e-3 bit (Median ~1e-6), aber sind **float-distinkt** (kein einzelnes Atom). AUROC funktioniert rangbasiert (ToH 0.744 trotz ~3e-6). **§5.4-Risiko:** ECDF-Schwellen auf gepoolter Holdout-Verteilung werden von der C1/C2-Near-Zero-Masse dominiert — vor Phase-1-Freeze: Tie-Breaking-Regel oder stage-aware Schwellenkalibrierung in Thesis §5.4 dokumentieren (FREEZE-REVIEW).
+**Diagnose (kein Redesign):** C1/C2-TLE-Werte liegen fast ausschließlich unter 1e-3 bit (Median ~1e-6), aber sind **float-distinkt**. AUROC funktioniert rangbasiert. **§5.4-Fix:** stufenweise ECDF — siehe `docs/freeze_review_5_4_stage_wise_ecdf.md`.
 
 **N-Konsistenz:** N=32, eps=0.05 — unverändert bestätigt.
 
-**Gate C:** **Done** (C-0…C-6). Gate F / lokale Sidecars nachziehen separat.
+**Gate C:** **Done** (C-6 + stage-wise ECDF allocator).
 
-## 2026-07-14 — AUROC reconciliation (C-6 blocked; K unfreeze)
-
-**Problem:** Zwei Implementierungen lieferten unterschiedliche H1a-AUROCs auf demselben Run.
+## 2026-07-14 — AUROC reconciliation (C-6 technical fix)
 
 | Pfad | TW `105004` | ToH `105004` | Ursache |
 |------|------------:|-------------:|---------|
