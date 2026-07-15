@@ -1,38 +1,80 @@
 #!/usr/bin/env bash
 # RunPod pod setup: GitHub deploy key, venv on container disk, pinned deps, optional model pre-download.
 #
-# Run from repo root (or anywhere — script cd's to repo root).
-# Usage: bash scripts/setup_cloud.sh
+# Run from repo root:
+#   cd /workspace/metacog-llm-compute
+#   bash scripts/setup_cloud.sh
 #
 # Optional env:
 #   ENV_FILE=/workspace/secrets/env.sh     — HF_TOKEN, Langfuse, etc. (default)
-#   VENV_DIR=/root/venv-metacog            — Python venv on container disk (default)
-#   HF_HOME=/root/.cache/huggingface       — model cache on container disk (default)
-#   PIP_CACHE_DIR=/root/.cache/pip         — keep pip off /workspace (default)
 #   DEPLOY_KEY=/workspace/secrets/runpod_github_ed25519
 #   GIT_BRANCH=<name>                      — optional: checkout this branch before pull
 #   SKIP_GIT_SYNC=1                        — skip git fetch/pull (deploy key still installed)
 #   SKIP_VENV=1                            — skip venv create (use existing PATH python)
 #   SKIP_DEPLOY_KEY=1                      — skip SSH key install
 #   SKIP_MODEL_DOWNLOAD=1                  — skip HF weight pre-download
+#   SKIP_WORKSPACE_CACHE_CLEAN=1           — do not remove stale /workspace/.cache/*
 #   MODEL_NAME=Qwen/Qwen3-8B               — override model id for pre-download
+#
+# RunPod's container template pre-sets HF_HOME/PIP_CACHE_DIR under /workspace/.cache.
+# scripts/pod_runtime_env.sh forces ephemeral caches onto the container disk.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-ENV_FILE="${ENV_FILE:-/workspace/secrets/env.sh}"
-VENV_DIR="${VENV_DIR:-/root/venv-metacog}"
-HF_HOME="${HF_HOME:-/root/.cache/huggingface}"
-PIP_CACHE_DIR="${PIP_CACHE_DIR:-/root/.cache/pip}"
-DEPLOY_KEY="${DEPLOY_KEY:-/workspace/secrets/runpod_github_ed25519}"
-RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/data/results}"
+# shellcheck disable=SC1091
+source "${REPO_ROOT}/scripts/pod_runtime_env.sh"
 
-export HF_HOME PIP_CACHE_DIR
-export HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-${HF_HOME}/hub}"
-export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-${HF_HOME}/hub}"
-export RESULTS_DIR
+ENV_FILE="${ENV_FILE:-/workspace/secrets/env.sh}"
+DEPLOY_KEY="${DEPLOY_KEY:-/workspace/secrets/runpod_github_ed25519}"
+
+_clean_workspace_caches() {
+  if [[ "${SKIP_WORKSPACE_CACHE_CLEAN:-0}" == "1" ]]; then
+    echo "Skipping /workspace/.cache cleanup (SKIP_WORKSPACE_CACHE_CLEAN=1)."
+    return 0
+  fi
+  if [[ ! -d /workspace/.cache ]]; then
+    return 0
+  fi
+  local size_mb
+  size_mb="$(du -sm /workspace/.cache 2>/dev/null | awk '{print $1}')"
+  if [[ "${size_mb:-0}" -lt 1 ]]; then
+    return 0
+  fi
+  echo "Removing stale RunPod template caches from network volume: /workspace/.cache (${size_mb} MB)..."
+  rm -rf /workspace/.cache/pip /workspace/.cache/huggingface /workspace/.cache/uv /workspace/.cache/virtualenv
+  rmdir /workspace/.cache 2>/dev/null || true
+}
+
+_clean_repo_tool_caches() {
+  local removed=0
+  for dir in .mypy_cache .pytest_cache .ruff_cache; do
+    if [[ -d "${REPO_ROOT}/${dir}" ]]; then
+      rm -rf "${REPO_ROOT}/${dir}"
+      removed=1
+    fi
+  done
+  if [[ "${removed}" == "1" ]]; then
+    echo "Removed local tool caches (.mypy_cache, .pytest_cache, .ruff_cache) from repo on /workspace."
+  fi
+}
+
+_print_disk_layout() {
+  echo ""
+  echo "Disk layout (network volume should stay small — code + results only):"
+  df -h / /workspace 2>/dev/null || true
+  echo "  /workspace usage:"
+  du -sh /workspace/* /workspace/.??* 2>/dev/null | sort -hr | head -10 || true
+  echo "  container caches:"
+  du -sh "${VENV_DIR}" "${HF_HOME}" "${PIP_CACHE_DIR}" 2>/dev/null || true
+}
+
+_reassert_runtime_env() {
+  # shellcheck disable=SC1091
+  source "${REPO_ROOT}/scripts/pod_runtime_env.sh"
+}
 
 _install_deploy_key() {
   if [[ "${SKIP_DEPLOY_KEY:-0}" == "1" ]]; then
@@ -87,20 +129,26 @@ _sync_git() {
 }
 
 _ensure_venv() {
-  if [[ "${SKIP_VENV:-0}" == "1" ]]; then
-    echo "Using python from PATH (SKIP_VENV=1): $(command -v python || true)"
+  if [[ -x "${VENV_DIR}/bin/python" ]]; then
+    export PATH="${VENV_DIR}/bin:${PATH}"
+    echo "Using venv: ${VENV_DIR} ($(python --version))"
     return 0
   fi
-  if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
-    echo "Creating venv at ${VENV_DIR}..."
-    python3 -m venv "${VENV_DIR}"
+  if [[ "${SKIP_VENV:-0}" == "1" ]]; then
+    echo "Using python from PATH (SKIP_VENV=1, no venv at ${VENV_DIR}): $(command -v python || true)"
+    return 0
   fi
+  echo "Creating venv at ${VENV_DIR}..."
+  python3 -m venv "${VENV_DIR}"
   export PATH="${VENV_DIR}/bin:${PATH}"
   echo "Using venv: ${VENV_DIR} ($(python --version))"
 }
 
+_clean_workspace_caches
+_clean_repo_tool_caches
+
 if [[ -f "${ENV_FILE}" ]]; then
-  echo "Loading environment from ${ENV_FILE}..."
+  echo "Loading secrets from ${ENV_FILE}..."
   set -a
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
@@ -109,9 +157,16 @@ else
   echo "No env file found at ${ENV_FILE}; continuing without loading secrets."
 fi
 
+_reassert_runtime_env
+
 _install_deploy_key
 _sync_git
 _ensure_venv
+
+echo "Runtime cache dirs (container disk):"
+echo "  HF_HOME=${HF_HOME}"
+echo "  PIP_CACHE_DIR=${PIP_CACHE_DIR}"
+echo "  VENV_DIR=${VENV_DIR}"
 
 echo "Upgrading pip (recommended on fresh pods)..."
 python -m pip install --upgrade pip
@@ -194,3 +249,5 @@ echo "New SSH session:"
 echo "  source scripts/activate_pod_env.sh"
 echo ""
 echo "When you need inference: start vLLM serve (see docs/runpod.md)."
+
+_print_disk_layout

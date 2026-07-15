@@ -41,6 +41,7 @@ All entry points live in [`scripts/`](../scripts/). Run from the **repository ro
 | Script | Purpose | When to use | Status |
 |--------|---------|-------------|--------|
 | [`setup_cloud.sh`](../scripts/setup_cloud.sh) | Pod basics: secrets, deploy key, git pull (current branch), venv, deps, model cache | RunPod pod setup | `cloud` |
+| [`pod_runtime_env.sh`](../scripts/pod_runtime_env.sh) | Force HF/pip caches onto container disk (overrides RunPod `/workspace/.cache/*`) | Sourced by setup/activate | `cloud` |
 | [`activate_pod_env.sh`](../scripts/activate_pod_env.sh) | Source PATH/HF_HOME/RESULTS_DIR in new SSH sessions | After setup on pod | `cloud` |
 | [`run_with_autostop.sh`](../scripts/run_with_autostop.sh) | Run Phase 1/2 with best-effort pod stop via `runpodctl` | RunPod long runs (`STOP_POD=1`, `RUNPOD_POD_ID`) | `cloud` |
 | [`download_runpod_results.sh`](../scripts/download_runpod_results.sh) | `scp`/rsync results from pod; auto-flattens nested `results/` | After cloud pilot | `cloud` |

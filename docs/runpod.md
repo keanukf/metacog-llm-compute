@@ -41,15 +41,23 @@ Expected:
 - `/` reflects your **Container Disk** size (ephemeral)
 - `/workspace` is mounted (your **Network Volume**, persistent)
 
-If you want **results persistent** but **models ephemeral**, set:
+**RunPod template caveat:** The PyTorch template sets `HF_HOME`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, and related vars to `/workspace/.cache/*` in the container environment. That fills the **network volume** during `pip install` and model download. `setup_cloud.sh` overrides this via `scripts/pod_runtime_env.sh` — do **not** re-export the template paths in your shell before setup.
+
+If you want **results persistent** but **models ephemeral**, use the repo scripts (recommended):
 
 ```bash
-# Keep results on the Network Volume:
-export RESULTS_DIR="/workspace/metacog-llm-compute/data/results"
+cd /workspace/metacog-llm-compute
+bash scripts/setup_cloud.sh
+source scripts/activate_pod_env.sh
+```
 
-# Keep HF cache on the container disk (default behavior; make it explicit anyway):
-export HF_HOME="$HOME/.cache/huggingface"
-export TRANSFORMERS_CACHE="$HF_HOME/hub"
+Manual overrides (only if not using `setup_cloud.sh`):
+
+```bash
+export RESULTS_DIR="/workspace/metacog-llm-compute/data/results"
+export HF_HOME="/root/.cache/huggingface"
+export HF_HUB_CACHE="${HF_HOME}/hub"
+export PIP_CACHE_DIR="/root/.cache/pip"
 ```
 
 ## Step 4 — Hugging Face token (recommended)
@@ -165,11 +173,12 @@ bash scripts/setup_cloud.sh
 
 | Step | What |
 |------|------|
-| `source /workspace/secrets/env.sh` | HF_TOKEN, Langfuse, etc. |
+| `/workspace/.cache` cleanup | removes stale template pip/HF/uv caches from the **network volume** |
+| `source /workspace/secrets/env.sh` | HF_TOKEN, Langfuse, etc. (secrets only; cache paths re-forced afterward) |
 | GitHub deploy key | copies `/workspace/secrets/runpod_github_ed25519` → `~/.ssh/` |
 | Git sync | `git fetch origin`, then **ff-only pull on the branch already checked out** (no branch switch). Optional override: `GIT_BRANCH=main` |
 | venv | `/root/venv-metacog` on **container disk** |
-| Caches | `HF_HOME=/root/.cache/huggingface`, `PIP_CACHE_DIR=/root/.cache/pip` (not `/workspace`) |
+| Caches | `scripts/pod_runtime_env.sh` → `HF_HOME=/root/.cache/huggingface`, `PIP_CACHE_DIR=/root/.cache/pip` (overrides RunPod `/workspace/.cache/*`) |
 | deps + model | `requirements.txt` + optional `Qwen/Qwen3-8B` pre-download |
 
 **Skip flags** (e.g. stopped pod with venv + model still on container disk):
