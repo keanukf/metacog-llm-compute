@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Gate D manifest smoke — C0 success@Cap on all manifest instances (Hard-GO)."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.gate_d_metrics import SUCCESS_CORRIDOR, episode_record, success_rate_at_cap
+from scripts.sweep_textworld_difficulty import _load_merged_config
+
+
+def _run_domain_smoke(
+    *,
+    domain: str,
+    config: dict[str, Any],
+    production_cap: int,
+    use_real_model: bool,
+) -> dict[str, Any]:
+    from src.agent.base_agent import run_episode
+    from src.agent.compute_stages import get_step_fn
+    from src.utils.experiment_env import create_experiment_model, make_experiment_env
+    from src.utils.manifest import load_manifest
+
+    manifest = load_manifest(domain, config, REPO_ROOT)
+    if not manifest:
+        raise FileNotFoundError(f"No manifest loaded for domain={domain}")
+
+    model = create_experiment_model(config, use_real_model)
+    c0 = get_step_fn("C0")
+
+    episodes: list[dict[str, Any]] = []
+    meta_rows: list[dict[str, Any]] = []
+
+    for iid in sorted(manifest.keys()):
+        entry = manifest[iid]
+        max_steps = production_cap if domain == "textworld" else production_cap
+        env = make_experiment_env(domain, iid, config, max_steps, REPO_ROOT)
+        if domain == "tower_of_hanoi":
+            max_steps = int(getattr(env, "max_steps", max_steps))
+        result = run_episode(env, model, "C0", step_fn=c0, max_steps=max_steps)
+        ep = episode_record(result, obs_ceiling=max_steps)
+        ep["instance_id"] = iid
+        ep["holdout"] = bool(entry.get("holdout"))
+        ep["difficulty_tier"] = entry.get("difficulty_tier")
+        episodes.append(ep)
+        meta_rows.append(
+            {
+                "instance_id": iid,
+                "holdout": ep["holdout"],
+                "difficulty_tier": ep["difficulty_tier"],
+                "task_success": ep["task_success"],
+                "win_step": ep["win_step"],
+                "episode_length_steps": ep["episode_length_steps"],
+            }
+        )
+
+    if domain == "textworld":
+        rate = success_rate_at_cap(episodes, production_cap)
+    else:
+        rate = sum(1 for ep in episodes if ep["task_success"]) / len(episodes) if episodes else 0.0
+
+    lo, hi = SUCCESS_CORRIDOR
+    return {
+        "domain": domain,
+        "num_instances": len(episodes),
+        "production_cap": production_cap,
+        "success_rate_at_cap": rate,
+        "inside_success_corridor": lo <= rate <= hi,
+        "instances": meta_rows,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Gate D manifest smoke (C0 @Cap, all 50 instances)."
+    )
+    parser.add_argument("--config", default="configs/dev/gate_d_calibration.yaml")
+    parser.add_argument("--production-cap", type=int, required=True)
+    parser.add_argument("--real", action="store_true")
+    parser.add_argument(
+        "--output-dir",
+        default="data/results/gate_d_calibration/manifest_smoke",
+    )
+    parser.add_argument(
+        "--domains",
+        nargs="+",
+        default=["textworld", "tower_of_hanoi"],
+    )
+    args = parser.parse_args()
+
+    config = _load_merged_config(REPO_ROOT / args.config)
+    config.setdefault("episode", {})["max_steps_per_episode"] = int(args.production_cap)
+
+    out_dir = REPO_ROOT / args.output_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    reports: list[dict[str, Any]] = []
+    for domain in args.domains:
+        report = _run_domain_smoke(
+            domain=domain,
+            config=config,
+            production_cap=int(args.production_cap),
+            use_real_model=bool(args.real),
+        )
+        reports.append(report)
+        print(
+            f"[{domain}] success@Cap={report['success_rate_at_cap']:.3f} "
+            f"corridor={report['inside_success_corridor']} n={report['num_instances']}"
+        )
+
+    all_go = all(r["inside_success_corridor"] for r in reports)
+    summary = {
+        "production_cap": int(args.production_cap),
+        "hard_go": all_go,
+        "domains": reports,
+    }
+    out_file = out_dir / "manifest_smoke_results.json"
+    out_file.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"\nHard-GO: {all_go}")
+    print(f"Wrote {out_file}")
+    if not all_go:
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()
