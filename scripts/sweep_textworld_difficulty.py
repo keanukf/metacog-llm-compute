@@ -127,6 +127,12 @@ def _generate_combo_games(
     return files
 
 
+def _create_model(config: dict[str, Any], use_real_model: bool) -> Any:
+    from src.execution.backend.factory import create_execution_backend
+
+    return create_execution_backend(config, use_real=use_real_model)
+
+
 def _run_c0_batch(
     *,
     game_files: list[Path],
@@ -137,9 +143,8 @@ def _run_c0_batch(
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.environments.textworld_env import TextWorldEnv
-    from src.utils.experiment_env import create_experiment_model
 
-    model = create_experiment_model(config, use_real_model)
+    model = _create_model(config, use_real_model)
     c0 = get_step_fn("C0")
 
     episodes: list[dict[str, Any]] = []

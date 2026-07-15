@@ -32,13 +32,13 @@ def _run_toh_c0_batch(
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.environments.tower_of_hanoi import TowerOfHanoiEnv
-    from src.utils.experiment_env import create_experiment_model
+    from src.execution.backend.factory import create_execution_backend
 
     include_vm = bool(
         (config.get("domain_prompts") or {}).get("tower_of_hanoi", {}).get("include_valid_moves")
     )
 
-    model = create_experiment_model(config, use_real_model)
+    model = create_execution_backend(config, use_real=use_real_model)
     c0 = get_step_fn("C0")
 
     episodes: list[dict[str, Any]] = []

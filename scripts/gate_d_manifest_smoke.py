@@ -26,14 +26,15 @@ def _run_domain_smoke(
 ) -> dict[str, Any]:
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
-    from src.utils.experiment_env import create_experiment_model, make_experiment_env
+    from src.execution.backend.factory import create_execution_backend
+    from src.utils.experiment_env import make_experiment_env
     from src.utils.manifest import load_manifest
 
     manifest = load_manifest(domain, config, REPO_ROOT)
     if not manifest:
         raise FileNotFoundError(f"No manifest loaded for domain={domain}")
 
-    model = create_experiment_model(config, use_real_model)
+    model = create_execution_backend(config, use_real_model)
     c0 = get_step_fn("C0")
 
     episodes: list[dict[str, Any]] = []
