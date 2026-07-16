@@ -155,11 +155,13 @@ class _FakeGymEnv:
     def __init__(self) -> None:
         self._reset_result: tuple[str, dict] | str = ("reset", {})
         self._step_result: tuple[str, float, bool, dict] = ("step", 0.0, False, {})
+        self.last_action: str | None = None
 
     def reset(self):
         return self._reset_result
 
     def step(self, action: str):
+        self.last_action = action
         return self._step_result
 
 
@@ -232,3 +234,77 @@ def test_info_won_sets_task_success_and_step_record():
     assert env.task_lost is False
     assert env.step_results[-1]["won"] is True
     assert env.step_results[-1]["lost"] is False
+
+
+def test_synonym_look_inventory_when_admissible():
+    fake = _FakeGymEnv()
+    fake._reset_result = (
+        "reset",
+        {
+            "admissible_commands": ["inventory", "go north"],
+            "policy_commands": ["inventory"],
+            "score": 0,
+        },
+    )
+    fake._step_result = (
+        "You are carrying nothing.",
+        0.0,
+        False,
+        {"admissible_commands": ["go north"], "policy_commands": ["go north"], "score": 0},
+    )
+    env = _make_realish_env(fake)
+    env.reset()
+    env.step("look inventory")
+    rec = env.step_results[-1]
+    assert fake.last_action == "inventory"
+    assert rec["action_raw"] == "look inventory"
+    assert rec["action_executed"] == "inventory"
+    assert rec["action_synonym_canonical"] == "inventory"
+    assert rec["correctness"] == "legal"
+
+
+def test_synonym_not_applied_when_canonical_not_admissible():
+    fake = _FakeGymEnv()
+    fake._reset_result = (
+        "reset",
+        {"admissible_commands": ["go north"], "policy_commands": ["go north"], "score": 0},
+    )
+    fake._step_result = (
+        "You can't see any such thing.",
+        0.0,
+        False,
+        {"admissible_commands": ["go north"], "policy_commands": ["go north"], "score": 0},
+    )
+    env = _make_realish_env(fake)
+    env.reset()
+    env.step("look inventory")
+    rec = env.step_results[-1]
+    assert fake.last_action == "look inventory"
+    assert rec["action_executed"] == "look inventory"
+    assert rec["action_synonym_canonical"] is None
+    assert rec["correctness"] == "illegal"
+
+
+def test_hallucinated_fry_not_remapped():
+    fake = _FakeGymEnv()
+    fake._reset_result = (
+        "reset",
+        {
+            "admissible_commands": ["prepare meal", "inventory"],
+            "policy_commands": ["prepare meal"],
+            "score": 0,
+        },
+    )
+    fake._step_result = (
+        "Nothing happens.",
+        0.0,
+        False,
+        {"admissible_commands": ["prepare meal"], "policy_commands": ["prepare meal"], "score": 0},
+    )
+    env = _make_realish_env(fake)
+    env.reset()
+    env.step("fry yellow onion with stove")
+    rec = env.step_results[-1]
+    assert fake.last_action == "fry yellow onion with stove"
+    assert rec["action_synonym_canonical"] is None
+    assert rec["correctness"] == "illegal"

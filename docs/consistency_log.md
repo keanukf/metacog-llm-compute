@@ -2,6 +2,43 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-15 — FREEZE-REVIEW: TextWorld static prompt vocabulary completeness
+
+**Problem:** Die statische TextWorld-Template-Liste in `domain_prompts.textworld.prefix` deklarierte eine geschlossene erlaubte Kommandomenge (`Use only parser commands from the templates below` / `valid forms`), schloss aber lösungsnotwendige Aktionsklassen aus: Finish-Sequenz (`prepare meal`, `eat meal`) und cut-Varianten (`chop`/`slice`/`dice [object] with [tool]`). Das konfundiert Instruktionsbefolgung mit Aufgaben-Misserfolg.
+
+**Beleg:** Generator-Walkthrough-Audit über 27 Rasterzellen (`scripts/audit_textworld_prompt_vocabulary.py`, `data/results/gate_d_calibration/textworld_vocab_audit.json`): `prepare meal` und `eat meal` in 27/27; cut-Varianten in cut-Zellen.
+
+**Fix:** Template-Liste um genau diese fünf Formen ergänzt (`configs/experiment_core.yaml`), identisch über alle Zellen. `close [container]`, `look`, `put [object] in [container]` bleiben (legal, ggf. auf anderen Ziehungen lösungsnotwendig).
+
+**Abgrenzung (DV-Schutz):**
+- Kein admissible-commands-Einschluss; `include_admissible_commands: false` unverändert.
+- Generative Aktionswahl unverändert — statische Verb-Grammatik, keine zustandsabhängige Liste.
+- `fry`/`roast`/`grill` nicht im Walkthrough (nur `cook`); halluziniertes `fry` bleibt Planungsfehler in der DV.
+- Synonym-Fix (`look inventory` → `inventory` wenn admissible) separat dokumentiert (Eintrag Parser-Synonym).
+
+**Bewusst nicht im statischen Vokabular:** `put [object] on [surface]`, `insert [object] into [container]` — admissible-only, nicht lösungsnotwendig; werden als **legal** gelabelt, falls das Modell sie trifft.
+
+**Baseline-Hygiene:** Erster TW-Sweep (216 Ep.) und Kontrollmessungen auf unvollständigem Vokabular — **nicht** als Schwierigkeits-Baseline verwenden. Belastbare Baseline erst nach Vokabular-Fix + Diagnostik-Lauf (`data/results/gate_d_diagnostic/feasibility/`).
+
+## 2026-07-15 — Gate D TextWorld parser synonym fix (pre–sweep v2)
+
+**Entscheidung:** Korrektur des Aktions-Parsings für **Synonyme legaler Kommandos** in TextWorld (`textworld_env.py`). Das Modell-Output (`action_raw`) bleibt unverändert; ausgeführt wird die kanonische Form nur wenn sie pre-step admissible ist.
+
+**Erlaubt (Kategorie A, Audit `docs/gate_d_parser_audit.md`):**
+- `look inventory` → `inventory`
+- `check inventory` → `inventory` (gleiche Klasse, präventiv)
+
+**Explizit nicht geändert (DV-Schutz):**
+- Keine admissible commands im Prompt/Observation (`include_admissible_commands: false` unverändert)
+- Kein Umlenken von Planungsfehlern (`fry …` in take-only, falsche `go *`-Richtungen)
+- Keine zell- oder domain-spezifischen Prompt-Unterschiede; ToH unberührt
+
+**Operationalisierung:** Änderung besteht den Test „Synonym legaler Absicht vs. Hilfe bei Aktionswahl". Kontrollmessung: 8× `r3_i1_take-only` nach Fix (Gate D branch).
+
+**Kontrollmessung (2026-07-15):** Instanz 7 — `look inventory` jetzt `legal` (Synonym greift); Gesamt **0/8** Erfolg (Varianz vs. Pre-Replay 1/8). Label-Basis sauberer; Korridor weiter offen → Planungsbefund B/C.
+
+**Nächster Schritt:** Schwierigkeitskalibrierung auf sauberer Label-Basis (moderate Decke 30–35, nicht 50); ggf. cut/cook-Vereinfachung erst nach erneuter Baseline.
+
 ## 2026-07-14 — Logprob sidecar policy (pre–Gate D)
 
 **Entscheidung (Gate F Run-Hygiene, revidiert):** Kein binäres Sidecar an/aus. Drei Modi via `logging.logprob_sidecar_mode`:

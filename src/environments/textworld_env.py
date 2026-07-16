@@ -17,6 +17,9 @@ TextWorld's ``policy_commands`` (quest solver rest plan, not walkthrough oracle)
 
 Labeling edge cases (preregistered):
 - Illegal detection uses the **pre-step** admissible-command cache plus parser-feedback heuristics.
+- **Synonym resolution (confidence-neutral):** ``look inventory`` / ``check inventory`` → ``inventory``
+  when ``inventory`` is pre-step admissible. ``action_raw`` preserves model output; ``action_executed``
+  is what the engine receives. No rewrite for non-admissible canonical forms or planning errors.
 - Winning step: ``policy_commands == []`` with ``won=True`` is optimal when ``dist_after < dist_before``.
 - ``policy_commands == []`` with ``not won`` → ``unlabeled`` / ``quest_distance_empty_unwon``.
 - Missing ``policy_commands`` in info → ``unlabeled`` / ``quest_distance_unavailable``.
@@ -120,6 +123,36 @@ def _append_admissible_to_observation(observation: str, info: dict[str, Any]) ->
 
 def _normalize_command_key(cmd: str) -> str:
     return " ".join(cmd.strip().split())
+
+
+# Confidence-neutral surface forms → canonical parser commands (TextWorld only).
+# Rewrites apply only when the canonical form is pre-step admissible.
+_TEXTWORLD_COMMAND_SYNONYMS: dict[str, str] = {
+    "look inventory": "inventory",
+    "check inventory": "inventory",
+}
+
+
+def _resolve_synonym_for_admissible(
+    action: str,
+    admissible: Any,
+) -> tuple[str, str | None]:
+    """
+    Return (action_to_execute, canonical_if_synonym_applied).
+
+    Maps model surface forms to parser-known commands only when the canonical
+    command is legal in the pre-step state. Does not alter generative choice.
+    """
+    normalized = _normalize_command_key(action)
+    if not normalized:
+        return action, None
+    canonical = _TEXTWORLD_COMMAND_SYNONYMS.get(normalized)
+    if canonical is None:
+        return action, None
+    parsed_canon, ok = _action_in_admissible(canonical, admissible)
+    if ok and parsed_canon:
+        return parsed_canon, canonical
+    return action, None
 
 
 def _action_in_admissible(action: str, admissible: Any) -> tuple[str | None, bool]:
@@ -335,7 +368,10 @@ class TextWorldEnv:
 
         if self._use_real and self._gym_env is not None:
             pre_admissible = self._last_admissible
-            result = self._gym_env.step(action)
+            executed_action, synonym_canonical = _resolve_synonym_for_admissible(
+                action, pre_admissible
+            )
+            result = self._gym_env.step(executed_action)
             obs, reward, done, info = _unpack_gym_step(result)
             self.observation = obs if isinstance(obs, str) else str(obs)
             if self._include_admissible_commands:
@@ -360,10 +396,12 @@ class TextWorldEnv:
                     use_admissible = True
 
             if use_admissible:
-                parsed, ok = _action_in_admissible(action, admissible)
+                parsed, ok = _action_in_admissible(executed_action, admissible)
                 illegal = not ok
             else:
-                parsed = _normalize_command_key(action) if action.strip() else None
+                parsed = (
+                    _normalize_command_key(executed_action) if executed_action.strip() else None
+                )
                 illegal = _suggests_unknown_command(info, self.observation) or reward < 0.0
 
             won_now = info.get("won") is True or info.get("game_won") is True
@@ -391,7 +429,9 @@ class TextWorldEnv:
             rec: dict[str, Any] = {
                 "step_index": self.current_step,
                 "action_raw": action,
+                "action_executed": executed_action,
                 "action_parsed": parsed,
+                "action_synonym_canonical": synonym_canonical,
                 "correctness": correctness,
                 "label_reason": label_reason,
                 "quest_distance_before": dist_before,
