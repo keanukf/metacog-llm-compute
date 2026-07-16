@@ -1,0 +1,19 @@
+extends: ../experiment_core.yaml
+
+# Gate D feasibility diagnostic — r3_i1_take-only, C0/C1/C2, no sidecars.
+
+logging:
+  logprob_sidecar_mode: off
+  save_vc_distributions: false
+  save_step_traces: false
+  write_debug_views: false
+
+tracing:
+  langfuse_enabled: false
+
+phase1:
+  compute_stages: 3
+  runs_per_condition: 1
+
+episode:
+  max_steps_per_episode: 35
