@@ -143,14 +143,17 @@ def _run_c0_batch(
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
     from src.environments.textworld_env import TextWorldEnv
+    from src.utils.step_config import HISTORY_CFG_KEYS, resolve_step_fn_kwargs
 
     model = _create_model(config, use_real_model)
-    c0 = get_step_fn("C0")
+    step_cfg = resolve_step_fn_kwargs(config, "textworld")
+    history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in HISTORY_CFG_KEYS}
+    c0 = get_step_fn("C0", **step_cfg)
 
     episodes: list[dict[str, Any]] = []
     for p in game_files:
         env = TextWorldEnv(game_file=str(p), max_steps=obs_ceiling)
-        result = run_episode(env, model, "C0", step_fn=c0, max_steps=obs_ceiling)
+        result = run_episode(env, model, "C0", step_fn=c0, max_steps=obs_ceiling, **history_cfg)
         episodes.append(episode_record(result, obs_ceiling=obs_ceiling))
 
     stats = aggregate_length_stats(episodes)

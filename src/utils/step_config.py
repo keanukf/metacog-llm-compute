@@ -36,6 +36,18 @@ _LEGACY_DEFAULT_PREFIX_BY_DOMAIN: dict[str, str] = {
     ),
 }
 
+# Keys returned by resolve_step_fn_kwargs() that get_step_fn() does not accept — pop these off
+# and pass them to run_episode()/run_adaptive_episode() instead (history/memory controls).
+HISTORY_CFG_KEYS: frozenset[str] = frozenset(
+    {
+        "history_keep_last_pairs",
+        "history_max_obs_chars",
+        "history_current_obs_max_chars",
+        "history_obs_head_ratio",
+        "pin_recipe",
+    }
+)
+
 
 def resolve_step_fn_kwargs(config: dict, domain: str) -> dict[str, Any]:
     """

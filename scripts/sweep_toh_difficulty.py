@@ -33,13 +33,16 @@ def _run_toh_c0_batch(
     from src.agent.compute_stages import get_step_fn
     from src.environments.tower_of_hanoi import TowerOfHanoiEnv
     from src.execution.backend.factory import create_execution_backend
+    from src.utils.step_config import HISTORY_CFG_KEYS, resolve_step_fn_kwargs
 
     include_vm = bool(
         (config.get("domain_prompts") or {}).get("tower_of_hanoi", {}).get("include_valid_moves")
     )
 
     model = create_execution_backend(config, use_real=use_real_model)
-    c0 = get_step_fn("C0")
+    step_cfg = resolve_step_fn_kwargs(config, "tower_of_hanoi")
+    history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in HISTORY_CFG_KEYS}
+    c0 = get_step_fn("C0", **step_cfg)
 
     episodes: list[dict[str, Any]] = []
     label_counts: Counter[str] = Counter()
@@ -51,7 +54,7 @@ def _run_toh_c0_batch(
             max_steps=max_steps,
             include_valid_moves=include_vm,
         )
-        result = run_episode(env, model, "C0", step_fn=c0, max_steps=max_steps)
+        result = run_episode(env, model, "C0", step_fn=c0, max_steps=max_steps, **history_cfg)
         episodes.append(episode_record(result, obs_ceiling=max_steps))
         for rec in result.get("step_correctness") or []:
             if isinstance(rec, dict):

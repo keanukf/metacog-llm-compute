@@ -29,13 +29,16 @@ def _run_domain_smoke(
     from src.execution.backend.factory import create_execution_backend
     from src.utils.experiment_env import make_experiment_env
     from src.utils.manifest import load_manifest
+    from src.utils.step_config import HISTORY_CFG_KEYS, resolve_step_fn_kwargs
 
     manifest = load_manifest(domain, config, REPO_ROOT)
     if not manifest:
         raise FileNotFoundError(f"No manifest loaded for domain={domain}")
 
     model = create_execution_backend(config, use_real_model)
-    c0 = get_step_fn("C0")
+    step_cfg = resolve_step_fn_kwargs(config, domain)
+    history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in HISTORY_CFG_KEYS}
+    c0 = get_step_fn("C0", **step_cfg)
 
     episodes: list[dict[str, Any]] = []
     meta_rows: list[dict[str, Any]] = []
@@ -46,7 +49,7 @@ def _run_domain_smoke(
         env = make_experiment_env(domain, iid, config, max_steps, REPO_ROOT)
         if domain == "tower_of_hanoi":
             max_steps = int(getattr(env, "max_steps", max_steps))
-        result = run_episode(env, model, "C0", step_fn=c0, max_steps=max_steps)
+        result = run_episode(env, model, "C0", step_fn=c0, max_steps=max_steps, **history_cfg)
         ep = episode_record(result, obs_ceiling=max_steps)
         ep["instance_id"] = iid
         ep["holdout"] = bool(entry.get("holdout"))
