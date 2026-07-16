@@ -2,6 +2,64 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-16 — Post-Fix-Sweeps (Pod, 4ac4431): Korridor-Kandidaten, ToH-Nullbefund, C1>C2
+
+**Kontext:** Erste echte Sweeps auf dem korrekt verdrahteten Code (siehe Eintrag unten), 5090-Pod,
+`--real`, alle mit `--config configs/dev/gate_d_calibration.yaml` bzw. `gate_d_diagnostic.yaml`.
+
+### TextWorld C0 Corridor-Sweep (27 Zellen × 4 Instanzen, `--runtime-max-steps 45`)
+
+`data/results/gate_d_calibration/textworld_sweep/sweep_results.json`. Production-Cap-Ableitung: 45
+(≈ obs_ceiling). **WARNUNG aus dem Script selbst:** Trunkierungsrate 68,5 % (Schwelle 5 %) → p90
+potenziell downward-biased. Top-Kandidaten (success@Cap=0.500): `r5_i1_take+cook`,
+`r3_i2_take-only`, `r5_i3_take-only`.
+
+**Kontrollmessung mit Cap 70** (`data/results/gate_d_calibration/textworld_sweep_cap70/`,
+gleiche Instanzen/Seed): Trunkierungsrate **steigt** leicht auf 70,4 % statt zu sinken.
+**Schlussfolgerung: kein Floor-Effekt** — gescheiterte Episoden hängen strukturell fest
+(Loops/Halluzinationen), nicht Step-Budget-limitiert. Höherer Cap ändert am Bild nichts;
+45 reicht für die Korridor-Entscheidung, muss nicht weiter erhöht werden. Neue Top-Kandidaten bei
+Cap 70 (success@Cap=0.500): `r5_i3_take-only`, `r3_i1_take+cut+cook`, `r7_i2_take-only` — teils
+andere Zellen als bei Cap 45, Kandidatenlage also nicht über beide Läufe stabil (n=4/Zelle ist klein
+und verrauscht; vor Freeze ggf. n erhöhen für die engere Auswahl).
+
+### Tower of Hanoi C0-Sweep (`--instances-per-combo 10`)
+
+`data/results/gate_d_calibration/toh_sweep/sweep_results.json`. **0,0 % Erfolg bei 3 UND 4 Disks**,
+Illegal-Rate 75,9 % (3 Disks) bzw. 89,3 % (4 Disks). Deutlich schlechter als TextWorld C0 und noch
+nicht eingeordnet, ob das echte Schwierigkeit oder eine ToH-spezifische Prompt-/Parsing-Lücke ist
+(anders als TextWorld hat ToH kein Reasoning-Vokabular-Problem, aber ggf. andere Parsing-Eigenheiten
+der `A->C`-Ausgabe). **Offen — braucht C1/C2-Vergleich, den es für ToH noch nicht gibt** (nur
+`sweep_toh_difficulty.py`, C0-only by design).
+
+### TW C0/C1/C2-Feasibility (r3_i1_take-only, n=8, Cap 45)
+
+`data/results/gate_d_diagnostic/feasibility/feasibility_report.json`. **C0: 37,5 % (3/8)** — liegt
+im 30–50-%-Zielkorridor. **C1: 100 % (8/8)** — deutlich über Korridor, Reasoning löst diese Zelle
+fast immer. **C2: 50 % (4/8)** — auffällig **niedriger als C1** trotz mehr Compute
+(Self-Consistency, N=3). Erste direkte Post-Fix-Evidenz für einen genuinen C1>C2-Befund, nicht durch
+den Wiring-Bug erklärbar (der ist ja gefixt).
+
+### Trace-Probe (6 Episoden, volle Token-Kette inkl. Reasoning-Text)
+
+`data/results/gate_d_calibration/trace_probe/` (`trace_*.json` + `traces/trace_*.jsonl` mit
+komplettem Prompt/Response pro Schritt, inkl. `<think>`-Blöcken). Ergebnis: TW-C1 1/2 (Sieg bei 39
+von 45 Schritten — knapp), TW-C2 0/2, ToH-C0 0/2. Bestätigt den C1>C2-Befund nochmal auf kleiner
+Stichprobe. **Diese Traces sind für eine manuelle Reasoning-Text-Analyse (warum verliert C2 gegen
+C1? was passiert bei den ToH-Fehlschlägen konkret?) noch nicht ausgewertet — nur die
+Erfolg/Miss-Zahlen liegen vor.**
+
+### Offene Fragen für nach der Session (keine autonome Entscheidung getroffen)
+
+- ToH C0-Nullbefund: braucht C1/C2-Vergleich, ggf. leichtere Konfigurationen (partial_start) vor
+  einer Domain-Viability-Entscheidung.
+- TW-Korridor-Kandidaten sind zwischen Cap-45- und Cap-70-Lauf nicht stabil — vor Manifest-Freeze
+  mit größerem n (statt 4) bestätigen.
+- Der C1>C2-Befund (auch strukturell durch die Traces bestätigt) ist eine echte, interessante
+  Eigenschaft dieser Aufgabe/dieses Modells — noch nicht durch Reasoning-Text-Lektüre erklärt.
+- Inventar-Beobachtbarkeits-Frage (siehe oben, 2026-07-16 Parser-Audit-Kontext) weiterhin
+  unangetastet, wartet auf explizites Go.
+
 ## 2026-07-16 — Gate D diagnostic scripts: missing config wiring silently capped C1/C2 at ~128 tokens
 
 **Problem:** Sechs Gate-D-/Sweep-Dev-Scripts riefen `get_step_fn(stage)` ohne
