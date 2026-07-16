@@ -2,6 +2,42 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-16 — Gate D diagnostic scripts: missing config wiring silently capped C1/C2 at ~128 tokens
+
+**Problem:** Sechs Gate-D-/Sweep-Dev-Scripts riefen `get_step_fn(stage)` ohne
+`resolve_step_fn_kwargs(config, domain)` auf. Ohne die aufgelösten Kwargs fiel
+`domain_prompts.<domain>.prefix` auf einen leeren Prompt zurück, und `cot_max_tokens`
+fiel von den konfigurierten 8192 auf den internen Nofallback `max(128, action_max_tokens*2)`
+≈ 128 Token — für C1/C2 (natives Thinking) faktisch unbrauchbar.
+
+**Betroffen:** `run_gate_d_feasibility.py`, `inspect_gate_d_abort_actions.py`,
+`analyze_gate_d_abort_distance.py`, `gate_d_manifest_smoke.py`,
+`sweep_textworld_difficulty.py` (der ursprüngliche 216-Episoden-Sweep selbst),
+`sweep_toh_difficulty.py`. **Nicht betroffen:** `src/execution/episode_runner.py`
+(Phase-1/2-Produktionspfad) und `run_c1_handoff_gate.py` — beide bereits korrekt verdrahtet.
+
+**Live-Beleg (Pod, `r3_i1_take-only`, 2 Instanzen):** Vor dem Fix brach C1 bei jedem
+Step auf die wörtliche Aktion `"<think>"` ab, C2 auf eine leere Aktion — 0/6 Erfolge über
+C0/C1/C2. Nach dem Fix (`prompt_prefix` nicht-leer, `c1_cot_max_tokens=c2_cot_max_tokens=8192`):
+2/6 echte Siege (C1 in 16 Schritten, C2 in 23), beide über `prepare meal → eat meal` mit
+korrekter `won`/`done`-Terminierung. Kein Terminierungs-Bug — der frühere Verdacht dazu ist
+damit ebenfalls entkräftet.
+
+**Fix:** Alle sechs Scripts nutzen jetzt `resolve_step_fn_kwargs(config, domain)` +
+neue Konstante `HISTORY_CFG_KEYS` (`src/utils/step_config.py`) statt eines pro Script
+duplizierten Key-Sets. Scripts sind gefixt, aber **noch nicht neu laufen gelassen**
+(zeitlicher Aufwand, Entscheidung steht aus).
+
+**Konsequenz — Baseline-Hygiene:** Alle vor diesem Fix erzeugten Gate-D-Ergebnisse
+(`feasibility_report.json`, `textworld_sweep/sweep_results.json`,
+`textworld_abort_distance/`, `textworld_abort_action_inspection*/`) spiegeln den
+~128-Token-Deckel bei C1/C2 wider und dürfen **nicht** zur Beurteilung von C1/C2-Schwierigkeit
+oder -Machbarkeit herangezogen werden. Das gilt zusätzlich zur bereits bekannten
+Vokabular-Baseline-Einschränkung vom 2026-07-15.
+
+**Nächster Schritt:** Sweeps mit den gefixten Scripts neu laufen lassen, sobald Zeit/Scope
+entschieden ist.
+
 ## 2026-07-15 — FREEZE-REVIEW: TextWorld static prompt vocabulary completeness
 
 **Problem:** Die statische TextWorld-Template-Liste in `domain_prompts.textworld.prefix` deklarierte eine geschlossene erlaubte Kommandomenge (`Use only parser commands from the templates below` / `valid forms`), schloss aber lösungsnotwendige Aktionsklassen aus: Finish-Sequenz (`prepare meal`, `eat meal`) und cut-Varianten (`chop`/`slice`/`dice [object] with [tool]`). Das konfundiert Instruktionsbefolgung mit Aufgaben-Misserfolg.
