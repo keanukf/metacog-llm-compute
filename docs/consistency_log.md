@@ -2,6 +2,35 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-16 — ToH C0/C1/C2-Feasibility: C0-Nullbefund löst sich unter Reasoning auf
+
+**Zweck:** Direkte Anschlussfrage an den ToH-C0-Nullbefund (siehe Eintrag unten): löst sich das durch
+Reasoning auf, wie bei TextWorld? Kein bestehendes Script deckte ToH bei C1/C2 ab
+(`sweep_toh_difficulty.py` ist C0-only); dafür Einweg-Script `toh_feasibility.py` (nicht ins Repo
+committed, nur der Ergebnis-JSON) gebaut: 8× 3-Disk-Instanzen (seed 42, `partial_start_range=(0,3)`,
+`max_steps` pro Instanz = `optimal_steps*3`), `configs/dev/gate_d_calibration.yaml`,
+`resolve_step_fn_kwargs` korrekt verdrahtet.
+
+`data/results/gate_d_calibration/toh_feasibility/toh_feasibility_report.json`:
+
+| Stage | Erfolg |
+|---|---|
+| C0 | 0/8 = 0,0 % |
+| C1 | 5/8 = 62,5 % |
+| C2 | 5/8 = 62,5 % |
+
+**Befund:** Der C0-Nullbefund ist kein Bug und keine unlösbare Aufgabe — er ist reine
+C0-Schwäche (kein Reasoning). Mit Reasoning (C1) springt der Erfolg auf 62,5 %, weit über den
+30–50-%-Zielkorridor. **Anders als bei TextWorld liegen C1 und C2 hier gleichauf** (kein C1>C2-Gap;
+vgl. TW-Feasibility unten: C1 100 %, C2 50 %). Alle C0-Episoden liefen exakt bis zum jeweiligen
+Instanz-Cap durch, ohne zu gewinnen (`episode_length_steps == max_steps` in allen 8 Fällen) — passt
+zur schon bekannten hohen Illegal-Rate (75–89 %) aus dem C0-Sweep: die Aktionswahl selbst ist ohne
+Deliberation kaum brauchbar, nicht die Aufgabenschwierigkeit an sich.
+
+**Konsequenz für Gate D:** ToH-Schwierigkeitskalibrierung braucht vermutlich C1 oder C2 als
+Referenzstufe, nicht C0 — 3 Disks bei C0 ist strukturell zu hart für den 30–50-%-Korridor. Das ist
+eine Design-relevante Beobachtung (keine autonome Entscheidung getroffen, nur dokumentiert).
+
 ## 2026-07-16 — Post-Fix-Sweeps (Pod, 4ac4431): Korridor-Kandidaten, ToH-Nullbefund, C1>C2
 
 **Kontext:** Erste echte Sweeps auf dem korrekt verdrahteten Code (siehe Eintrag unten), 5090-Pod,
