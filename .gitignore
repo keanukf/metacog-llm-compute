@@ -27,6 +27,11 @@ venv/
 *.swp
 *.swo
 
+# Claude Code local context (agent working notes, not shared project docs)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+
 # Results
 data/results/
 
