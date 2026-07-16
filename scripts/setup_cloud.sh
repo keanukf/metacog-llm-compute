@@ -15,9 +15,16 @@
 #   SKIP_MODEL_DOWNLOAD=1                  — skip HF weight pre-download
 #   SKIP_WORKSPACE_CACHE_CLEAN=1           — do not remove stale /workspace/.cache/*
 #   MODEL_NAME=Qwen/Qwen3-8B               — override model id for pre-download
+#   SKIP_NETWORK_PREFLIGHT=1               — skip DNS/GitHub-host-key repair
 #
 # RunPod's container template pre-sets HF_HOME/PIP_CACHE_DIR under /workspace/.cache.
 # scripts/pod_runtime_env.sh forces ephemeral caches onto the container disk.
+#
+# Fresh pod instances (new container, same network volume) have been observed with a
+# broken embedded Docker DNS resolver (127.0.0.11 -> SERVFAIL for github.com) and no
+# github.com entry in ~/.ssh/known_hosts — both live on the ephemeral container disk,
+# not the persistent volume, so they can recur on every new instance. Repaired below
+# before the deploy key / git sync steps that depend on reaching github.com.
 
 set -euo pipefail
 
@@ -74,6 +81,34 @@ _print_disk_layout() {
 _reassert_runtime_env() {
   # shellcheck disable=SC1091
   source "${REPO_ROOT}/scripts/pod_runtime_env.sh"
+}
+
+_ensure_github_reachable() {
+  if [[ "${SKIP_NETWORK_PREFLIGHT:-0}" == "1" ]]; then
+    echo "Skipping DNS/GitHub-host-key preflight (SKIP_NETWORK_PREFLIGHT=1)."
+    return 0
+  fi
+  if ! getent hosts github.com >/dev/null 2>&1; then
+    echo "github.com does not resolve (likely broken embedded Docker DNS at 127.0.0.11)."
+    echo "Pointing /etc/resolv.conf at public resolvers (8.8.8.8, 1.1.1.1)..."
+    cat > /etc/resolv.conf << 'RESOLV'
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+options edns0 trust-ad ndots:0
+RESOLV
+    if ! getent hosts github.com >/dev/null 2>&1; then
+      echo "WARNING: github.com still does not resolve after DNS repair; git sync will likely fail." >&2
+    fi
+  fi
+
+  mkdir -p ~/.ssh
+  chmod 700 ~/.ssh
+  touch ~/.ssh/known_hosts
+  if ! ssh-keygen -F github.com -f ~/.ssh/known_hosts >/dev/null 2>&1; then
+    echo "No github.com entry in ~/.ssh/known_hosts; adding via ssh-keyscan..."
+    ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+    chmod 600 ~/.ssh/known_hosts
+  fi
 }
 
 _install_deploy_key() {
@@ -159,6 +194,7 @@ fi
 
 _reassert_runtime_env
 
+_ensure_github_reachable
 _install_deploy_key
 _sync_git
 _ensure_venv
