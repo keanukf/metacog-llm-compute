@@ -26,6 +26,20 @@ from scripts.sweep_textworld_difficulty import (
 )
 
 
+def _resolve_obs_ceiling(explicit: int | None, sweep: dict[str, Any]) -> int:
+    """Cap to replay under: explicit CLI override, else the sweep's own ``obs_ceiling``.
+
+    Without this fallback, an unset ``--obs-ceiling`` silently defaulted to 25
+    regardless of what cap the sweep being inspected actually ran at (e.g. the
+    cap-70 rerun noted in docs/consistency_log.md 2026-07-17) — replaying the same
+    seeds under the wrong cap, unlike analyze_gate_d_abort_distance.py's sibling
+    script, which already reads ``obs_ceiling`` from the sweep results.
+    """
+    if explicit is not None:
+        return int(explicit)
+    return int(sweep.get("obs_ceiling", 25))
+
+
 def _step_tail(steps: list[dict[str, Any]], n: int = 4) -> list[dict[str, Any]]:
     tail = steps[-n:] if len(steps) >= n else steps
     out: list[dict[str, Any]] = []
@@ -106,7 +120,14 @@ def main() -> None:
     )
     parser.add_argument("--config", default="configs/dev/gate_d_calibration.yaml")
     parser.add_argument("--real", action="store_true")
-    parser.add_argument("--obs-ceiling", type=int, default=25)
+    parser.add_argument(
+        "--obs-ceiling",
+        type=int,
+        default=None,
+        help="Override the observation ceiling; defaults to the sweep's own obs_ceiling "
+        "(same field analyze_gate_d_abort_distance.py reads) so this replays under the "
+        "same cap the sweep it inspects actually ran at.",
+    )
     parser.add_argument("--tail-steps", type=int, default=4)
     parser.add_argument(
         "--output-dir",
@@ -117,7 +138,7 @@ def main() -> None:
     sweep = json.loads((REPO_ROOT / args.sweep_results).read_text(encoding="utf-8"))
     seed = int(sweep.get("seed", 42))
     instances_per_combo = int(sweep.get("instances_per_combo", 8))
-    obs_ceiling = int(args.obs_ceiling)
+    obs_ceiling = _resolve_obs_ceiling(args.obs_ceiling, sweep)
     config = _load_merged_config(REPO_ROOT / args.config)
 
     import shutil
