@@ -2,6 +2,31 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-17 — Gate E: Analyse-Rehearsal (End-to-End-Trockenlauf) auf Gate-C-Pilotdaten
+
+**Zweck:** Der zweite HART-Punkt aus Gate E — kompletter Trockenlauf der konfirmatorischen Kette
+Episode-JSONs → Step-Tabelle → `grid_search_thresholds` → Policy-Artefakt → `load_policy` →
+`run_phase2.py`-Smoke (`adaptive_tle`, Mock) → `cluster_bootstrap` auf ΔAUROC(TLE, VC) — auf den 72
+echten Gate-C-Episoden (`data/results/instrument_validation/phase1_20260714_105004/`), **vor**
+echten Phase-1-Daten. Voller Bericht mit Zahlen: [`docs/gate_e_rehearsal.md`](gate_e_rehearsal.md).
+
+| Bereich | Ergebnis |
+|---------|----------|
+| Step-Tabelle (`datasets.py`) | **OK** — 72 Episoden → 1363 Steps, 0 fehlende Spalten |
+| Künstlicher Holdout-Split | **Workaround** — instance<3/12 je Domäne (25 %, nicht die realen 5/50); begründet in `gate_e_rehearsal.md` §1 |
+| Grid-Search + Policy-Artefakt | **OK** — `objective_definition=step_level_proxy_v1`, `theta1=0.8`/`theta2=0.9` in allen 4 Domäne×Signal-Zellen (Extremwert-Beobachtung notiert, kein Bug) |
+| `load_policy` Sanity | **OK** — stage-wise ECDF lädt, low/mid/high-Probe → C0/C0/C2 in beiden Domänen |
+| `run_phase2.py`-Mock-Smoke | **OK** — 12/12 Episoden, 0 Fehler, Policy-Artefakt-SHA-256 in `run_metadata.json` |
+| `cluster_bootstrap`(ΔAUROC) | **OK** — gepoolt point=0.101, 90 %-CI [0.047, 0.157], n=1018 Steps/18 Cluster |
+| **Fund 1:** `run_phase1.py`/`run_phase2.py::load_config` ignorierte `extends` | **Fixed** — beide nutzen jetzt `scripts.sweep_textworld_difficulty._load_merged_config` (wie die vier Gate-D-Diagnoseskripte bereits) |
+| **Fund 2:** YAML-Falle `logprob_sidecar_mode: off` → Python-Bool `False` → `ValueError` | **Fixed** — `_normalize_mode` (`src/utils/logprob_sidecar.py`) behandelt `False` explizit als `"off"`; betraf 6 bestehende Dev-Configs, bisher nie ausgelöst |
+| **Fund 3:** `load_run_dataset` verwarf jede Phase-2-Episode still (kein `compute_stage`) | **Fixed** — `_validate_episode_record` akzeptiert `compute_stage` **oder** `strategy`; Regressionstest ergänzt |
+| Testsuite lokal | **OK** — `python -m pytest tests/ -q` → **335 passed**, 0 skipped |
+
+**Nicht angefasst:** `blueprints/gate_p1_readiness.md` Gate-E-Checkbox (Status-Entscheidung bleibt beim
+Nutzer, beide Gate-E-HART-Punkte — Pre-Analysis-Screen separat, dieses Rehearsal hier — sind jetzt mit
+Evidenz belegt).
+
 ## 2026-07-17 — ToH-Repräsentationskonvention: Bottom-to-Top-Leserichtung der Peg-Listen expliziert
 
 **Problem:** Die ToH-Beobachtung zeigt den Zustand als `Peg A: [3, 2, 1]`, sagte aber nie, **welches
