@@ -2,6 +2,33 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-17 — Codebase-Housekeeping: fünf parallele Audits (src/agent, environments/signals/execution, analysis, utils, scripts)
+
+**Zweck:** Allgemeine Fehler-/Ungereimtheiten-Suche über die gesamte Codebasis (nicht Gate-D-spezifisch), auf Wunsch parallel zu Sport-Abwesenheit. Fünf Agents in isolierten Worktrees, je ein Modulbereich, mit der Vorgabe: offensichtliche Bugs direkt fixen + testen, alles Design-/Theorie-Relevante (insbesondere die eingefrorenen Invarianten) nur als offene Frage sammeln, nicht selbst entscheiden. Alle Fix-Commits per Cherry-Pick zusammengeführt (ein Merge-Konflikt in `textworld_env.py`-Docstring, inhaltlich sinnvoll vereint). **Volle Suite danach: 351 passed, 0 failed** (Baseline vor diesem Pass: 335).
+
+### Gefixt (8 Commits)
+
+- **`cluster_bootstrap` sortierte NaN/Inf-Bootstrap-Replikate mit** (`src/analysis/inference.py`) — erklärt rückwirkend die im selben Tag im Gate-E-Rehearsal als "unklares Kleine-Cluster-Phänomen" notierte Anomalie (Punktschätzer außerhalb des eigenen CI): an den echten 105004-Pilotdaten reproduziert, 535/5000 Replikate waren NaN. Jetzt werden nicht-endliche Replikate vor der Perzentil-Berechnung gefiltert, effektive Anzahl mitreportiert.
+- **`holm`-Multiplizitätskorrektur fehlte der Monotonie-Schritt** (`src/analysis/inference.py`) — anti-konservativ, noch nirgends verdrahtet, aber die dokumentierte Korrektur für die H1–H4-Familien; vor erster echter Nutzung gefangen.
+- **`_load_merged_config`/`_deep_merge_overlay`** (`scripts/sweep_textworld_difficulty.py`) merge nur eine Ebene tief — ein Overlay-Wert auf einer verschachtelten Ebene hätte Geschwister-Keys stillschweigend gelöscht. Aktuell latent (keine Config trifft diese Tiefe), gleiche Fehlerklasse wie die gestrigen Gate-E-Bugs. Jetzt echter rekursiver Merge.
+- **YAML-Boolean-Falle in `compute_stage_selection.py`**: `compute_stages: no/yes` hätte (da `bool` in Python eine `int`-Subklasse ist) stillschweigend auf 0 bzw. `["C0"]` reduziert statt zu fehlern — dieselbe Fehlerklasse wie der `logprob_sidecar_mode: off`-Bug von heute Morgen. Jetzt expliziter Type-Guard.
+- **`load_pilot_config_with_lmstudio_override` (`src/utils/pilot_config.py`) löste `extends:` gar nicht auf** — **zweite, unabhängige Instanz** desselben Bug-Musters, betrifft `run_pilot.py`, `run_c1_handoff_gate.py`, `benchmark_inference.py`. Live reproduziert: Laden von `configs/dev/gate_d_diagnostic.yaml` über diesen Pfad lieferte eine Config ganz ohne `model`-Key. Jetzt `load_yaml_with_extends()` (gleicher Algorithmus wie oben).
+- **`inspect_gate_d_abort_actions.py` ignorierte den Cap des replayten Sweeps** — Copy-Paste-Divergenz zum Schwester-Script `analyze_gate_d_abort_distance.py`, das den Cap korrekt aus `sweep_results.json` liest. Ohne expliziten `--obs-ceiling` hätte ein Replay der Cap-70-Ergebnisse stillschweigend unter Cap 25 gelaufen. Jetzt Default aus dem Sweep selbst.
+- Totcode-Bereinigung in `token_entropy.py` (zwei byteidentische Branches) und Docstring/Test-Lücke in `textworld_env.py` (undokumentierter `reward<0.0`-Illegal-Fallback ohne Admissible-Cache) — keine Verhaltensänderung, nur Doku + Testabdeckung.
+- Stale Tuple-Arity-Docstrings in `compute_stages.py`/`base_agent.py` ("9-tuple" statt tatsächlichem 10-Tuple inkl. `call_detail`) korrigiert.
+- `docs/scripts.md`: 22 Python- und 2 Shell-Scripts nachgetragen, die seit Gate-C/D-Arbeit fehlten.
+
+### Offene Fragen für den User (bewusst nicht entschieden)
+
+1. **Echter Bug im C2-Tie-Break-RNG für Phase-2-Adaptive-Episoden:** `run_adaptive_episode` baut die Step-Funktion bei **jedem Schritt neu** statt einmal pro Episode — dadurch setzt sich `c2_call_index` jedes Mal auf 0 zurück, und jeder C2-Tie-Break **innerhalb derselben Episode nutzt denselben RNG-Seed** statt unabhängiger Ziehungen. Betrifft nachweislich `episode_runner.py::run_phase2_job` (alle adaptiven Strategien); Phase 1 ist unberührt (baut die Step-Funktion einmalig). Kein Rückwirkungsrisiko (Phase 2 lief real noch nicht), aber relevant für jede künftige Phase-2-C2-Nutzung. Nicht gefixt, weil es direkt den C1>C2-Untersuchungsgegenstand berührt. Vorgeschlagener Fix (nicht angewendet): Step-Funktionen pro Stage einmal pro Episode cachen statt neu zu bauen.
+2. Toter Eps-Mismatch-Check in `ExecutionConfig.validate_frozen()` — berechnet die Abweichung von `frozen_tle_invariance_eps`, tut dann aber nichts (`pass`). Könnte vergessenes `msgs.append(...)` sein oder bewusst so (Kommentar: "frozen eps is authoritative when set", vermutlich Rückstand der Gate-C-1-N=32-Ausnahme). Sitzt auf der eingefrorenen N/eps-Invariante — nicht angefasst.
+3. Totcode in einem Legacy-VC-Schwellenwert-Pfad (`thresholds.py::derive_stage_thresholds`, nur relevant wenn ein Run kein `holdout`-Feld hat — für echte Phase-1/2-Daten nicht der Fall) und eine rein deskriptive Positions-Binning-Funktion (`calibration_by_step_position`), die `step_index/episode_length` statt der eingefrorenen `position_norm`-Formel nutzt — korrekt als "nicht die konfirmatorische H3-Kovariate berührend" eingeordnet (die nutzt durchgängig `position_norm`), nur zur Kenntnis.
+4. `scripts/probe_vllm_logprobs.py` und `scripts/probe_lmstudio_thinking_toggle.py` nutzen noch den ungefixten `load_yaml_path`-Pfad (nicht den jetzt gefixten `load_pilot_config_with_lmstudio_override`) — geringes aktuelles Risiko (eigenständige Pilot-Configs als Default), aber dieselbe Lücke, falls je auf ein `configs/dev/*.yaml`-Overlay gezeigt.
+
+**Nicht gefunden (positiv zu vermerken):** keine weitere Instanz des `get_step_fn`-ohne-`resolve_step_fn_kwargs`-Wiring-Bugs über die sechs bereits gestern gefixten Scripts hinaus — systematisch an allen `get_step_fn`/`create_execution_backend`/`run_episode`-Aufrufstellen in `scripts/` geprüft.
+
+**Hinweis:** zwei der fünf Worktrees waren versehentlich von einem alten Commit-Stand abgezweigt (vor den gestrigen Gate-D/E-Fixes) und wurden nicht vorab nachgezogen; nur ihre eigenen Fix-Commits wurden per Cherry-Pick übernommen (nicht die ganzen Branches gemerged), um nichts zurückzurollen.
+
 ## 2026-07-17 — Gate E (WEICH): H3-Power-Simulation durchgeführt
 
 **Zweck:** `blueprints/gate_p1_readiness.md`, Gate E, WEICH-Punkt „H3-Power-Simulation" —
