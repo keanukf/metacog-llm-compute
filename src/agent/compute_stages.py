@@ -69,9 +69,9 @@ def get_step_fn(
     """
     Return the step function for stage 'C0', 'C1', or 'C2'.
 
-    Returns a 9-tuple:
+    Returns a 10-tuple (``StepReturn``):
     (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None,
-     prompt_full, response_full).
+     prompt_full, response_full, call_detail|None).
 
     ``save_logprob_distributions``: persist raw per-token rows for the *action* completion.
 
