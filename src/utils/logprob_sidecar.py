@@ -18,9 +18,20 @@ LEGACY_SAVE_LOGPROB_DISTRIBUTIONS_ERROR = (
 )
 
 
-def _normalize_mode(raw: str | None) -> LogprobSidecarMode | None:
+def _normalize_mode(raw: str | bool | None) -> LogprobSidecarMode | None:
     if raw is None:
         return None
+    if isinstance(raw, bool):
+        # YAML 1.1 parses a bare `off` (or `no`/`n`) scalar as the boolean False, and `on`
+        # (`yes`/`y`) as True — a well-known gotcha (several configs in configs/dev/ write
+        # `logprob_sidecar_mode: off` unquoted). Treat False as the intended "off" mode; True
+        # has no unambiguous mapping (could mean action_window or full), so it stays an error.
+        if raw is False:
+            return "off"
+        raise ValueError(
+            "logprob_sidecar_mode: true is ambiguous (YAML parsed a bare `on`/`yes` as a "
+            "boolean); write one of action_window or full explicitly (quoted if needed)."
+        )
     mode = str(raw).strip().lower()
     if mode not in _VALID_MODES:
         raise ValueError(f"logprob_sidecar_mode must be one of {sorted(_VALID_MODES)}, got {raw!r}")
