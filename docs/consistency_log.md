@@ -2,6 +2,27 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-17 — Rückwirkungs-Check: Gate-E-Bugfixes betreffen keine bereits berichteten Gate-D/C-Ergebnisse
+
+**Zweck:** Die drei im Gate-E-Rehearsal gefundenen Bugs (siehe Eintrag unten) verifiziert gegen
+"hätte das ein vorher als sauber berichtetes Ergebnis verfälscht?" — per Grep auf tatsächliche
+Aufrufer, nicht nur Vermutung.
+
+- **`extends`-Overlay-Bug** (`run_phase1.py`/`run_phase2.py`): kein einziges Gate-D-Sweep-/
+  Feasibility-Script importiert diese Funktion — alle nutzen die korrekte `_load_merged_config` aus
+  `sweep_textworld_difficulty.py`. Unberührt.
+- **`logprob_sidecar_mode: off`-Crash** (`LogprobSidecarConfig.from_logging_config`): Aufrufer sind
+  ausschließlich `episode_runner.py`, `run_phase1.py`, `run_phase2.py`, `smoke_parallel.py` —
+  keines davon lief gestern. Wäre zudem ein **Crash**, kein stiller Fehler — nichts ist gestern
+  gecrasht.
+- **`load_run_dataset` verwirft Phase-2-Episoden:** betrifft nur episodenweise `strategy`-Daten;
+  solche existierten vor dem heutigen Gate-E-Rehearsal nicht (Phase 2 läuft real noch nicht). Die
+  Gate-C-Nutzung von `diagnose_tle_distribution.py` auf `105004` ist Phase-1-förmig
+  (`compute_stage`-Feld vorhanden) und damit ebenfalls unberührt.
+
+**Fazit:** Alle drei Bugs sind in genau der Session aufgetreten, die sie auch gefangen hat — keine
+Korrektur an früher berichteten Zahlen nötig.
+
 ## 2026-07-17 — Gate E: Analyse-Rehearsal (End-to-End-Trockenlauf) auf Gate-C-Pilotdaten
 
 **Zweck:** Der zweite HART-Punkt aus Gate E — kompletter Trockenlauf der konfirmatorischen Kette
