@@ -13,11 +13,12 @@ deutlich unter {C1, C2}", ohne strikte Reihenfolge zwischen C1 und C2 zu verlang
 **Bezug:** Der C1>C2-Befund ist theoretisch bereits durch Koriats Self-Consistency-Modell der
 Konfidenz und die zitierte Uncertainty-Collapse-Literatur (Kap. 2 der Thesis) erklärbar — Konsens
 unter Selbstkonsistenz-Sampling spiegelt Übereinstimmung, nicht Korrektheit; in den Traces wählte
-Voting teils einstimmig eine geteilt-falsche Aktion. Zwei Optionen für die Thesis-Seite offen (2 vs.
-3 Compute-Stufen behalten; Empfehlung: 3 behalten, "Always-C2 = Upper Bound"-Framing abschwächen) —
-Details und Integrationsziele in `../metacog-thesis/notes/thesis_notes.md`
-("Coding-Session-Befunde (2026-07-17)"). Muss vor dem Gate-A-F-Freeze-Tag entschieden werden, nicht
-danach — Entscheidung steht noch aus (User).
+Voting teils einstimmig eine geteilt-falsche Aktion. **Entschieden (2026-07-17, User): 3
+Compute-Stufen bleiben** (Option B statt Reduktion auf 2) — Reduktion wäre unter Zeitdruck netto
+mehr Schreibarbeit gewesen (betrifft H2/Always-C2-Baseline, Baseline-Tabelle, C2-Methodik). Nur noch
+Prosa-Umsetzung offen (Kap. 5 Tab. 5.1 "Upper Bound" → "höchste Compute-Stufe" abschwächen, C1>C2
+theoretisch verankern) — Details in `../metacog-thesis/notes/thesis_notes.md`
+("Coding-Session-Befunde (2026-07-17)"). Keine weitere Code-Entscheidung nötig.
 
 ## 2026-07-16 — ToH C0/C1/C2-Feasibility: C0-Nullbefund löst sich unter Reasoning auf
 
