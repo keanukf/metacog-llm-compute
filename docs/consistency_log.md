@@ -2,6 +2,52 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-17 — ToH-Repräsentationskonvention: Bottom-to-Top-Leserichtung der Peg-Listen expliziert
+
+**Problem:** Die ToH-Beobachtung zeigt den Zustand als `Peg A: [3, 2, 1]`, sagte aber nie, **welches
+Listenende die "oberste" Scheibe** ist (die einzige bewegbare). Der Code behandelt das *letzte*
+Listenelement als top (`state[src][-1]` in `_legal_moves`/`_apply_move`), diese Konvention wurde dem
+Modell jedoch nie genannt. Ohne sie kann ein kleines Modell die eigene Zuglegalität nicht
+selbstprüfen (Größenregel), was den bekannten C0-Nullbefund (Illegal-Rate 75–89 %, wiederholtes
+Anbieten desselben illegalen Zugs gegen unveränderten Zustand — Diagnose 2026-07-16) mit-erklärt.
+
+**Fix:** Eine reine Repräsentationsaussage in `TowerOfHanoiEnv._render_observation`
+(`src/environments/tower_of_hanoi.py`), direkt unter den drei Peg-Zeilen:
+`"Each peg's disks are listed bottom-to-top, so the last (rightmost) number is the top disk."`
+Die Renderfunktion ist die **einzige** Stelle, an der die Listendarstellung erscheint, und wird von
+`reset()` **und** `step()` geteilt → Konvention erscheint automatisch in jeder Beobachtung über
+C0/C1/C2 (kein zell-/schwierigkeits-/stufenspezifischer Prompt-Variant). Kein Eingriff in
+`domain_prompts.tower_of_hanoi.prefix`; der Prefix zeigt die Liste gar nicht, dort fehlt der Anker.
+`configs/dev/gate_d_calibration.yaml` und `gate_d_diagnostic.yaml` überschreiben `domain_prompts`
+nicht (nur `extends`), erben den Fix also identisch.
+
+**Verortung (analog TextWorld-Vokabular-Fix 2026-07-15, gleiches DV-Schutz-Prinzip):** TextWorld
+editierte den Config-`prefix`, weil dort die Beobachtung roher Engine-Text ist, den wir nicht
+autoren — der Prefix ist die einzige autorisierbare Fläche. ToH autort die Beobachtung selbst und
+dupliziert Regeln/Ausgabeformat bereits in `_render_observation`; die konsistente Stelle für die
+Leserichtung ist daher die Renderfunktion, direkt neben den Daten.
+
+**Abgrenzung (DV-Schutz):**
+- Reine Repräsentationsaussage (**wie** die Liste zu lesen ist), **kein** Zugbeispiel. Das bestehende
+  Ausgabeformat-Beispiel `e.g. A->C` (nur Syntax `[source]->[target]`) bleibt unverändert; es wurde
+  bewusst **kein** neues Peg-zu-Peg-Zugbeispiel ergänzt (Priming-Risiko auf gezeigte Pegs/Richtung).
+- Nennt **keine** legalen/admissiblen Züge, keine Strategie, keinen Zielpfad. `include_valid_moves`
+  bleibt `false` und unberührt; die Zugauswahl bleibt vollständig generativ.
+- Verbindet lediglich die bereits vorhandene Regel "move only the top disk" mit der Frage, welche
+  Scheibe das ist — ermöglicht Selbstprüfung der Legalität, nicht die Zugwahl.
+
+**Bewusst nicht geändert:** `domain_prompts.tower_of_hanoi.prefix` (kein Listen-Anker),
+Parsing (`_parse_action`), Label-Logik (`correctness`), TextWorld (unberührt).
+
+**Test:** `tests/test_07_tower_of_hanoi.py` — neue Fälle
+`test_env_reset_states_bottom_to_top_convention`, `test_env_step_observation_repeats_convention`
+(Konvention in Reset- **und** Step-Beobachtung) sowie erweiterter
+`test_env_reset_can_include_valid_moves_opt_in` (Insert-Index-Shift geprüft: `Valid moves:` bleibt
+vor der Reply-Format-Zeile). **Volle Suite: 332 passed** (`python -m pytest tests/ -q`).
+
+**Kein Empirie-Lauf:** Strukturell/Unit-getestet; die Verhaltenswirkung auf den C0-Nullbefund
+(Pod/vLLM) ist bewusst ein separater Folge-Schritt, nicht Teil dieser Änderung.
+
 ## 2026-07-17 — Korridor-Kriterium korrigiert: kein striktes C0<C1<C2-Gefälle verlangen
 
 **Korrektur zu:** Dem am 2026-07-16 vorgeschlagenen Zwei-Teil-Korridor-Kriterium (Opus-Analyse).

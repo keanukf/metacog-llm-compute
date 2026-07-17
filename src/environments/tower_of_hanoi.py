@@ -129,6 +129,7 @@ class TowerOfHanoiEnv:
             f"  Peg A: {self._state['A']}",
             f"  Peg B: {self._state['B']}",
             f"  Peg C: {self._state['C']}",
+            "Each peg's disks are listed bottom-to-top, so the last (rightmost) number is the top disk.",
             "Goal: Move all disks to Peg C.",
             "Rules: move only the top disk from a peg; never put a larger disk on a smaller one.",
             "Reply with a single move: peg letters only, e.g. A->C or A to C.",
@@ -136,7 +137,7 @@ class TowerOfHanoiEnv:
         if self._include_valid_moves:
             valid = ", ".join(_format_move(mv) for mv in _legal_moves(self._state))
             lines.insert(
-                6,
+                7,
                 f"Valid moves: {valid} — choose exactly one of these.",
             )
         if self._error_message:

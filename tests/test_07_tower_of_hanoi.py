@@ -52,6 +52,29 @@ def test_env_reset_can_include_valid_moves_opt_in():
     env = TowerOfHanoiEnv(task=_task(), max_steps=20, include_valid_moves=True)
     obs = env.reset()
     assert "Valid moves:" in obs
+    # Convention line and the trailing reply-format line must both survive the insert.
+    assert "the last (rightmost) number is the top disk" in obs
+    assert "Reply with a single move" in obs
+
+
+def test_env_reset_states_bottom_to_top_convention():
+    # Pure representation-reading clarification: which end of each peg list is the
+    # movable top disk. Must not name a specific move (DV protection).
+    env = TowerOfHanoiEnv(task=_task(), max_steps=20)
+    obs = env.reset()
+    assert "listed bottom-to-top" in obs
+    assert "the last (rightmost) number is the top disk" in obs
+
+
+def test_env_step_observation_repeats_convention():
+    # The convention travels with every per-step observation, not just reset,
+    # because both share the same render function.
+    task = _task()
+    env = TowerOfHanoiEnv(task=task, max_steps=20)
+    env.reset()
+    src, dst = task["optimal_solution"][0]
+    obs = env.step(f"{src} to {dst}")
+    assert "the last (rightmost) number is the top disk" in obs
 
 
 def test_env_step_returns_observation():
