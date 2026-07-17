@@ -2,6 +2,72 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-17 — C2-Tie-Break quantitativ geprüft: User-Hypothese (Temperatur-Diversität schlägt einzelne korrekte Kandidaten) selten, dominanter Effekt liegt vor der Abstimmung
+
+**Zweck:** Quantitative Nachprüfung der gestrigen qualitativen Beobachtung ("in den Traces wählte
+Voting teils einstimmig eine geteilt-falsche Aktion", Eintrag "Korridor-Kriterium korrigiert" oben)
+und einer eigenständigen Nutzerhypothese: schlägt C2s Sampling-Temperatur gezielt einen einzeln
+korrekten Kandidaten gegen zwei unabhängig-falsche zusammenlaufende Kandidaten? Bisher nur an n=2
+Episoden eyeballed, nicht gemessen.
+
+**Methode (Replay, kein Proxy):** Für beide verfügbaren C2-TextWorld-Traces mit vollem
+Per-Step-Log (`trace_trace_tw_C2_{0,1}.jsonl` — es existieren nur diese zwei aus der gestrigen
+`gate_d_trace_probe.py`-Session, keine weiteren) wurden die exakt gleichen TextWorld-Spiele
+deterministisch neu generiert (`_generate_combo_games` mit identischem Seed/Params) und
+byte-identisch gegen die gespeicherte `reset_observation` verifiziert. Anschließend Replay der
+**tatsächlich committeten** Aktionsfolge durch `TextWorldEnv.step()` — Korrektheitslabel und
+Quest-Distanzen stimmen für **alle 27 Steps** (19+8) exakt mit den gespeicherten
+`step_correctness`-Einträgen überein (kein einziger Abweicher), bevor der Ansatz auf die
+**Kandidaten**-Branches angewendet wurde: pro Step wird der Replay bis zum Pre-Step-Zustand
+wiederholt und für jeden der 3 rohen `subcalls[i].action_exec`-Kandidaten separat ein
+`env.step(candidate)` ausgeführt — dieselbe `_classify_quest_correctness`/Illegal-Logik, die die
+Produktions-Pipeline für die committete Aktion nutzt, jetzt pro Kandidat statt nur für den Gewinner.
+Kein Proxy-Fallback nötig. Wegwerf-Skript unter `/tmp` (nicht committed, kein Produktionscode
+berührt).
+
+**Ergebnis (n=27 Steps, 81 Kandidatenaktionen, 2 Episoden — explizit klein):**
+
+| Kennzahl | Wert |
+|---|---|
+| Kandidatenlabel-Verteilung (81 Aktionen) | illegal 37,0 %, legal 29,6 %, **optimal 19,8 %**, unlabeled 8,6 %, leer/unparsebar 4,9 % |
+| Steps mit 0 korrekten Kandidaten (von 3) | **20/27 (74 %)** |
+| Steps mit genau 1 korrektem Kandidaten (User-Szenario) | **1/27 (3,7 %)** |
+| — davon: einzeln-korrekter Kandidat verliert die Wahl/Tie-Break | **1/1** (einziges Vorkommen) |
+| Steps mit ≥2 korrekten Kandidaten | 6/27 — Gewinner in **6/6** korrekt |
+| `tie_broken=True` (RNG-Tie-Break aktiv) | 10/27 (37 %) — deckt sich mit der gestrigen "7/19"-Beobachtung (ep0: exakt 7/19) |
+| — davon Tie-Break landet auf korrektem Kandidaten | **0/10** |
+
+**Befund:** Der Tie-Break selbst hat in dieser Stichprobe **nie** einen korrekten Kandidaten
+verworfen — in allen 10 Tie-Break-Fällen war bereits keiner der 3 Samples optimal, die RNG
+arbitriert also unter bereits gleichwertig-suboptimalen Exploration-Aktionen (`examine`, `look`,
+`go west` an nicht-quest-relevanten Abzweigungen), nicht zwischen richtig und falsch. Die
+Nutzerhypothese (temperaturgetriebene Diversität lässt eine korrekte Probe gegen zwei unabhängig
+falsche verlieren) trat **genau einmal** auf (`trace_tw_C2_0`, Step 11: `go east` optimal vs. `go
+north`×2 legal, 2:1-Mehrheit gegen die korrekte Aktion) — real, aber mit n=1 nicht verallgemeinerbar.
+Der weit dominantere Effekt (74 % aller Steps) ist, dass **keiner** der 3 C2-Samples überhaupt eine
+optimale Aktion trifft — das Problem liegt vor der Abstimmung, nicht in ihr.
+
+**Gegenprobe zur "gemeinsamer Konsens beendet Episode vorzeitig"-Theorie:** Beide getraceten
+C2-Verluste enden an Steps mit game-endendem `lost=True` (`trace_tw_C2_1` Step 7: einstimmig 3/3
+`cook yellow onion with stove`, unlabeled/lost). Der C1-Sibling-Trace **auf demselben Game-Instance**
+(`trace_tw_C1_1`, ein einzelner Sample, keine Abstimmung) trifft an **exakt demselben Step dieselbe
+verlierende Aktion** — die Ursache ist ein geteilter Modell-/Parser-Kompetenzengpass (Onion nie
+erfolgreich genommen/geschnitten über 6 vorangehende Illegal-Versuche), keine C2-spezifische
+Konsens-Verstärkung durch das Voting selbst.
+
+**Fazit:** Weder die Tie-Break-Hypothese noch die Konsens-Termination-Hypothese sind in dieser
+Stichprobe die primäre Erklärung für C2 < C1 bei TextWorld — beide sind reale, aber seltene/geteilte
+Randeffekte. Der Haupttreiber scheint eine Generierungs-Abdeckungslücke zu sein (die optimale Aktion
+wird in 74 % der Steps in keiner der 3 Samples überhaupt vorgeschlagen), gemeinsam mit C1. **Kein
+Signifikanztest möglich** — n=2 Episoden, n=1 Zielereignis. Für echte Konfidenz bräuchte es einen
+größeren C2-Trace-Sweep (Größenordnung 25–40 Episoden / 500+ Steps, um bei der beobachteten
+~4-%-Basisrate auf ≥20 Zielereignisse zu kommen) sowie gepaarte C1-Traces auf denselben
+Game-Instanzen, um den geteilten-Kompetenz-Confound sauber zu trennen.
+
+**Nicht angefasst:** Kein Produktionscode geändert (reine Read-only-Analyse bestehender Traces).
+Keine Gate-D/E-Statusänderung — dies ist eine Verfeinerung einer bereits dokumentierten
+Beobachtung, kein neuer Blocker.
+
 ## 2026-07-17 — Rückwirkungs-Check: Gate-E-Bugfixes betreffen keine bereits berichteten Gate-D/C-Ergebnisse
 
 **Zweck:** Die drei im Gate-E-Rehearsal gefundenen Bugs (siehe Eintrag unten) verifiziert gegen
