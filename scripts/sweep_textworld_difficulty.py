@@ -45,6 +45,23 @@ def _to_abs(path: str | Path) -> Path:
     return REPO_ROOT / p
 
 
+def _deep_merge_overlay(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """
+    Recursively merge ``overlay`` onto a copy of ``base`` (dict values merge at every depth,
+    scalars/lists replace). A shallow ``{**base[key], **overlay[key]}`` merge only handles one
+    level of nesting: an overlay like ``domain_prompts.textworld.cot_max_tokens: 8192`` would
+    silently wipe out sibling keys (``prefix``, ``action_stop``, ...) under
+    ``domain_prompts.textworld`` instead of merging alongside them. Recursing per-key avoids that.
+    """
+    merged = dict(base)
+    for key, val in overlay.items():
+        if isinstance(val, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_overlay(merged[key], val)
+        else:
+            merged[key] = val
+    return merged
+
+
 def _load_merged_config(config_path: Path) -> dict[str, Any]:
     import yaml
 
@@ -59,13 +76,7 @@ def _load_merged_config(config_path: Path) -> dict[str, Any]:
     if not base_path.is_file():
         base_path = REPO_ROOT / str(extends)
     base = _load_merged_config(base_path)
-    merged = dict(base)
-    for key, val in raw.items():
-        if isinstance(val, dict) and isinstance(merged.get(key), dict):
-            merged[key] = {**merged[key], **val}
-        else:
-            merged[key] = val
-    return merged
+    return _deep_merge_overlay(base, raw)
 
 
 def _instance_seed(master_seed: int, idx: int) -> int:
