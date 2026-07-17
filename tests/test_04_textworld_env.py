@@ -214,6 +214,45 @@ def test_info_lost_sets_task_lost_and_step_record():
     assert env.step_results[-1]["won"] is False
 
 
+def test_illegal_falls_back_to_reward_heuristic_without_admissible_cache():
+    """
+    Regression: when the pre-step admissible-command cache is unavailable (no
+    ``admissible_commands`` in ``info``), illegal detection falls back to parser-feedback
+    text heuristics *or* a negative step reward -- documented in the module docstring but
+    previously untested.
+    """
+    fake = _FakeGymEnv()
+    fake._reset_result = ("reset", {"score": 0})
+    fake._step_result = (
+        "You are still in the kitchen.",
+        -1.0,
+        False,
+        {"score": 0},
+    )
+
+    env = _make_realish_env(fake)
+    env.reset()
+    env.step("frobnicate")
+    assert env.step_results[-1]["correctness"] == "illegal"
+
+
+def test_not_illegal_via_reward_heuristic_when_admissible_empty_and_reward_nonnegative():
+    """Empty (not missing) admissible cache + non-negative reward must not be forced illegal."""
+    fake = _FakeGymEnv()
+    fake._reset_result = ("reset", {"score": 0, "admissible_commands": []})
+    fake._step_result = (
+        "You are still in the kitchen.",
+        0.0,
+        False,
+        {"score": 0},
+    )
+
+    env = _make_realish_env(fake)
+    env.reset()
+    env.step("look")
+    assert env.step_results[-1]["correctness"] != "illegal"
+
+
 def test_info_won_sets_task_success_and_step_record():
     fake = _FakeGymEnv()
     fake._reset_result = (

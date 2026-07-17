@@ -16,7 +16,10 @@ TextWorld's ``policy_commands`` (quest solver rest plan, not walkthrough oracle)
 ``score_progress_step`` (bool) records score increase as a descriptive side variable only.
 
 Labeling edge cases (preregistered):
-- Illegal detection uses the **pre-step** admissible-command cache plus parser-feedback heuristics.
+- Illegal detection uses the **pre-step** admissible-command cache: an action not in that
+  cache is illegal. When the cache is unavailable or empty (``admissible_commands`` absent
+  or ``[]`` in ``info``), illegal detection falls back to parser-feedback text heuristics
+  (``_suggests_unknown_command``) **or** a negative step reward (``reward < 0.0``).
 - **Synonym resolution (confidence-neutral):** ``look inventory`` / ``check inventory`` → ``inventory``
   when ``inventory`` is pre-step admissible. ``action_raw`` preserves model output; ``action_executed``
   is what the engine receives. No rewrite for non-admissible canonical forms or planning errors.
