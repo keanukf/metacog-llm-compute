@@ -45,6 +45,17 @@ def _normalize_stage_token(tok: str) -> str:
 def _parse_stage_list(value: Any) -> list[str]:
     if value is None:
         return []
+    if isinstance(value, bool):
+        # bool is a subclass of int in Python, and YAML 1.1 parses bare `yes`/`no`/`on`/`off`
+        # as booleans — without this guard, `compute_stages: no` would silently fall through
+        # the int branch below (n=0 -> [] -> caller falls back to its default list) and
+        # `compute_stages: yes`/`true` would silently resolve to just ["C0"] (n=1), neither of
+        # which is a documented value for this field. Reject explicitly instead of guessing.
+        raise TypeError(
+            f"compute_stages must be int|str|list|tuple, got bool {value!r} "
+            "(YAML bareword yes/no/on/off parses as a Python bool — use an int (1..3) or an "
+            'explicit stage string/list instead, e.g. "C0" or ["C0", "C2"])'
+        )
     if isinstance(value, int):
         n = int(value)
         if n <= 0:
