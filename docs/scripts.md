@@ -35,6 +35,7 @@ All entry points live in [`scripts/`](../scripts/). Run from the **repository ro
 | [`build_textworld_manifest.py`](../scripts/build_textworld_manifest.py) | Build `difficulty_manifest.json` with holdout split | After final instance generation | `textworld` |
 | [`play_textworld.py`](../scripts/play_textworld.py) | Interactive play for one story file | Sanity-check a generated game | `dev` |
 | [`play_tower_of_hanoi.py`](../scripts/play_tower_of_hanoi.py) | Interactive ToH without a model | Verify env parsing / legality | `dev` |
+| [`gate_e_rehearsal.py`](../scripts/gate_e_rehearsal.py) | Analysis-side Gate E rehearsal: step table → grid-search → policy artifact → `load_policy` → `cluster_bootstrap` on ΔAUROC | End-to-end analysis dry run on pilot/C-5 data before real Phase 1 data | `dev` |
 
 ## Shell scripts
 

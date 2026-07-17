@@ -1,0 +1,30 @@
+extends: ../experiment_core.yaml
+
+# Gate E analysis rehearsal — Phase 2 mock smoke only (adaptive_tle), no GPU/vLLM required.
+# Purpose: prove run_phase2.py's CLI plumbing (policy_artifact load -> allocator -> episode
+# JSONs) works end-to-end, not to produce a meaningful adaptive-allocation result. The
+# policy_artifact below is generated from the artificial holdout/pool split documented in
+# docs/gate_e_rehearsal.md (rehearsal-only; not a frozen Gate D manifest).
+#
+# Not part of any preregistered experiment run. Do not use for Phase 2 data collection.
+
+logging:
+  logprob_sidecar_mode: off
+  save_vc_distributions: false
+  save_step_traces: false
+  write_debug_views: false
+
+tracing:
+  langfuse_enabled: false
+
+phase2:
+  domains: ["textworld", "tower_of_hanoi"]
+  instances_per_domain: 3
+  strategies:
+    - adaptive_tle
+    - always_c0
+  runs_per_condition: 1
+  policy_artifact: "data/results/gate_e_rehearsal/policy_artifact.json"
+
+episode:
+  max_steps_per_episode: 6
