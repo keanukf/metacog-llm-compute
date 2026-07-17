@@ -36,6 +36,7 @@ All entry points live in [`scripts/`](../scripts/). Run from the **repository ro
 | [`play_textworld.py`](../scripts/play_textworld.py) | Interactive play for one story file | Sanity-check a generated game | `dev` |
 | [`play_tower_of_hanoi.py`](../scripts/play_tower_of_hanoi.py) | Interactive ToH without a model | Verify env parsing / legality | `dev` |
 | [`gate_e_rehearsal.py`](../scripts/gate_e_rehearsal.py) | Analysis-side Gate E rehearsal: step table → grid-search → policy artifact → `load_policy` → `cluster_bootstrap` on ΔAUROC | End-to-end analysis dry run on pilot/C-5 data before real Phase 1 data | `dev` |
+| [`h3_power_simulation.py`](../scripts/h3_power_simulation.py) | Monte Carlo power simulation for the H3 signal×position_norm interaction: seeds ICC/entropy from pilot data, simulates clustered binary outcomes under the planned Phase 1 design, fits `fit_h3_model` (real GEE) on each replicate, reports empirical power vs. true effect size | Gate E WEICH item (`blueprints/gate_p1_readiness.md`); see `docs/gate_e_h3_power_simulation.md` for the report | `dev` |
 
 ## Shell scripts
 

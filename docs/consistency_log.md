@@ -2,6 +2,53 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-17 — Gate E (WEICH): H3-Power-Simulation durchgeführt
+
+**Zweck:** `blueprints/gate_p1_readiness.md`, Gate E, WEICH-Punkt „H3-Power-Simulation" —
+§5.8 sieht eine simulationsbasierte Power-Prüfung für die H3-Interaktion (Signal × `position_norm`)
+vor, geseedet mit Pilot-ICC und Entropieverteilung, weil der konfirmatorische GEE-Interaktionstest
+keine geschlossene Power-Formel hat und der Pilot (9–12 Cluster/Domäne) die Interaktion selbst nicht
+verlässlich schätzen kann. Der WEICH-Punkt verlangt „durchführen oder die Limitation aktiv wählen" —
+dieser Eintrag dokumentiert die Durchführung.
+
+**Methode:** `scripts/h3_power_simulation.py` (neu). ICC (zwei Methoden: GEE-`dep_params` primär,
+ANOVA-ICC(1) als Kreuzcheck) und TLE/VC-Verteilung aus den 72 echten Pilot-Episoden
+(`data/results/instrument_validation/phase1_20260714_105004/`, dieselbe Quelle wie
+`docs/gate_e_rehearsal.md`). Echte Monte-Carlo-Simulation (kein geschlossenes Formel-Substitut):
+geclusterte Random-Intercept-Logit-Datensätze unter dem geplanten Phase-1-Design (50 Instanzen/
+Domäne, 5 Runs × 3 Stages gepoolt = 750 Episoden/Domäne) über ein Raster wahrer
+Interaktionseffektgrößen simuliert, jeder Datensatz mit der **echten** Produktionsfunktion
+`src/analysis/inference.py::fit_h3_model` (GEE, Exchangeable, Binomial) gefittet, empirische
+Ablehnrate = Power. 400 Replikate/Zelle (TLE-Hauptraster), 250 (VC-Sekundärraster),
+Multiprocessing über 7 Worker. Typ-I-Fehler-Check bei wahrem Nulleffekt bestätigt die
+Simulationsmaschinerie (Ablehnrate nahe/leicht unter dem nominalen Alpha in allen vier Zellen).
+
+**Ergebnis:** siehe `docs/gate_e_h3_power_simulation.md` für den vollständigen Report
+(Pilot-ICC/Entropie-Anker, Power-Tabellen, 80-%-Kreuzungspunkte, Annahmen). Kernbefund: der
+konfirmatorische TextWorld/TLE-H3-Test erreicht 80 % Power nur für Interaktionseffekte in der
+Größenordnung des vollen Haupteffekts (praktisch vollständiger Signalverlust bis Episodenende,
+$\beta_{int}\approx-0.31$ bei $\beta_z=0.30$); für plausiblere moderate Degradationsgrade
+(25–50 % Abschwächung, $\beta_{int}\approx-0.075$ bis $-0.15$) liegt die Power nur bei ~15–35 %.
+Tower of Hanoi zeigt in der Simulation höhere Power (niedrigere ICC, größerer Haupteffekt-Anker),
+aber mit einer wichtigen Einschränkung: die ToH-Episodenlängen stammen mangels eigenem
+Längenkorridor aus den noch nicht Gate-D-kalibrierten (nahe-Cap) Pilotlängen, während TextWorld
+den bereits definierten 8–15-Step-Zielkorridor nutzt — die ToH-Zahl ist daher ein optimistischer
+Kontextwert, nicht die belastbarste Aussage; ToH ist ohnehin nur exploratorisch (kein
+Holm-Familienschutz).
+
+**Einordnung:** kein HART-Blocker, keine Design-Änderung an diesem Punkt vorgenommen — die
+Simulation liefert eine quantifizierte Grundlage für die Interpretation eines nicht-signifikanten
+H3-Ergebnisses in Kapitel 6/7 (Nullbefund ≠ „keine Degradation", sondern „große Degradation
+ausgeschlossen, moderate bleibt plausibel und unterpowert"), konsistent mit der bereits in §5.9
+benannten Sorge zu Interaktionstest-Power. `blueprints/gate_p1_readiness.md`s WEICH-Checkbox-Zeile
+trägt jetzt einen Verweis auf diesen Eintrag; die Checkbox selbst bleibt unangetastet (offen), da
+keine Gate-Entscheidung getroffen wurde.
+
+**Testsuite:** keine Quelländerung außerhalb von `scripts/` und `docs/`; `python -m pytest tests/ -q`
+nicht erneut nötig, da kein Produktionscode berührt wurde (nur ein neues, eigenständiges Analyse-
+Skript, das ausschließlich bestehende, bereits getestete Funktionen (`load_run_dataset`,
+`fit_h3_model`) aufruft).
+
 ## 2026-07-17 — C2-Tie-Break quantitativ geprüft: User-Hypothese (Temperatur-Diversität schlägt einzelne korrekte Kandidaten) selten, dominanter Effekt liegt vor der Abstimmung
 
 **Zweck:** Quantitative Nachprüfung der gestrigen qualitativen Beobachtung ("in den Traces wählte
