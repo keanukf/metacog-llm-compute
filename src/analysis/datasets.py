@@ -168,15 +168,25 @@ def _ensure_steps_detail(
 
 
 def _validate_episode_record(raw: dict[str, Any]) -> EpisodeRecord | None:
-    """Best-effort structural validation for episode JSON artifacts."""
-    required = ("episode_id", "compute_stage", "task_success")
-    if not all(k in raw for k in required):
+    """Best-effort structural validation for episode JSON artifacts.
+
+    Phase 1 episodes carry a fixed episode-level ``compute_stage`` (C0/C1/C2 condition).
+    Phase 2 episodes carry ``strategy`` instead and have no episode-level ``compute_stage`` at
+    all (the compute stage varies per step under adaptive allocation) -- see
+    ``run_phase2.py``/``episode_runner.py``. Hard-requiring ``compute_stage`` here silently
+    dropped every Phase 2 episode (``load_run_dataset`` returned 0 rows, no error) until the
+    Gate E rehearsal (2026-07-17) caught it against a real Phase 2 mock run; accept either
+    field as the condition identifier so both phases validate.
+    """
+    if "episode_id" not in raw or "task_success" not in raw:
         return None
     if not isinstance(raw.get("episode_id"), str):
         return None
-    if not isinstance(raw.get("compute_stage"), str):
-        return None
     if not isinstance(raw.get("task_success"), bool):
+        return None
+    has_compute_stage = isinstance(raw.get("compute_stage"), str)
+    has_strategy = isinstance(raw.get("strategy"), str)
+    if not (has_compute_stage or has_strategy):
         return None
     return raw  # type: ignore[return-value]
 

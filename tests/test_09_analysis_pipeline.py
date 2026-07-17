@@ -58,6 +58,47 @@ def test_load_run_dataset_builds_steps_and_labels(tmp_path: Path):
     assert health["missing_columns"] == [] or isinstance(health["missing_columns"], list)
 
 
+def test_load_run_dataset_accepts_phase2_episodes_without_compute_stage(tmp_path: Path):
+    """Phase 2 episodes carry ``strategy`` instead of an episode-level ``compute_stage``
+    (compute stage varies per step under adaptive allocation). Regression for a Gate E
+    rehearsal finding (2026-07-17): ``_validate_episode_record`` hard-required
+    ``compute_stage``, so every Phase 2 episode was silently dropped (0 rows, no error)."""
+    from src.analysis.datasets import load_run_dataset
+
+    run_dir = tmp_path / "phase2_run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    ep = {
+        "episode_id": "ep_textworld_0_adaptive_tle_0",
+        "domain": "textworld",
+        "instance": 0,
+        "strategy": "adaptive_tle",
+        "run": 0,
+        "task_success": False,
+        "steps": 2,
+        "stage_per_step": ["C0", "C1"],
+        "tle_per_step": [
+            {"mean_entropy": 0.2, "max_entropy": 0.4},
+            {"mean_entropy": 0.9, "max_entropy": 1.0},
+        ],
+        "vc_per_step": [90.0, 10.0],
+        "step_correctness": [
+            {"step_index": 0, "correctness": "optimal"},
+            {"step_index": 1, "correctness": "legal"},
+        ],
+        # compact episode: no steps_detail on disk, no episode-level compute_stage
+    }
+    _write_ep(run_dir, ep)
+
+    ds = load_run_dataset(run_dir)
+    assert len(ds.episodes) == 1
+    assert len(ds.steps) == 2
+    steps_sorted = sorted(ds.steps, key=lambda r: r["step_index"])
+    assert steps_sorted[0]["compute_stage"] == "C0"
+    assert steps_sorted[1]["compute_stage"] == "C1"
+    assert steps_sorted[0]["strategy"] == "adaptive_tle"
+
+
 def test_analyze_run_script_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Create a minimal run directory with one episode
     run_dir = tmp_path / "run"
