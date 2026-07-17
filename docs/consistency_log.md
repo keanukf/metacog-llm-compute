@@ -2,6 +2,23 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-17 — Korridor-Kriterium korrigiert: kein striktes C0<C1<C2-Gefälle verlangen
+
+**Korrektur zu:** Dem am 2026-07-16 vorgeschlagenen Zwei-Teil-Korridor-Kriterium (Opus-Analyse).
+Teil (b) forderte ein "nachgewiesenes C0<C1<C2-Erfolgsgefälle" — das ist durch die eigenen Befunde
+widerlegt: TextWorld zeigt C1 (100%) > C2 (50%) in `r3_i1_take-only`, ToH zeigt C1=C2 (62,5%
+gleichauf). C2 schlägt C1 in keiner bisher getesteten Zelle. **Korrigiertes Kriterium:** "C0
+deutlich unter {C1, C2}", ohne strikte Reihenfolge zwischen C1 und C2 zu verlangen.
+
+**Bezug:** Der C1>C2-Befund ist theoretisch bereits durch Koriats Self-Consistency-Modell der
+Konfidenz und die zitierte Uncertainty-Collapse-Literatur (Kap. 2 der Thesis) erklärbar — Konsens
+unter Selbstkonsistenz-Sampling spiegelt Übereinstimmung, nicht Korrektheit; in den Traces wählte
+Voting teils einstimmig eine geteilt-falsche Aktion. Zwei Optionen für die Thesis-Seite offen (2 vs.
+3 Compute-Stufen behalten; Empfehlung: 3 behalten, "Always-C2 = Upper Bound"-Framing abschwächen) —
+Details und Integrationsziele in `../metacog-thesis/notes/thesis_notes.md`
+("Coding-Session-Befunde (2026-07-17)"). Muss vor dem Gate-A-F-Freeze-Tag entschieden werden, nicht
+danach — Entscheidung steht noch aus (User).
+
 ## 2026-07-16 — ToH C0/C1/C2-Feasibility: C0-Nullbefund löst sich unter Reasoning auf
 
 **Zweck:** Direkte Anschlussfrage an den ToH-C0-Nullbefund (siehe Eintrag unten): löst sich das durch
