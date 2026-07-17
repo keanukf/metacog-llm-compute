@@ -55,6 +55,38 @@ def load_yaml_path(path: Path) -> dict[str, Any]:
     return raw
 
 
+def load_yaml_with_extends(path: Path, repo_root: Path | None = None) -> dict[str, Any]:
+    """Load a YAML config, recursively merging an ``extends: <relative-path>`` key.
+
+    Overlay configs (e.g. ``configs/dev/gate_d_calibration.yaml``) commonly set
+    ``extends`` to a base config (usually ``experiment_core.yaml``) and only restate
+    the keys they override. A plain single-file load (``load_yaml_path``) silently
+    drops every key not restated in the overlay (``model``, ``episode``,
+    ``domain_prompts``, ``paths``, ...) — this only surfaces later as a confusing
+    ``KeyError``/behavior change, not a load error. This is the same recursive merge
+    ``scripts/sweep_textworld_difficulty.py::_load_merged_config`` implements (that
+    function now delegates here); kept in one place so the two don't drift apart.
+
+    ``extends`` is resolved relative to the file that declares it, falling back to
+    ``repo_root`` (when given) if that path doesn't exist.
+    """
+    raw = load_yaml_path(path)
+    extends = raw.pop("extends", None)
+    if not extends:
+        return raw
+    base_path = path.parent / str(extends)
+    if not base_path.is_file() and repo_root is not None:
+        base_path = repo_root / str(extends)
+    base = load_yaml_with_extends(base_path, repo_root=repo_root)
+    merged = dict(base)
+    for key, val in raw.items():
+        if isinstance(val, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **val}
+        else:
+            merged[key] = val
+    return merged
+
+
 def resolve_lmstudio_config_path(
     repo_root: Path,
     explicit: str | Path | None,
@@ -86,7 +118,7 @@ def load_pilot_config_with_lmstudio_override(
     Returns ``(config, override_note, applied_path)`` where ``applied_path`` is the
     override file when a merge happened, else None.
     """
-    config = load_yaml_path(base_path)
+    config = load_yaml_with_extends(base_path, repo_root=repo_root)
     if pilot_mode != "lmstudio":
         return config, None, None
 
