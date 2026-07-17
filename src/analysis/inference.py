@@ -54,25 +54,42 @@ def cluster_bootstrap(
     rng = random.Random(seed)
     point = stat_fn(rows)
     reps: list[float] = []
+    n_nonfinite = 0
     for _ in range(n_boot):
         sample_keys = [clusters[rng.randrange(len(clusters))] for _ in range(len(clusters))]
         boot_rows: list[dict[str, Any]] = []
         for k in sample_keys:
             boot_rows.extend(by_cluster[k])
         try:
-            reps.append(float(stat_fn(boot_rows)))
+            v = float(stat_fn(boot_rows))
         except Exception:
+            n_nonfinite += 1
             continue
+        # A resample of clusters can be degenerate (e.g. contain only one label class),
+        # which makes some stat_fn implementations (e.g. delta_auroc) return nan/inf instead
+        # of raising. Python's list.sort() does not order nan consistently, so a nan slipping
+        # into `reps` silently corrupts the percentile lookup below -- this reproduced the
+        # exact anomaly noted as an unexplained "rough edge" in the Gate E rehearsal
+        # (docs/gate_e_rehearsal.md, section 6: point estimate landing outside the reported
+        # CI, skewness NaN) on the real TextWorld pilot pool (9 clusters). Drop non-finite
+        # replicates instead of letting them pollute the sorted percentile array.
+        if not math.isfinite(v):
+            n_nonfinite += 1
+            continue
+        reps.append(v)
     if not reps:
         return {"point": point, "ci_low": None, "ci_high": None, "n_boot": n_boot, "skewness": None}
     reps.sort()
-    lo_i = int(ci[0] * n_boot)
-    hi_i = min(int(ci[1] * n_boot), n_boot - 1)
+    n_eff = len(reps)
+    lo_i = int(ci[0] * n_eff)
+    hi_i = min(int(ci[1] * n_eff), n_eff - 1)
     return {
         "point": float(point),
         "ci_low": float(reps[lo_i]),
         "ci_high": float(reps[hi_i]),
         "n_boot": n_boot,
+        "n_boot_effective": n_eff,
+        "n_boot_nonfinite": n_nonfinite,
         "skewness": _skewness(reps),
     }
 
@@ -195,13 +212,29 @@ def h2_paired(
 
 
 def holm(pvals_or_bounds: list[float], family: str = "") -> list[dict[str, Any]]:
-    """Holm step-down adjustment (family A–C)."""
+    """Holm step-down adjustment (family A–C).
+
+    Adjusted p-value at rank i is ``max(1, ..., i)`` of ``min(1, raw_(rank) * (m - rank))`` --
+    the running-maximum ("enforce monotonicity") step is required by Holm (1979) so that
+    adjusted p-values never decrease with increasing raw p-value; omitting it (as a prior
+    version of this function did) can silently understate the adjustment for a p-value that
+    is only slightly larger than the next-smaller one, e.g. raw=[0.01, 0.011, 0.5] with m=3
+    must adjust to [0.03, 0.03, 0.5], not [0.03, 0.022, 0.5] (verified against
+    ``statsmodels.stats.multitest.multipletests(method="holm")``).
+    """
     m = len(pvals_or_bounds)
     order = sorted(range(m), key=lambda i: pvals_or_bounds[i])
     out: list[dict[str, Any]] = [{}] * m
+    running_max = 0.0
     for rank, idx in enumerate(order):
-        adj = min(1.0, pvals_or_bounds[idx] * (m - rank))
-        out[idx] = {"index": idx, "raw": pvals_or_bounds[idx], "adjusted": adj, "family": family}
+        step_adj = min(1.0, pvals_or_bounds[idx] * (m - rank))
+        running_max = max(running_max, step_adj)
+        out[idx] = {
+            "index": idx,
+            "raw": pvals_or_bounds[idx],
+            "adjusted": running_max,
+            "family": family,
+        }
     return out
 
 

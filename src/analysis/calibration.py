@@ -206,8 +206,10 @@ def compute_auprc(scores: Sequence[float], labels: Sequence[int]) -> float:
 
 
 def compute_efficiency(success_rate: float, normalized_compute_cost: float) -> float | None:
-    """Descriptive only; thesis reports Pareto (success and tokens as separate DVs)."""
-    """Efficiency score: success_rate / normalized_compute_cost. Returns None if cost is 0."""
+    """Efficiency score: success_rate / normalized_compute_cost. Returns None if cost is 0.
+
+    Descriptive only; thesis reports Pareto (success and tokens as separate DVs).
+    """
     if normalized_compute_cost <= 0:
         return None
     return float(success_rate) / float(normalized_compute_cost)
