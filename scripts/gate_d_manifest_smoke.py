@@ -35,7 +35,7 @@ def _run_domain_smoke(
     if not manifest:
         raise FileNotFoundError(f"No manifest loaded for domain={domain}")
 
-    model = create_execution_backend(config, use_real_model)
+    model = create_execution_backend(config, use_real=use_real_model)
     step_cfg = resolve_step_fn_kwargs(config, domain)
     history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in HISTORY_CFG_KEYS}
     c0 = get_step_fn("C0", **step_cfg)
