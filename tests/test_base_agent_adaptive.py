@@ -64,6 +64,30 @@ def test_run_adaptive_eager_style_episode_fixed_via_policy():
     assert r["stage_per_step"][1:] == [fixed] * (len(r["stage_per_step"]) - 1)
 
 
+def test_run_adaptive_c2_call_index_increments_across_episode_steps(monkeypatch):
+    """Regression: the step function used to be rebuilt fresh every step, so the C2
+    tie-break RNG's call_index counter (nonlocal to get_step_fn) reset to 0 on every
+    step instead of advancing across the episode. Fixed by caching the step function
+    per stage for the lifetime of the episode.
+    """
+    import src.agent.compute_stages as compute_stages
+
+    captured_indices: list[int] = []
+
+    def fake_c2_step_core(obs, hist, m, *, call_index, **kwargs):
+        captured_indices.append(call_index)
+        return ("noop", None, None, 1, 1, None, None, "", "", None)
+
+    monkeypatch.setattr(compute_stages, "c2_step_core", fake_c2_step_core)
+
+    env = _LoopEnv(n=3)
+    model = _StubModel()
+    r = run_adaptive_episode(env, model, "always_c2", max_steps=10)
+
+    assert r["stage_per_step"] == ["C2", "C2", "C2"]
+    assert captured_indices == [0, 1, 2]
+
+
 def test_run_adaptive_step_correctness_is_detached_copy():
     from src.environments.textworld_env import TextWorldEnv
 

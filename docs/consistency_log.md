@@ -2,6 +2,32 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-18 — Fix: C2-Tie-Break-RNG-Unabhängigkeit in `run_adaptive_episode`
+
+**Zweck:** Behebt die im Housekeeping-Pass vom 2026-07-17 gefundene, aber bewusst zurückgestellte
+offene Frage #1 (siehe Eintrag darunter): `run_adaptive_episode` (`src/agent/base_agent.py`) baute
+die Step-Funktion über `resolve(stage)` bei **jedem Schritt neu** statt einmal pro Episode. Für C2
+bedeutet das: `get_step_fn("C2", ...)` initialisiert `c2_call_index = 0` als lokale, per Closure
+gekapselte Zählervariable — ein Neuaufbau bei jedem Step setzt diesen Zähler jedes Mal zurück, sodass
+`call_index` in `c2_step_core` (`src/agent/stages/c2.py`) für **jeden** C2-Step derselben Episode
+konstant 0 blieb. Da der Tie-Break-RNG (`_seeded_rng(tie_break_seed, call_index)`) über
+`tie_break_seed` (konstant = `episode_id`) **und** `call_index` geseedet wird, nutzte jeder
+Stimmengleichstand innerhalb derselben Episode exakt dieselbe Zufallsziehung statt unabhängiger
+Ziehungen pro Step.
+
+**Fix:** `run_adaptive_episode` cached die aufgelöste Step-Funktion jetzt pro Stage
+(`step_fn_cache: dict[str, StepFn]`) für die Lebensdauer der Episode, statt sie pro Step über
+`resolve(stage)` neu zu bauen. Für C0/C1 folgenlos (deren Closures sind zustandslos, geprüft am
+Code); für C2 zählt `c2_call_index` jetzt korrekt über die ganze Episode hoch (`0, 1, 2, …`), sodass
+jeder Tie-Break einen unabhängigen Zug bekommt. Phase 1 (`run_phase1_job`) war nie betroffen (baut
+`step_fn` bereits außerhalb jeder Schleife). Kein Rückwirkungsrisiko — Phase 2 lief real noch nicht.
+
+**Test:** neuer Regressionstest
+`tests/test_base_agent_adaptive.py::test_run_adaptive_c2_call_index_increments_across_episode_steps`
+(monkeypatcht `c2_step_core`, erzwingt Strategie `always_c2` über 3 Steps, prüft
+`captured_indices == [0, 1, 2]`; wäre vor dem Fix `[0, 0, 0]` gewesen). Volle Suite:
+**352 passed** (Baseline vor diesem Fix: 351 — siehe Housekeeping-Eintrag).
+
 ## 2026-07-17 — Codebase-Housekeeping: fünf parallele Audits (src/agent, environments/signals/execution, analysis, utils, scripts)
 
 **Zweck:** Allgemeine Fehler-/Ungereimtheiten-Suche über die gesamte Codebasis (nicht Gate-D-spezifisch), auf Wunsch parallel zu Sport-Abwesenheit. Fünf Agents in isolierten Worktrees, je ein Modulbereich, mit der Vorgabe: offensichtliche Bugs direkt fixen + testen, alles Design-/Theorie-Relevante (insbesondere die eingefrorenen Invarianten) nur als offene Frage sammeln, nicht selbst entscheiden. Alle Fix-Commits per Cherry-Pick zusammengeführt (ein Merge-Konflikt in `textworld_env.py`-Docstring, inhaltlich sinnvoll vereint). **Volle Suite danach: 351 passed, 0 failed** (Baseline vor diesem Pass: 335).
@@ -20,7 +46,7 @@ Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit 
 
 ### Offene Fragen für den User (bewusst nicht entschieden)
 
-1. **Echter Bug im C2-Tie-Break-RNG für Phase-2-Adaptive-Episoden:** `run_adaptive_episode` baut die Step-Funktion bei **jedem Schritt neu** statt einmal pro Episode — dadurch setzt sich `c2_call_index` jedes Mal auf 0 zurück, und jeder C2-Tie-Break **innerhalb derselben Episode nutzt denselben RNG-Seed** statt unabhängiger Ziehungen. Betrifft nachweislich `episode_runner.py::run_phase2_job` (alle adaptiven Strategien); Phase 1 ist unberührt (baut die Step-Funktion einmalig). Kein Rückwirkungsrisiko (Phase 2 lief real noch nicht), aber relevant für jede künftige Phase-2-C2-Nutzung. Nicht gefixt, weil es direkt den C1>C2-Untersuchungsgegenstand berührt. Vorgeschlagener Fix (nicht angewendet): Step-Funktionen pro Stage einmal pro Episode cachen statt neu zu bauen.
+1. ~~**Echter Bug im C2-Tie-Break-RNG für Phase-2-Adaptive-Episoden**~~ — **Gefixt 2026-07-18**, siehe Eintrag oben. `run_adaptive_episode` baute die Step-Funktion bei **jedem Schritt neu** statt einmal pro Episode — dadurch setzte sich `c2_call_index` jedes Mal auf 0 zurück, und jeder C2-Tie-Break **innerhalb derselben Episode nutzte denselben RNG-Seed** statt unabhängiger Ziehungen. Betraf nachweislich `episode_runner.py::run_phase2_job` (alle adaptiven Strategien); Phase 1 war unberührt (baut die Step-Funktion einmalig). Kein Rückwirkungsrisiko (Phase 2 lief real noch nicht).
 2. Toter Eps-Mismatch-Check in `ExecutionConfig.validate_frozen()` — berechnet die Abweichung von `frozen_tle_invariance_eps`, tut dann aber nichts (`pass`). Könnte vergessenes `msgs.append(...)` sein oder bewusst so (Kommentar: "frozen eps is authoritative when set", vermutlich Rückstand der Gate-C-1-N=32-Ausnahme). Sitzt auf der eingefrorenen N/eps-Invariante — nicht angefasst.
 3. Totcode in einem Legacy-VC-Schwellenwert-Pfad (`thresholds.py::derive_stage_thresholds`, nur relevant wenn ein Run kein `holdout`-Feld hat — für echte Phase-1/2-Daten nicht der Fall) und eine rein deskriptive Positions-Binning-Funktion (`calibration_by_step_position`), die `step_index/episode_length` statt der eingefrorenen `position_norm`-Formel nutzt — korrekt als "nicht die konfirmatorische H3-Kovariate berührend" eingeordnet (die nutzt durchgängig `position_norm`), nur zur Kenntnis.
 4. `scripts/probe_vllm_logprobs.py` und `scripts/probe_lmstudio_thinking_toggle.py` nutzen noch den ungefixten `load_yaml_path`-Pfad (nicht den jetzt gefixten `load_pilot_config_with_lmstudio_override`) — geringes aktuelles Risiko (eigenständige Pilot-Configs als Default), aber dieselbe Lücke, falls je auf ein `configs/dev/*.yaml`-Overlay gezeigt.

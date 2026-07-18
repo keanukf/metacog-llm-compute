@@ -597,6 +597,7 @@ def run_adaptive_episode(
     signal: dict[str, Any] | None = None
     signal_source_stage: str | None = None
     episode_fixed_stage: str | None = None
+    step_fn_cache: dict[str, StepFn] = {}
 
     trace_path: Path | None = None
     if save_step_traces:
@@ -647,7 +648,9 @@ def run_adaptive_episode(
                 signal_source_stage=signal_source_stage,
             )
             stage_per_step.append(stage)
-            step_fn = resolve(stage)
+            if stage not in step_fn_cache:
+                step_fn_cache[stage] = resolve(stage)
+            step_fn = step_fn_cache[stage]
 
             step_cm = contextlib.nullcontext(None)
             if trace_hook is not None and hasattr(trace_hook, "start_step_observation"):
