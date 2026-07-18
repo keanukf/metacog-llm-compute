@@ -11,6 +11,14 @@ data/results_smoke_mock/*.json
 data/tasks/*
 !data/results/.gitkeep
 !data/tasks/.gitkeep
+# Frozen difficulty manifests are the Gate D evidence artifact (blueprints/gate_p1_readiness.md
+# requires them "im getaggten Commit"); the bulky generated game binaries stay ignored since the
+# manifest embeds seeds/params sufficient to regenerate them. Un-ignoring a file two levels under
+# an already-ignored parent (data/tasks/*) requires un-ignoring the intermediate directory first —
+# git won't recurse into an ignored directory to evaluate deeper negation rules.
+!data/tasks/*/
+data/tasks/*/*
+!data/tasks/*/difficulty_manifest.json
 
 # Package / test artifacts (local only)
 *.egg-info/
