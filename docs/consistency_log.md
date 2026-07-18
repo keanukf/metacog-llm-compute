@@ -2,6 +2,114 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-18 — TextWorld-Instanzen final generiert und Manifest gebaut (Gate D, TextWorld-Teil)
+
+**Zweck:** Nach der n=16-Bestätigung (Eintrag unten) hat der User `r5_i1_take+cook` als finale Zelle
+gewählt (Cooking-Variante näher am "normalen" Spieldesign, bei ohnehin gleichwertigen Zahlen).
+Dieser Eintrag dokumentiert die Umsetzung: die tatsächlichen 50 produktiven Instanzen + Manifest.
+
+**Generierung:** `scripts/generate_textworld_games.py --num-rooms 5 --num-ingredients 1 --cook
+--seed 20260718 --num-instances 50 --output-dir data/tasks/textworld`. Seed bewusst neu gewählt
+(weder Sweep-Seed 42 noch Bestätigungs-Seed 9001), damit die finalen Instanzen unabhängig von der
+Kalibrierung sind. **Überschreibt 5 alte Dev-Fixture-Instanzen** (April, `num_ingredients=2`, auf
+die mehrere generische Dev/Smoke-Configs zeigen — nicht git-getrackt, `data/tasks/` ist komplett
+gitignored, jederzeit neu generierbar; User hat das Überschreiben explizit bestätigt).
+
+**Manifest:** `scripts/build_textworld_manifest.py --holdout-count 5 --holdout-policy mod-10`.
+`mod-10` (Spread-Holdout: Instanzen 0/10/20/30/40) statt `first-n` gewählt — die Thesis-Prosa legt
+die Auswahlpolitik nicht fest, Spread vermeidet den Anschein eines willkürlichen zusammenhängenden
+Blocks. `data/tasks/textworld/difficulty_manifest.json`: 50 Instanzen, `holdout_count=5,
+non_holdout_count=45`, `difficulty_tier`-Verteilung 30× easy / 20× medium (0× hard) — **das ist die
+Solver-Walkthrough-Länge** (Ø 7.98, Max 10 Steps optimal), nicht das empirische Modellverhalten; die
+beiden Zahlen sind unabhängig (siehe Rückfrage des Users dazu) — der Median-Sieg-Step aus der
+n=16-Bestätigung (15) bleibt die relevante Zahl für die H3-Längen-Diskussion, nicht `difficulty_tier`.
+
+**Smoke (`scripts/gate_d_manifest_smoke.py`, Blueprint-Punkt "holdout/difficulty_tier im
+Episode-JSON"):** Erster Lauf schlug fehl — `create_execution_backend(config, use_real_model)` rief
+die Factory positional statt mit dem laut Signatur (`*, use_real: bool`) erzwungenen Keyword auf;
+jeder andere Aufrufer im Repo nutzt bereits `use_real=...`. Nie zuvor ausgeführtes Script, daher nie
+aufgefallen. **Gefixt** (`create_execution_backend(config, use_real=use_real_model)`), Regressionstest
+`tests/test_gate_d_manifest_smoke.py` ergänzt (patcht die Factory und prüft den Keyword-Aufruf sowie
+dass `holdout`/`difficulty_tier` aus einem synthetischen Manifest-Eintrag im Report ankommen — ohne
+echte Spiel-/Modell-Abhängigkeit). Danach mit Mock-Modell über `--domains textworld` (ToH-Manifest
+existiert noch nicht, wäre sonst mit `FileNotFoundError` abgebrochen) auf allen 50 Instanzen
+gelaufen: `holdout`-Flags (0/10/20/30/40) und `difficulty_tier`-Werte kommen korrekt im
+Episode-Report an. **Bewusst kein echter Realmodell-Lauf über alle 50** (das wäre eine zusätzliche
+volle Korridor-Rekonfirmation auf derselben Parameterkombination, die die n=16-Bestätigung bereits
+unabhängig erbracht hat — separate Kosten-/Zeitentscheidung, nicht Teil dieser Plumbing-Prüfung).
+
+**Testsuite:** 353 passed (352 + neuer Regressionstest).
+
+**Offen:** ToH-Konfiguration/Manifest weiterhin nicht final — der Gate-D-HART-Punkt "Beide Manifeste
+final" bleibt bis dahin offen; nur der TextWorld-Teil ist jetzt fertig. Blueprint-Checkbox bewusst
+nicht angehakt (Gate-Status-Entscheidungen sind Usersache, siehe Konvention in diesem Log).
+
+## 2026-07-18 — TextWorld-Korridor-Kandidaten bei n=16 bestätigt: 3 von 4 halten, einer fällt raus
+
+**Zweck:** Die 4 Kandidatenzellen aus dem n=4-Sweep (2026-07-16, Cap 45: `r5_i1_take-only` als
+`best_candidate`, plus die 3 `corridor_candidates` `r5_i1_take+cook`, `r3_i2_take-only`,
+`r5_i3_take-only`) waren zwischen Cap-45- und Cap-70-Lauf nicht stabil (n=4/Zelle zu klein/verrauscht,
+siehe Eintrag "2026-07-16 — Post-Fix-Sweeps"). Bestätigung mit unabhängiger Neu-Stichprobe (n=16,
+eigener Seed statt Wiederverwendung der ursprünglichen 4 Instanzen — echte Replikation, kein
+Extend) via `scripts/validate_textworld_candidate.py` (existierte bereits seit `db5b482`, aber nie
+zuvor ausgeführt), auf dem 5090-Pod, `--real`, Cap 45.
+
+**Ergebnis** (`data/results/gate_d_calibration/textworld_candidate_confirmation/validation_results.json`):
+
+| Zelle | success@Cap (n=16) | Korridor (30–50%) | median_win_step | mean_len_success | Trunkierung |
+|---|---|---|---|---|---|
+| `r5_i1_take-only` | 0.375 | ✅ | 15.0 | 16.0 | 43.8% |
+| `r5_i1_take+cook` | 0.4375 | ✅ | 15.0 | 16.4 | 25.0% |
+| `r3_i2_take-only` | 0.4375 | ✅ | 14.0 | 16.9 | 37.5% |
+| `r5_i3_take-only` | **0.25** | ❌ | 13.5 | 16.5 | 56.3% |
+
+**Befund:** 3 von 4 Zellen bestätigen sich robust im Korridor (37.5–43.75%, sauber um die Mitte
+zentriert). `r5_i3_take-only` — bei n=4 noch bei 50% und als einzige Zelle "inside_length_guidance"
+unter der alten 8–15-Vorgabe — fällt bei n=16 auf 25% und damit unter den Korridor. Genau die
+Instabilität, die der n=4-Vergleich befürchten ließ, jetzt mit echten Daten aufgelöst statt vermutet.
+
+**Bezug zur Längen-Revision (siehe Eintrag "TextWorld-Episodenlängen-Vorgabe korrigiert" unten):**
+Alle 3 überlebenden Zellen liegen mit `median_win_step` 14–15 knapp **an**, nicht komfortabel über
+der neuen 15-Step-Untergrenze — ein Punkt, den man bei der finalen Zellwahl im Blick behalten sollte
+(knapper Puffer zur H3-load-bearing-Grenze), aber `mean_episode_length_success` (16.0–16.9) liegt
+etwas darüber.
+
+**Offen (User-Entscheidung, nicht autonom getroffen):** finale Wahl unter den 3 verbleibenden Zellen
+für den Gate-D-Freeze (50-Instanzen-Generierung). Reiner Zahlenvergleich: `r5_i1_take+cook` hat die
+niedrigste Trunkierungsrate (25%) bei vergleichbarem Erfolg; die drei sind bei n=16 im Rahmen des
+erwartbaren Rauschens praktisch gleichwertig, kein Kriterium sticht klar heraus.
+
+**Testsuite:** keine Quelländerung (nur Datenlauf über bestehendes, ungetestetes-aber-vorhandenes
+Script); kein neuer pytest-Lauf nötig.
+
+## 2026-07-18 — TextWorld-Episodenlängen-Vorgabe korrigiert: 8–15 → 15–40 Steps (A-priori-Zahl durch Post-Fix-Sweep-Daten widerlegt)
+
+**Korrektur zu:** Der in `blueprints/gate_p1_readiness.md` (Gate D, HART-Punkt "TextWorld-Difficulty-Sweep") und `docs/textworld.md` gesetzten Zielvorgabe "8–15 Steps mittlere Episodenlänge", wortgleich zitiert in der Thesis-Prosa (`../metacog-thesis/chapters/05_methodology.md` §5.5.1, dort bislang mit `[PENDING: difficulty calibration]` markiert) und `chapters/outline.md` §5.5.
+
+**Ursprung der alten Zahl:** reine A-priori-Setzung ohne empirische Grundlage (keine Sweep-Daten zum Zeitpunkt der Präregistrierung verfügbar) — vermutlich als "genug Positionsauflösung für H3, aber nicht zu lang" gedacht, nie gegen echte Modelldaten geprüft.
+
+**Widerlegt durch:** die echten Post-Fix-Sweeps (siehe Eintrag "2026-07-16" weiter unten, Config-Wiring-Bug-Fix). `data/results/gate_d_calibration/textworld_sweep/sweep_results.json` (Cap 45): `global_p90_win_step_success = 41.8`; die Zellen, die den 30–50-%-Erfolgskorridor erfüllen (`corridor_candidates` + `best_candidate`), haben `metrics.mean_episode_length_success`-Werte von **11.5, 13.5, 23.0, 41.5** — nur 2 von 4 liegen überhaupt in [8,15], und `ranked_results` zeigt insgesamt, dass praktisch alle Zellen mit realistischem Erfolg (Erfolgsrate ≥ 25 %) bei Sieg-Längen zwischen 5 und 43 Steps liegen, mit einem klaren Schwerpunkt oberhalb von 15. Die Kontroll-Sweep bei Cap 70 (`textworld_sweep_cap70/sweep_results.json`, identische Instanzen/Seed) bestätigt sowohl den fehlenden Floor-Effekt (`global_p90_win_step_success = 40.6`, Trunkierungsrate ähnlich zu Cap 45) als auch dieselbe n=4-Instabilität: dort erfüllen andere Zellen den Erfolgskorridor (Längen 10.5, 12.5, 29.0) als bei Cap 45 — einzelne Instanzen verschieben die Zellauswahl, aber die grobe Größenordnung (>10, oft >15, bis in die 40er) bleibt über beide Caps stabil.
+
+**Warum der alte Zielkorridor strukturell kaum in [8,15] zu treffen war:** Die beiden Sweep-Achsen (Rooms/Ingredients/Operations für Schwierigkeit, Episodenlänge für den nötigen Lösungsweg) sind nicht unabhängig — dieselben Parameter, die C0-Erfolg in den 30–50-%-Korridor senken (mehr Räume, mehr Zutaten, mehr Operationen), verlängern gleichzeitig den nötigen Lösungsweg. Ein starres UND aus "Erfolg 30–50 %" und "Länge 8–15" verlangt de facto eine seltene Koinzidenz zweier gekoppelter Variablen, kein unabhängig erreichbares Ziel.
+
+**Methodische Prüfung — schadet eine längere Episode H3?** H3 ist der Signal-×-`position_norm`-Interaktionstest; die `position_norm`-Formel selbst bleibt unverändert (eingefrorene Invariante, nicht angefasst). Die eigentliche Anforderung hinter der alten 8–15-Zahl ist Positionsauflösung, nicht die Zahl selbst — vgl. Kap. 4 §4.2.2 der Thesis-Prosa, die Tower of Hanoi exakt deshalb als H3-exploratorisch statt konfirmatorisch einstuft ("whose short and near-binary temporal structure limits it as an H3 instrument"; ToH liegt laut `chapters/outline.md` bei 7–15 optimalen Steps). Mit einer Untergrenze von 8 hätte sich TextWorld mit genau dem Bereich überlappt, der für ToH bereits als für H3 unzureichend gilt — die alte Untergrenze war also eher zu niedrig als zu hoch angesetzt. Eine längere Episode erhöht `position_norm`-Auflösung monoton (feinere Schrittweite zwischen 0 und 1) und schadet H3 nicht durch die Länge allein. Die beiden real existierenden Sorgen zu langen Episoden — Solution-Space-Kompression am Episodenende (`gate_p1_readiness.md`, Akzeptiertes Restrisiko #6) und Lost-in-the-Middle unter Full-History-Prompting (Restrisiko #2, Kap. 5 §5.9 der Prosa) — sind beide bereits als akzeptierte, nicht-blockierende Limitationen dokumentiert, unabhängig von der absoluten Episodenlänge; eine Verlängerung auf bis zu 40 Steps macht diese Limitationen graduell sichtbarer, führt aber zu keinem neuen, bisher unbenannten Risiko.
+
+**Neue Vorgabe:** Zielkorridor bleibt **30–50 % C0-Erfolg** (weiterhin HART, unverändert). Längen-Guidance wird zu **15–40 Steps** (mittlere Episodenlänge erfolgreicher Episoden) revidiert und von einem harten UND-Kriterium zu einer weichen Guidance mit einer einzigen load-bearing Grenze abgeschwächt: nur die **Untergrenze (15)** ist load-bearing für H3-Positionsauflösung (siehe Argument oben); die **Obergrenze (40)** ist ein praktischer, weicher Bezugspunkt (deutlich unter dem getesteten Production-Cap 45, verhindert Konfundierung mit Cap-nahen Trunkierungsartefakten), keine zweite harte Bedingung.
+
+**Geänderte Dateien (synchron gehalten):**
+- `blueprints/gate_p1_readiness.md` (Gate D, HART-Punkt "TextWorld-Difficulty-Sweep")
+- `docs/textworld.md` (Sweep-Zielbeschreibung)
+- `../metacog-thesis/chapters/05_methodology.md` §5.5.1 (löst das dortige `[PENDING: difficulty calibration]` auf)
+- `../metacog-thesis/chapters/outline.md` (§5.5-Fokus-Zeile)
+- `../metacog-thesis/notes/thesis_notes.md` (neuer Abschnitt "Coding-Session-Befunde (2026-07-18)")
+
+**Offene Punkte (bewusst nicht entschieden, zur Kenntnis):**
+1. `scripts/gate_d_metrics.py::LENGTH_GUIDANCE = (8, 15)` ist die Code-Konstante, die `sweep_textworld_difficulty.py`s `inside_length_guidance`-Flag und `target_window`-Feld im Sweep-JSON speist — **nicht geändert** (liegt außerhalb des für diese Korrektur beauftragten Scopes: nur Prosa/Docs/Blueprints/Log, kein Code). Muss vor dem nächsten Bestätigungssweep (n=16–20 auf dem Pod) aktualisiert werden, sonst berichtet der Sweep-Output weiterhin gegen die alte Zahl.
+2. Weitere, in dieser Korrektur bewusst nicht angefasste Fundstellen derselben alten 8–15-Zahl (außerhalb des explizit beauftragten Scopes): `blueprints/thesis_design.md` (zwei Stellen, Zeilen ~147/235 — laut `CLAUDE.md` bereits als gegenüber der Kapitel-Prosa veraltet/nachrangig markiert), `docs/gate_e_h3_power_simulation.md` (nutzt 8–15 als Input-Annahme für die am 2026-07-17 bereits abgeschlossene H3-Power-Simulation — historischer Bericht, nicht rückwirkend verändert), `docs/instrument_validation_session.md` (Freeze-Notiz erwähnt 8–15 beiläufig als "§5.5-Ziel"). Falls die Power-Simulation nach dieser Korrektur wiederholt werden soll — die dortige ToH-Vergleichszahl war explizit als "optimistischer Kontextwert gegen den TextWorld-8–15-Korridor" gerahmt, und dieser Rahmen ist jetzt selbst überholt —, ist das eine Entscheidung für den User, nicht hier getroffen.
+3. `../metacog-thesis/notes/thesis_notes.md`, bestehender Eintrag "Long sequential episodes: With 8–15 steps per episode…" (Prompt-Strukturierungs-Begründung, nicht Kapitel-Prosa): historischer, datierter Eintrag, bewusst nicht rückwirkend verändert (Konsistenzlog-Konvention: append-only, keine Geschichtsumschreibung); die Kernaussage (lange Episoden brauchen explizite Tag-Strukturierung) bleibt unter 15–40 Steps unverändert oder sogar verstärkt gültig.
+
+**Nicht angefasst:** `position_norm`-Formel (eingefrorene Invariante, nicht Gegenstand dieser Korrektur); finale Korridor-Zell-Auswahl (separater, laufender n=4→n=16–20-Bestätigungssweep-Schritt, unabhängig von dieser Kriteriums-Korrektur); kein Produktionscode (`src/`) geändert.
+
 ## 2026-07-18 — Fix: C2-Tie-Break-RNG-Unabhängigkeit in `run_adaptive_episode`
 
 **Zweck:** Behebt die im Housekeeping-Pass vom 2026-07-17 gefundene, aber bewusst zurückgestellte
