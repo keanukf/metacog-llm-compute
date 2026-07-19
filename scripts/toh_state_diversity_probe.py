@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.sweep_textworld_difficulty import _create_model, _load_merged_config  # noqa: E402
+from src.utils.dotenv_loader import load_dotenv_if_present  # noqa: E402
+
+_DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 
 CANONICAL_OPENER = ("A", "C")
 
@@ -70,24 +74,47 @@ def _run_one_episode(
     trace_dir: Path,
     out_dir: Path,
     ep_index: int,
+    tracing_cfg: dict[str, Any] | None = None,
+    trace_session_id: str | None = None,
 ) -> dict[str, Any]:
     from src.agent.base_agent import run_episode
     from src.environments.tower_of_hanoi import TowerOfHanoiEnv
+    from src.utils.tracing import build_trace_hook
 
+    # A fresh hook per episode/task, not one shared across ThreadPoolExecutor workers:
+    # LangfuseTraceHook keeps its OTel context-manager state as instance attributes, so
+    # concurrent threads sharing one instance corrupt each other's context tokens (mirrors
+    # src/execution/episode_runner.py::run_phase1_job, which builds its hook per job for the
+    # same reason).
+    trace_hook = build_trace_hook(tracing_cfg or {})
     ep_id = f"toh_diversity_{stage}_{ep_index}"
     max_steps = int(inst.get("max_steps", 50))
     env = TowerOfHanoiEnv(task=inst, max_steps=max_steps)
-    result = run_episode(
-        env,
-        model,
-        stage,
-        step_fn=step_fn,
-        max_steps=max_steps,
-        save_step_traces=True,
-        episode_id=ep_id,
-        trace_output_dir=str(trace_dir),
-        **history_cfg,
-    )
+    try:
+        result = run_episode(
+            env,
+            model,
+            stage,
+            step_fn=step_fn,
+            max_steps=max_steps,
+            save_step_traces=True,
+            episode_id=ep_id,
+            trace_output_dir=str(trace_dir),
+            trace_hook=trace_hook,
+            trace_session_id=trace_session_id,
+            trace_tags=["gate_d", "toh_state_diversity_probe", stage],
+            trace_name=ep_id,
+            **history_cfg,
+        )
+    finally:
+        try:
+            trace_hook.episode_end()
+        except Exception:
+            pass
+        flush_client = getattr(trace_hook, "_client", None)
+        flush = getattr(flush_client, "flush", None)
+        if callable(flush):
+            flush()
     (out_dir / f"{ep_id}.json").write_text(
         json.dumps(result, indent=2, default=str), encoding="utf-8"
     )
@@ -164,6 +191,11 @@ def main() -> None:
     model = _create_model(config, bool(args.real))
 
     from src.agent.compute_stages import get_step_fn
+    from src.utils.tracing import log_langfuse_startup_status
+
+    log_langfuse_startup_status(config, dotenv_info=_DOTENV_INFO)
+    tracing_cfg = config.get("tracing")
+    trace_session_id = f"toh_diversity_probe_{int(time.time())}"
 
     stages = [s.strip() for s in args.stages.split(",") if s.strip()]
     step_fns = {stage: get_step_fn(stage, **step_cfg) for stage in stages}
@@ -187,6 +219,8 @@ def main() -> None:
                     trace_dir=trace_dir,
                     out_dir=out_dir,
                     ep_index=i,
+                    tracing_cfg=tracing_cfg,
+                    trace_session_id=trace_session_id,
                 ): (stage, i)
                 for stage, inst, i in tasks
             }
