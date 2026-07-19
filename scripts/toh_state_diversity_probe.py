@@ -146,7 +146,13 @@ def main() -> None:
     parser.add_argument("--real", action="store_true")
     parser.add_argument("--seed", type=int, default=777)
     parser.add_argument("--pool-size", type=int, default=60)
-    parser.add_argument("--num-disks", type=int, default=3)
+    parser.add_argument("--num-disks", type=int, default=3, help="Lower bound of disk-count range")
+    parser.add_argument(
+        "--num-disks-hi",
+        type=int,
+        default=None,
+        help="Upper bound of disk-count range; defaults to --num-disks (single value)",
+    )
     parser.add_argument(
         "--partial-start-lo",
         type=int,
@@ -155,6 +161,14 @@ def main() -> None:
     )
     parser.add_argument("--partial-start-hi", type=int, default=6)
     parser.add_argument("--num-selected", type=int, default=8)
+    parser.add_argument(
+        "--selection",
+        choices=["diverse", "random"],
+        default="diverse",
+        help="'diverse' curates for required-first-move variety (bias diagnosis, NOT a "
+        "representative success-rate/corridor sample); 'random' takes an uncurated slice of "
+        "the generated pool (the right mode for corridor/calibration estimates).",
+    )
     parser.add_argument("--stages", default="C0,C1")
     parser.add_argument("--max-workers", type=int, default=8)
     parser.add_argument(
@@ -170,13 +184,17 @@ def main() -> None:
     trace_dir = out_dir / "traces"
     trace_dir.mkdir(parents=True, exist_ok=True)
 
+    num_disks_hi = int(args.num_disks_hi) if args.num_disks_hi is not None else int(args.num_disks)
     pool = generate_instances(
         int(args.pool_size),
         seed=int(args.seed),
-        num_disks_range=(int(args.num_disks), int(args.num_disks)),
+        num_disks_range=(int(args.num_disks), num_disks_hi),
         partial_start_range=(int(args.partial_start_lo), int(args.partial_start_hi)),
     )
-    selected = _pick_diverse_instances(pool, int(args.num_selected))
+    if args.selection == "random":
+        selected = pool[: int(args.num_selected)]
+    else:
+        selected = _pick_diverse_instances(pool, int(args.num_selected))
     print(f"Selected {len(selected)} instances from a pool of {len(pool)}:")
     for inst in selected:
         sol = inst.get("optimal_solution") or []
