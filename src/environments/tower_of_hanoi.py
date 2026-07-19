@@ -220,14 +220,70 @@ class TowerOfHanoiEnv:
         return self.observation
 
 
+def _enumerate_reachable_states(num_disks: int) -> list[PegState]:
+    """All 3**num_disks valid states via BFS from the fully-scrambled start (every disk on A).
+    Confirms the well-known 3**n state-space size for classic 3-peg Tower of Hanoi: a valid
+    state is fully determined by which peg each disk sits on (within-peg order is forced by the
+    smaller-on-top rule), so there are no further degrees of freedom.
+    """
+    start: PegState = {"A": _sorted_goal_stack(num_disks), "B": [], "C": []}
+    seen: dict[tuple[tuple[int, ...], ...], PegState] = {_state_to_tuple(start): start}
+    frontier = [start]
+    while frontier:
+        next_frontier = []
+        for st in frontier:
+            for mv in _legal_moves(st):
+                nxt = _apply_move(st, mv)
+                key = _state_to_tuple(nxt)
+                if key not in seen:
+                    seen[key] = nxt
+                    next_frontier.append(nxt)
+        frontier = next_frontier
+    return list(seen.values())
+
+
+class _StatePool:
+    """Per-disk-count pool of distinct reachable states, drawn without replacement so that
+    generate_instances(..., partial_start_mode="random_scramble") cannot repeat a state until
+    every other reachable state for that disk count has been used once. A short random walk
+    (bounded by partial_start_range, as in "optimal_prefix" mode) only explores a small
+    neighborhood around the fully-scrambled start -- verified empirically to leave most of the
+    3**num_disks state space unvisited even at walk lengths of 50 -- so per-instance random
+    walks were replaced with this exhaustive, shuffled-without-replacement draw.
+    """
+
+    def __init__(self) -> None:
+        self._pools: dict[int, list[PegState]] = {}
+        self._cursors: dict[int, int] = {}
+
+    def draw(self, num_disks: int, rng: random.Random) -> PegState:
+        if num_disks not in self._pools:
+            states = _enumerate_reachable_states(num_disks)
+            goal_key = _state_to_tuple({"A": [], "B": [], "C": _sorted_goal_stack(num_disks)})
+            states = [s for s in states if _state_to_tuple(s) != goal_key]
+            rng.shuffle(states)
+            self._pools[num_disks] = states
+            self._cursors[num_disks] = 0
+        pool = self._pools[num_disks]
+        cursor = self._cursors[num_disks]
+        if cursor >= len(pool):
+            rng.shuffle(pool)
+            cursor = 0
+        self._cursors[num_disks] = cursor + 1
+        return _copy_state(pool[cursor])
+
+
 def generate_instances(
     n: int,
     seed: int,
     num_disks_range: tuple[int, int] = (3, 4),
     partial_start_range: tuple[int, int] = (0, 3),
+    partial_start_mode: str = "optimal_prefix",
 ) -> list[dict]:
     if n < 0:
         raise ValueError("n must be non-negative")
+    if partial_start_mode not in ("optimal_prefix", "random_scramble"):
+        raise ValueError("partial_start_mode must be 'optimal_prefix' or 'random_scramble'")
     d_lo, d_hi = int(num_disks_range[0]), int(num_disks_range[1])
     p_lo, p_hi = int(partial_start_range[0]), int(partial_start_range[1])
     if d_lo > d_hi or d_lo < 1:
@@ -236,19 +292,25 @@ def generate_instances(
         raise ValueError("partial_start_range must be [lo, hi] with lo >= 0")
 
     rng = random.Random(seed)
+    pool = _StatePool() if partial_start_mode == "random_scramble" else None
     instances: list[dict] = []
     for i in range(n):
         sub = random.Random(rng.randint(0, 2**31 - 1))
         num_disks = sub.randint(d_lo, d_hi)
-        state: PegState = {"A": _sorted_goal_stack(num_disks), "B": [], "C": []}
-        requested_partial = sub.randint(p_lo, p_hi)
-        applied_partial = 0
-        for _ in range(requested_partial):
-            path = _shortest_path_to_goal(state, num_disks)
-            if not path:
-                break
-            state = _apply_move(state, path[0])
-            applied_partial += 1
+        if partial_start_mode == "random_scramble":
+            assert pool is not None
+            state = pool.draw(num_disks, sub)
+            applied_partial = -1  # not meaningful in this mode -- drawn from the full state pool
+        else:
+            requested_partial = sub.randint(p_lo, p_hi)
+            state = {"A": _sorted_goal_stack(num_disks), "B": [], "C": []}
+            applied_partial = 0
+            for _ in range(requested_partial):
+                path = _shortest_path_to_goal(state, num_disks)
+                if not path:
+                    break
+                state = _apply_move(state, path[0])
+                applied_partial += 1
         optimal_solution = _shortest_path_to_goal(state, num_disks)
         max_steps = max(1, len(optimal_solution) * 3)
         instances.append(
