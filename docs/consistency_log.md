@@ -2,6 +2,70 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-19 — ToH-Manifest final eingefroren: 4 Disks, C1-Referenz, `random_scramble`
+
+**Zweck:** Abschluss des Gate-D-ToH-Prozesses (siehe die zahlreichen Einträge der letzten Tage:
+Peg-C-Vermeidungs-Bias, Prompt-Fixes, State-Diversitäts-Proben, Korridor-Läufe). Dieser Eintrag
+dokumentiert die finale Entscheidung und den Freeze.
+
+**Vorgeschichte in Kürze:** C0 zeigte über drei unabhängige, echte Sweeps (n=10 gemischt 3+4 Disks,
+n=20 gemischt zufällig, n=30 gemischt `random_scramble`) konsistent ~0–17 % Erfolg — kein
+Schwierigkeitsproblem, sondern ein reproduzierbarer, per Trace-Analyse belegter Bias (Modell wählt
+den als Ziel benannten Peg nie als Zugquelle). Drei Prompt-Klarstellungen (Zielzustand statt
+Bewegungsanweisung, Disk-Größen-Erklärung, neutrales Format-Beispiel, plus ein Bugfix für ein
+domänenfremdes "go north"-Beispiel im geteilten Prompt-Template) haben den Bias abgeschwächt, aber
+nicht beseitigt — C0 bleibt kein Referenzkandidat. Korridor daher wie schon am 2026-07-17 vermutet
+an **C1** kalibriert.
+
+**Zwei strukturelle Bugs unterwegs gefunden und gefixt** (beide vor dem Freeze kritisch):
+1. Die ursprüngliche Instanzgenerierung (`partial_start_mode="optimal_prefix"`, deterministischer
+   Einzelpfad) besuchte nur `num_disks+1` Zustände — unter der Produktionsverteilung (Disks {3,4},
+   Partial-Start [0,3]) exakt **8 unterscheidbare Puzzles**, unabhängig davon, wie viele "Instanzen"
+   generiert wurden. Neuer Modus `partial_start_mode="random_scramble"` zieht ohne Zurücklegen aus
+   dem vollen, per BFS verifizierten 3ⁿ-Zustandsraum (27/81/243 für 3/4/5 Disks).
+2. `make_experiment_env()` rekonstruierte ToH-Instanzen zur Laufzeit immer mit dem alten
+   `optimal_prefix`-Standard, unabhängig vom Manifest — ein mit `random_scramble` gebautes Manifest
+   wäre zur Laufzeit stillschweigend auf den alten 8-Puzzle-Zustandsraum zurückgefallen. Gefixt:
+   Manifest speichert `num_disks_range`/`partial_start_range`/`partial_start_mode` jetzt pro Eintrag
+   (analog zum bestehenden `task_generation_seed`-Muster), `make_experiment_env()` liest diese
+   bevorzugt aus dem Manifest. End-to-End verifiziert (identischer Zustand bei Rekonstruktion).
+
+**Korridor-Entscheidung — bewusst nur an Erfolgsrate, nicht an AUROC.** Wichtiger methodischer
+Punkt, der während der Session explizit diskutiert wurde: Die Konfigurationswahl (welche Disk-Zahl
+einzufrieren ist) darf sich **nicht** an der späteren AUROC/Signalqualität orientieren — das wäre
+eine Form von Selektion auf die abhängige Variable ("Garden of Forking Paths"), selbst wenn die
+finalen 50 Instanzen aus einer frischen, unabhängigen Ziehung stammen. Ein zwischenzeitlich erwogener
+Filter ("3-Disk-Instanzen mit hoher `optimal_steps`, um gleichzeitig Korridor und gute AUROC zu
+treffen") wurde deshalb **verworfen** — unabhängig davon, dass er sich auch empirisch als Sackgasse
+erwies (der 3-Disk-Zustandsraum deckelt bei 7 Optimalzügen; C1 löst selbst die am weitesten
+entfernten 3-Disk-Zustände zu 75 %, kein nutzbares Schwierigkeitsgefälle).
+
+**Finale Konfiguration:** 4 Disks (fix, nicht {3,4} gemischt — 3 Disks separat getestet: 73 % Erfolg,
+deutlich zu leicht, siehe oben), `partial_start_mode=random_scramble`. Isolierte 4-Disk-Messung
+(n=15, Teilmenge eines n=30-Laufs, Seed 3141): **C1-Erfolg 40 %** — sauber im 30–50-%-Korridor.
+C0 zum Vergleich: 13–20 % je nach Schnitt, weiterhin kein Kandidat.
+
+**Freeze:** `scripts/build_toh_manifest.py --num-instances 50 --seed 271828 --holdout-count 5
+--holdout-policy mod-10 --num-disks-range 4 4 --partial-start-mode random_scramble`. Neuer Seed,
+disjunkt von allen Kalibrierungs-Seeds (42 alter Sweep, 2026 n=20-Lauf, 3141 n=30-Lauf). Verifiziert:
+**50 von 50 Instanzen sind echt unterschiedliche Zustände** (vorher wären es maximal 8 gewesen).
+`optimal_steps`-Spanne 3–15 (Ø 10,2) — reale Schwierigkeitsstreuung. Holdout mod-10 (Instanzen
+0/10/20/30/40), analog zu TextWorld.
+
+**Smoke:** `scripts/gate_d_manifest_smoke.py` war hart auf C0 verdrahtet (hätte für ToH mit
+C1-Referenz immer `Hard-GO: False` geliefert) — gefixt via neue `REFERENCE_STAGE_BY_DOMAIN`-Map
+(`textworld: C0, tower_of_hanoi: C1`). Mock-Lauf über alle 50 Instanzen: `holdout`/`difficulty_tier`
+kommen korrekt an, Referenzstufe korrekt C1. Kein echter Realmodell-Lauf über die vollen 50 gemacht
+(bewusst — die Erfolgsraten-Frage ist über die vier vorherigen echten Sweeps bereits hinreichend
+beantwortet; ein weiterer Lauf hätte hier nur AUROC-Neugier bedient, die laut obigem Prinzip nicht
+die Konfigurationswahl treiben soll).
+
+**Testsuite:** 357 passed (356 + neuer Test für `REFERENCE_STAGE_BY_DOMAIN`).
+
+**Offen:** Freeze-Tag (git tag) selbst noch nicht gesetzt — bewusst Usersache, keine technische
+Restarbeit. Blueprint-Checkboxen entsprechend aktualisiert, aber "Beide Manifeste final" bleibt
+unangehakt, bis der Tag gesetzt ist.
+
 ## 2026-07-19 — H3-Power-Simulation mit korrigierter Episodenlängen-Annahme neu gelaufen
 
 **Zweck:** Die H3-Power-Simulation vom 2026-07-17 (`docs/gate_e_h3_power_simulation.md`) hatte für

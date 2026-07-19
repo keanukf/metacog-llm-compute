@@ -1,0 +1,910 @@
+{
+  "dataset": "tower_of_hanoi",
+  "num_instances": 50,
+  "holdout_count": 5,
+  "non_holdout_count": 45,
+  "holdout_policy": "mod-10",
+  "task_generation_seed": 271828,
+  "entries": [
+    {
+      "instance_id": 0,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 14,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": true
+    },
+    {
+      "instance_id": 1,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 7,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 2,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 8,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 3,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 12,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 4,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 7,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 5,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 11,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 6,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 7,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 7,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 15,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 8,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 7,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 9,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 5,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 10,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 14,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": true
+    },
+    {
+      "instance_id": 11,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 10,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 12,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 15,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 13,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 7,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 14,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 11,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 15,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 10,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 16,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 13,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 17,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 4,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 18,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 13,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 19,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 6,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 20,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 3,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": true
+    },
+    {
+      "instance_id": 21,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 15,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 22,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 11,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 23,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 11,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 24,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 7,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 25,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 14,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 26,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 5,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 27,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 15,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 28,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 9,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 29,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 15,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 30,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 6,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": true
+    },
+    {
+      "instance_id": 31,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 8,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 32,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 7,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 33,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 9,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 34,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 15,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 35,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 14,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 36,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 3,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 37,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 15,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 38,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 13,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 39,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 6,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 40,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 14,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": true
+    },
+    {
+      "instance_id": 41,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 15,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 42,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 11,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 43,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 11,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 44,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 10,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 45,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 14,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 46,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 4,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 47,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 9,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 48,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 15,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    },
+    {
+      "instance_id": 49,
+      "num_disks": 4,
+      "partial_start_moves": -1,
+      "optimal_steps": 10,
+      "difficulty_tier": "medium",
+      "task_generation_seed": 271828,
+      "num_disks_range": [
+        4,
+        4
+      ],
+      "partial_start_range": [
+        0,
+        3
+      ],
+      "partial_start_mode": "random_scramble",
+      "holdout": false
+    }
+  ]
+}
