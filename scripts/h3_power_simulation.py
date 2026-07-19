@@ -238,7 +238,7 @@ class DesignCell:
     signal: str  # "tle" | "vc"
     n_instances: int
     episodes_per_instance: int  # runs_per_condition x compute_stages, pooled across stages
-    length_mode: str  # "uniform_8_15" | "bootstrap_pilot"
+    length_mode: str  # "uniform_15_40" | "bootstrap_pilot"
     length_bootstrap_pool: list[int]
     target_base_rate: float
     beta_z: float  # main effect of standardized signal, per SD
@@ -284,13 +284,18 @@ def build_design_cells(
         icc_source = "gee_dep_params" if stats.icc_gee is not None else "anova_icc1"
         sigma_b2 = _latent_icc_to_sigma_b2(icc if icc is not None else 0.05)
         if dom == "textworld":
-            length_mode = "uniform_8_15"
+            length_mode = "uniform_15_40"
             rationale_len = (
-                "Gate D's TextWorld difficulty-sweep target corridor (blueprints/gate_p1_readiness.md, "
-                "8-15 steps/episode, load-bearing for H3 positional resolution) rather than the raw "
-                f"pilot distribution, whose episodes cluster near the {stats.episode_lengths and max(stats.episode_lengths)}"
-                "-step cap because Gate D difficulty calibration was not yet applied when the pilot ran "
-                "(pre-calibration episodes are harder/longer than the calibrated design will be)."
+                "Gate D's TextWorld difficulty-sweep target corridor as revised 2026-07-18 "
+                "(blueprints/gate_p1_readiness.md, docs/consistency_log.md: 15-40 steps/episode, "
+                "only the 15-step floor load-bearing for H3 positional resolution, 40 a soft "
+                "practical ceiling) -- supersedes the original a-priori 8-15 figure used in the "
+                "first run of this simulation (2026-07-17), which real post-fix sweeps showed was "
+                "empirically almost unreachable (winning episodes cluster at 15-40+ steps, not 8-15) "
+                "rather than the raw pilot distribution, whose episodes cluster near the "
+                f"{stats.episode_lengths and max(stats.episode_lengths)}-step cap because Gate D "
+                "difficulty calibration was not yet applied when the pilot ran (pre-calibration "
+                "episodes are harder/longer than the calibrated design will be)."
             )
         else:
             length_mode = "bootstrap_pilot"
@@ -334,8 +339,8 @@ def build_design_cells(
 
 
 def _sample_episode_length(rng: np.random.Generator, cell: DesignCell) -> int:
-    if cell.length_mode == "uniform_8_15":
-        return int(rng.integers(8, 16))
+    if cell.length_mode == "uniform_15_40":
+        return int(rng.integers(15, 41))
     pool = cell.length_bootstrap_pool
     return int(rng.choice(pool)) if pool else 15
 

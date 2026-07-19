@@ -1,5 +1,14 @@
 # Gate E (WEICH) — H3-Power-Simulation
 
+> **Update 2026-07-19:** Dieser Report nutzt für TextWorld die inzwischen überholte
+> Episodenlängen-Annahme (uniform 8–15 Steps, die A-priori-Vorgabe vor der Gate-D-Kalibrierung).
+> Nach der Längen-Revision auf 15–40 Steps (`docs/consistency_log.md`, 2026-07-18) wurde die
+> Simulation mit der aktuellen Annahme neu gelaufen — Power steigt substanziell (z. B. bei
+> moderater Degradation von ~35 % auf ~51 %, α=.05). Aktuelle Zahlen: `docs/consistency_log.md`,
+> Eintrag "H3-Power-Simulation mit korrigierter Episodenlängen-Annahme neu gelaufen", Artefakt
+> `data/results/gate_e_h3_power/h3_power_simulation_v2.json`. Dieser Report bleibt als historisches
+> Dokument der ursprünglichen Simulation stehen, ist aber **nicht** mehr die aktuelle Zahlengrundlage.
+
 **Datum:** 2026-07-17
 **Branch/Commit:** `feat/gate-d-calibration`
 **Skript:** [`scripts/h3_power_simulation.py`](../scripts/h3_power_simulation.py)

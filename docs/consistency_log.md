@@ -2,6 +2,46 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-19 — H3-Power-Simulation mit korrigierter Episodenlängen-Annahme neu gelaufen
+
+**Zweck:** Die H3-Power-Simulation vom 2026-07-17 (`docs/gate_e_h3_power_simulation.md`) hatte für
+TextWorld eine uniforme Episodenlänge **8–15 Steps** angenommen — genau die A-priori-Vorgabe, die
+am 2026-07-18 durch die realen Post-Fix-Sweeps auf **15–40 Steps** revidiert wurde (siehe Eintrag
+"TextWorld-Episodenlängen-Vorgabe korrigiert" weiter unten). Die Power-Simulation nutzte damit eine
+seit gestern bekannt überholte Annahme. Neu gelaufen mit der aktuellen Vorgabe.
+
+**Änderung:** `scripts/h3_power_simulation.py` — `length_mode` für TextWorld von `"uniform_8_15"`
+(`rng.integers(8, 16)`) auf `"uniform_15_40"` (`rng.integers(15, 41)`) umgestellt, Rationale-Text
+in `build_design_cells()` entsprechend aktualisiert. ToH-Seite (Bootstrap aus Pilot-Längen)
+unverändert. Sonst identisches Simulationsdesign (400 Replikate/Zelle primär, 250 sekundär, echte
+`fit_h3_model`-GEE-Fits, Seed `20260717`).
+
+**Ergebnis** (`data/results/gate_e_h3_power/h3_power_simulation_v2.json`), TextWorld/TLE (der
+zentrale konfirmatorische Fall):
+
+| $\beta_{int}$ | Power alt (8–15, α=.05) | Power neu (15–40, α=.05) |
+|---:|---:|---:|
+| −0,10 | 21,5 % | **33,3 %** |
+| −0,15 (moderate Degradation, ~50 % Abschwächung) | 34,8 % | **51,3 %** |
+| −0,20 | 52,3 % | **73,3 %** |
+| −0,30 | 79,0 % | **97,8 %** |
+
+**80-%-Power-Schwelle:** vorher $|\beta_{int}|\approx0{,}307$ (≈102–120 % von $\beta_z=0{,}30$,
+praktisch vollständiger Signalverlust bis Episodenende nötig) → jetzt
+**$|\beta_{int}|\approx0{,}228$ (≈76 % von $\beta_z$)**. Bei moderater Degradation steigt die Power
+von ~35 % auf ~51 % (α=.05) bzw. ~23 % auf ~42 % (α=.025, Holm-konservativ) — ein substanzieller,
+kostenloser Gewinn allein aus der bereits beschlossenen Längen-Korrektur, kein neuer Trade-off.
+
+**Einordnung:** Ändert die grundsätzliche Aussage aus dem 07-17-Report nicht (Interaktionstests
+bleiben strukturell schwerer zu entdecken als Haupteffekte, moderate Degradation bleibt
+unterpowert), verbessert aber die konkrete Zahlengrundlage substanziell. Der 07-17-Report
+(`docs/gate_e_h3_power_simulation.md`) bleibt als historisches Dokument stehen, wird aber um einen
+Verweis auf diesen aktualisierten Lauf ergänzt, damit niemand versehentlich die überholten
+8–15-Zahlen zitiert.
+
+**Testsuite:** keine Quelländerung außerhalb von `scripts/h3_power_simulation.py` (reines
+Analyse-Skript, keine Produktionscode-Berührung); `python -m pytest -q` unverändert 356 passed.
+
 ## 2026-07-18 — TextWorld-Instanzen final generiert und Manifest gebaut (Gate D, TextWorld-Teil)
 
 **Zweck:** Nach der n=16-Bestätigung (Eintrag unten) hat der User `r5_i1_take+cook` als finale Zelle
