@@ -160,6 +160,14 @@ def main() -> None:
         help="Excludes 0 by default -- 0 is the canonical from-scratch board already probed",
     )
     parser.add_argument("--partial-start-hi", type=int, default=6)
+    parser.add_argument(
+        "--partial-start-mode",
+        choices=["optimal_prefix", "random_scramble"],
+        default="optimal_prefix",
+        help="'random_scramble' draws without replacement from the full 3**num_disks reachable "
+        "state space (ignores --partial-start-lo/hi); 'optimal_prefix' (legacy) only ever "
+        "visits num_disks+1 states regardless of sample size.",
+    )
     parser.add_argument("--num-selected", type=int, default=8)
     parser.add_argument(
         "--selection",
@@ -190,6 +198,7 @@ def main() -> None:
         seed=int(args.seed),
         num_disks_range=(int(args.num_disks), num_disks_hi),
         partial_start_range=(int(args.partial_start_lo), int(args.partial_start_hi)),
+        partial_start_mode=args.partial_start_mode,
     )
     if args.selection == "random":
         selected = pool[: int(args.num_selected)]
