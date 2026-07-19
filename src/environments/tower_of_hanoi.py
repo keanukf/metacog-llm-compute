@@ -130,7 +130,7 @@ class TowerOfHanoiEnv:
             f"  Peg B: {self._state['B']}",
             f"  Peg C: {self._state['C']}",
             "Each peg's disks are listed bottom-to-top, so the last (rightmost) number is the top disk.",
-            "Goal: Move all disks to Peg C.",
+            f"Goal state: Peg C holds all {self._num_disks} disks, Peg A and Peg B are empty.",
             "Rules: move only the top disk from a peg; never put a larger disk on a smaller one.",
             "Reply with a single move: peg letters only, e.g. A->C or A to C.",
         ]
