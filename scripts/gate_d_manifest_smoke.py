@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate D manifest smoke — C0 success@Cap on all manifest instances (Hard-GO)."""
+"""Gate D manifest smoke — reference-stage success@Cap on all manifest instances (Hard-GO)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,15 @@ if str(REPO_ROOT) not in sys.path:
 from scripts.gate_d_metrics import SUCCESS_CORRIDOR, episode_record, success_rate_at_cap
 from scripts.sweep_textworld_difficulty import _load_merged_config
 
+# Compute stage whose success@Cap the corridor criterion is judged against, per domain. C0 for
+# ToH was found (2026-07) to be structurally near-0% regardless of configuration -- a systematic
+# goal-peg-avoidance bias, not a difficulty-tuning problem (docs/consistency_log.md) -- so the
+# corridor is calibrated and frozen against C1 for that domain instead.
+REFERENCE_STAGE_BY_DOMAIN: dict[str, str] = {
+    "textworld": "C0",
+    "tower_of_hanoi": "C1",
+}
+
 
 def _run_domain_smoke(
     *,
@@ -23,6 +32,7 @@ def _run_domain_smoke(
     config: dict[str, Any],
     production_cap: int,
     use_real_model: bool,
+    reference_stage: str,
 ) -> dict[str, Any]:
     from src.agent.base_agent import run_episode
     from src.agent.compute_stages import get_step_fn
@@ -38,7 +48,7 @@ def _run_domain_smoke(
     model = create_execution_backend(config, use_real=use_real_model)
     step_cfg = resolve_step_fn_kwargs(config, domain)
     history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in HISTORY_CFG_KEYS}
-    c0 = get_step_fn("C0", **step_cfg)
+    step_fn = get_step_fn(reference_stage, **step_cfg)
 
     episodes: list[dict[str, Any]] = []
     meta_rows: list[dict[str, Any]] = []
@@ -49,7 +59,9 @@ def _run_domain_smoke(
         env = make_experiment_env(domain, iid, config, max_steps, REPO_ROOT)
         if domain == "tower_of_hanoi":
             max_steps = int(getattr(env, "max_steps", max_steps))
-        result = run_episode(env, model, "C0", step_fn=c0, max_steps=max_steps, **history_cfg)
+        result = run_episode(
+            env, model, reference_stage, step_fn=step_fn, max_steps=max_steps, **history_cfg
+        )
         ep = episode_record(result, obs_ceiling=max_steps)
         ep["instance_id"] = iid
         ep["holdout"] = bool(entry.get("holdout"))
@@ -74,6 +86,7 @@ def _run_domain_smoke(
     lo, hi = SUCCESS_CORRIDOR
     return {
         "domain": domain,
+        "reference_stage": reference_stage,
         "num_instances": len(episodes),
         "production_cap": production_cap,
         "success_rate_at_cap": rate,
@@ -84,7 +97,7 @@ def _run_domain_smoke(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Gate D manifest smoke (C0 @Cap, all 50 instances)."
+        description="Gate D manifest smoke (reference-stage success@Cap, all manifest instances)."
     )
     parser.add_argument("--config", default="configs/dev/gate_d_calibration.yaml")
     parser.add_argument("--production-cap", type=int, required=True)
@@ -108,15 +121,17 @@ def main() -> None:
 
     reports: list[dict[str, Any]] = []
     for domain in args.domains:
+        reference_stage = REFERENCE_STAGE_BY_DOMAIN.get(domain, "C0")
         report = _run_domain_smoke(
             domain=domain,
             config=config,
             production_cap=int(args.production_cap),
             use_real_model=bool(args.real),
+            reference_stage=reference_stage,
         )
         reports.append(report)
         print(
-            f"[{domain}] success@Cap={report['success_rate_at_cap']:.3f} "
+            f"[{domain}/{reference_stage}] success@Cap={report['success_rate_at_cap']:.3f} "
             f"corridor={report['inside_success_corridor']} n={report['num_instances']}"
         )
 

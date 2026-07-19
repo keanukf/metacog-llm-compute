@@ -42,9 +42,20 @@ def test_run_domain_smoke_calls_create_execution_backend_with_keyword_arg(monkey
         config={},
         production_cap=45,
         use_real_model=False,
+        reference_stage="C0",
     )
 
     assert calls == [{"use_real": False}]
+    assert report["reference_stage"] == "C0"
     assert report["num_instances"] == 1
     assert report["instances"][0]["holdout"] is True
     assert report["instances"][0]["difficulty_tier"] == "easy"
+
+
+def test_reference_stage_by_domain_uses_c1_for_tower_of_hanoi():
+    from scripts.gate_d_manifest_smoke import REFERENCE_STAGE_BY_DOMAIN
+
+    # ToH C0 was found structurally near-0% regardless of configuration (goal-peg-avoidance
+    # bias, not a difficulty problem) -- the corridor is calibrated and frozen against C1.
+    assert REFERENCE_STAGE_BY_DOMAIN["tower_of_hanoi"] == "C1"
+    assert REFERENCE_STAGE_BY_DOMAIN["textworld"] == "C0"
