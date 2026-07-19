@@ -42,6 +42,14 @@ def main() -> None:
     )
     parser.add_argument("--num-disks-range", nargs=2, type=int, default=[3, 4])
     parser.add_argument("--partial-start-range", nargs=2, type=int, default=[0, 3])
+    parser.add_argument(
+        "--partial-start-mode",
+        choices=["optimal_prefix", "random_scramble"],
+        default="optimal_prefix",
+        help="Must match what make_experiment_env() will use to reconstruct instances at "
+        "runtime -- stored per-entry below precisely so the runtime reconstruction reads it "
+        "from the manifest instead of silently defaulting back to 'optimal_prefix'.",
+    )
     args = parser.parse_args()
 
     instances = generate_instances(
@@ -49,6 +57,7 @@ def main() -> None:
         seed=int(args.seed),
         num_disks_range=(int(args.num_disks_range[0]), int(args.num_disks_range[1])),
         partial_start_range=(int(args.partial_start_range[0]), int(args.partial_start_range[1])),
+        partial_start_mode=args.partial_start_mode,
     )
     entries: list[dict[str, Any]] = []
     for i, inst in enumerate(instances):
@@ -60,6 +69,12 @@ def main() -> None:
                 "optimal_steps": int(inst.get("optimal_steps", 0)),
                 "difficulty_tier": _difficulty_tier(int(inst["num_disks"])),
                 "task_generation_seed": int(args.seed),
+                "num_disks_range": [int(args.num_disks_range[0]), int(args.num_disks_range[1])],
+                "partial_start_range": [
+                    int(args.partial_start_range[0]),
+                    int(args.partial_start_range[1]),
+                ],
+                "partial_start_mode": args.partial_start_mode,
             }
         )
     entries.sort(key=lambda x: int(x["instance_id"]))
