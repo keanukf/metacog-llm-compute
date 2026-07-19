@@ -76,6 +76,10 @@ def _format_move(move: Move) -> str:
     return f"{move[0]}->{move[1]}"
 
 
+def _render_peg(disks: list[int]) -> str:
+    return str(disks) if disks else "(empty)"
+
+
 def _parse_action(action: str) -> Move | None:
     text = action.strip()
     if not text:
@@ -126,18 +130,22 @@ class TowerOfHanoiEnv:
     def _render_observation(self) -> str:
         lines = [
             "Current state:",
-            f"  Peg A: {self._state['A']}",
-            f"  Peg B: {self._state['B']}",
-            f"  Peg C: {self._state['C']}",
+            f"  Peg A: {_render_peg(self._state['A'])}",
+            f"  Peg B: {_render_peg(self._state['B'])}",
+            f"  Peg C: {_render_peg(self._state['C'])}",
             "Each peg's disks are listed bottom-to-top, so the last (rightmost) number is the top disk.",
+            "Each number is a disk's size; a larger number is a larger disk (1 is the smallest).",
             f"Goal state: Peg C holds all {self._num_disks} disks, Peg A and Peg B are empty.",
             "Rules: move only the top disk from a peg; never put a larger disk on a smaller one.",
-            "Reply with a single move: peg letters only, e.g. A->C or A to C.",
+            "Reply with a single move: two peg letters, e.g. <source>-><target> or <source> to <target>.",
         ]
         if self._include_valid_moves:
             valid = ", ".join(_format_move(mv) for mv in _legal_moves(self._state))
+            reply_line_idx = next(
+                i for i, line in enumerate(lines) if line.startswith("Reply with a single move")
+            )
             lines.insert(
-                7,
+                reply_line_idx,
                 f"Valid moves: {valid} — choose exactly one of these.",
             )
         if self._error_message:
