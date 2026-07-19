@@ -26,7 +26,7 @@ DEFAULT_VC_FOLLOWUP_INSTRUCTION = (
 )
 
 _SINGLE_LINE_OUTPUT_INSTRUCTION: str = (
-    "Write one valid game action on a single line (examples: go north, take key, inventory). "
+    "Write one valid game action on a single line, in the format already shown above. "
     "Do not explain, add XML tags, or repeat these instructions."
 )
 
