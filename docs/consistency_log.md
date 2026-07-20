@@ -2,6 +2,24 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-20 — Block-Aufteilung aus Gate F gestrichen (Nutzerentscheidung)
+
+**Zweck:** Nach Vorlage der vier offenen Unterfragen (siehe Eintrag oben, "Vier Gate-Aufräumpunkte")
+entschied der User, den WEICH-Punkt komplett zu streichen statt zu klären.
+
+**Begründung (User, bestätigt):** Beide ursprünglichen Zwecke des Punkts — Resume-Grenzen und
+Fehlerisolation — sind seit dem Gate-F-Resume-Fix (PR #23) bereits auf Episoden-Ebene gelöst
+(atomares Schreiben, korrektes `--resume` unabhängig von Domain-Reihenfolge). Eine echte
+Domain-Block-Trennung hätte einen neuen `--domains`-CLI-Flag gebraucht und das Risiko einer
+N=32-Batch-Invarianz-Verletzung bei versehentlich parallelen Blöcken eingeführt — Mehraufwand ohne
+erkennbaren Mehrwert gegenüber dem einfachen Beobachten/ggf. Killen+Resumen des laufenden
+Single-Runs (bereits real getestet, `scripts/gate_f_resume_smoke.py`).
+
+**Go/No-Go-Tabellenzeile Gate F aktualisiert:** Budget/Top-up jetzt korrekt als abgeschlossen
+geführt (war noch als "offen" stehengeblieben), Block-Aufteilung als gestrichen vermerkt.
+
+**Testsuite:** keine Quelländerung (nur Dokumentation).
+
 ## 2026-07-20 — Vier Gate-Aufräumpunkte: [VERIFY]-Zitate raus, Budget-Top-up erledigt, C1/C2-QC-Punkt neu, Block-Aufteilung geklärt
 
 **[VERIFY]-Zitate:** Auf Nutzerwunsch komplett aus `blueprints/gate_p1_readiness.md` entfernt (Gate A,
