@@ -2,6 +2,33 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-20 — Run-Hygiene-Checklisten-Punkt: Dokubug seit 2026-07-14 gefixt
+
+**Zweck:** User fragte nach dem nächsten Schritt für die Gate-F-Run-Hygiene-Checkliste; beim
+Nachlesen fiel auf, dass der HART-Punkt selbst kaputt war.
+
+**Bug:** Commit `5be09f7` (2026-07-14, "feat(logging): add action-window logprob sidecar modes")
+sollte nur die veraltete Sidecar-Aussage ("Sidecars aus für volle Phase 1/2") durch die neue
+Drei-Stufen-Policy ersetzen, hat dabei aber versehentlich den kompletten übrigen Satz (Network
+Volume, Langfuse-Keys, `RESULTS_DIR`, History-Guard, Backend-Einstellungen) durch zwei
+Ellipsen-Platzhalter ("…") ersetzt statt sie stehen zu lassen. Seit sechs Tagen unbemerkt, weil der
+Punkt ohnehin unangehakt und nie einzeln gelesen wurde. Keine Rogue-Agent-Aktion — echter
+Editier-Fehler in einem regulären Feature-Commit, per `git log -p` gefunden.
+
+**Fix:** Ursprünglichen Volltext (aus dem Vorgänger-Commit `22fd887`) mit der neuen
+Sidecar-Policy-Formulierung zusammengeführt: Network Volume, Langfuse/Tracing-Dokumentation,
+`RESULTS_DIR`, History-Guard, `logprob_sidecar_mode: action_window` +
+`logprob_sidecar_full_instances`, batch-invariantes Backend, Evidenz `run_metadata` des ersten
+Phase-1-Blocks.
+
+**Inhaltlich unverändert:** Dieser HART-Punkt lässt sich nicht vorab lokal smoken wie
+Resume-Korrektheit — die Evidenz ist per Definition das `run_metadata.json` des tatsächlichen ersten
+Phase-1-Blocks auf dem Pod. Empfehlung: vor dem vollen 48h-Lauf einen kurzen Pod-Preflight (Modell
+geladen, Secrets/Tracing-Entscheidung, `RESULTS_DIR`, Sidecar-Config, N=32-Batch-Invarianz) als
+Mini-Smoke fahren statt die Prüfung erst live im echten ersten Block zu machen.
+
+**Testsuite:** keine Quelländerung (nur Dokumentation).
+
 ## 2026-07-20 — ToH-Seite der H3-Power-Simulation mit echten Freeze-Korridor-Längen neu gelaufen
 
 **Zweck:** `docs/gate_e_h3_power_simulation.md` (Abschnitt 3) flaggte explizit, dass die ToH-Seite
