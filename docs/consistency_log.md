@@ -2,6 +2,44 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-20 — C1/C2-Qualitätskontroll-Probe gelaufen (real, parallel): ToH/C1 sauber, ein echter C1-Parsing-Fund
+
+**Zweck:** Gate-F-HART-Punkt "C1/C2-Qualitätskontrolle" — 5 Episoden/Zelle, real, gegen die
+eingefrorenen Manifeste, via der parallelisierten `scripts/gate_f_c1c2_quality_probe.py`
+(N=16 gleichzeitig, echter `EpisodeScheduler`/`run_phase1_job`-Pfad). Lief in 3523s (~59 min)
+komplett durch: 20/20 Episoden completed, 0 failed.
+
+**Ergebnis:**
+- **ToH/C1: sauber, keine Befunde.**
+- **ToH/C2 + TextWorld/C2:** je mehrere `thinking_unclosed`-Rejections nach 8192 Tokens — das ist
+  der bereits vorhandene, korrekt funktionierende C2-Ablehnungsmechanismus (ein Kandidat, der sein
+  `<think>` nicht rechtzeitig schließt, wird korrekt aus der Abstimmung ausgeschlossen statt
+  fälschlich gezählt zu werden). Kein Bug, aber ein reales Signal, dass `cot_max_tokens=8192`
+  gelegentlich zu knapp ist, besonders bei längeren, schwierigeren Situationen.
+- **TextWorld/C1: 11 echte Befunde in 2 von 5 Episoden** (`qc_textworld_2_C1`, `qc_textworld_3_C1`).
+  Das Modell verheddert sich in einer sich wiederholenden Denkschleife ("But the player has to
+  proceed... This is a dead end..." endlos wiederholt, siehe Trace-Datei), schließt `</think>`
+  nie, verbraucht das komplette 8192-Token-Budget. Anders als C2 hat C1s Parsing-Pfad **keine**
+  `thinking_unclosed`-Ablehnung — er extrahiert stattdessen den literalen String `'<think>'` als
+  "geparste Aktion", die die Umgebung dann als ungültigen Befehl ablehnt. Realer, aber begrenzter
+  Fund: verschwendet einen Step pro Vorkommnis, keine systemische Korruption der Daten (die
+  Umgebung lehnt den ungültigen Befehl einfach ab, der Schritt zählt als `illegal`). Noch nicht
+  gefixt — bewusst für die nächste Session zurückgestellt (User ging schlafen, Fix an C1s
+  Parsing-Pfad ist ein echter Code-Change, der Review braucht, kein Nacht-Alleingang).
+
+**Voting-Korrektheit bei C2:** Kein einziger Fall, in dem der aufgezeichnete Sieger vom unabhängig
+aus den rohen Stimmen neu berechneten Mehrheitsvotum abwich — das war der eigentliche Kernpunkt
+der Qualitätskontrolle (funktioniert das Voting korrekt?) und ist damit sauber bestätigt.
+
+**Daten:** 3.8 GB, 66 Dateien nach `data/results/gate_f_c1c2_quality_probe/` lokal gesynct
+(gitignored, wie üblich).
+
+**Offen:** C1-Parsing-Pfad um dieselbe `thinking_unclosed`-Behandlung wie C2 ergänzen (nächste
+Session, mit Review). Gate-F-Checkbox bleibt bis dahin offen — der Fund ist real genug, um vor dem
+finalen Abhaken behoben zu werden, auch wenn er die Voting-Korrektheit selbst nicht betrifft.
+
+**Testsuite:** keine Quelländerung (nur Dokumentation).
+
 ## 2026-07-20 — Block-Aufteilung aus Gate F gestrichen (Nutzerentscheidung)
 
 **Zweck:** Nach Vorlage der vier offenen Unterfragen (siehe Eintrag oben, "Vier Gate-Aufräumpunkte")
