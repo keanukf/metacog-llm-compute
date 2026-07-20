@@ -132,6 +132,10 @@ def run_phase1_job(
             script_name="run_phase1.py",
         )
         env = make_experiment_env(domain, inst, ctx.config, ctx.max_steps, ctx.repo_root)
+        # ToH's env may use a per-instance cap (3x optimal_steps) instead of ctx.max_steps
+        # (see src/utils/experiment_env.py) -- read it back so the step loop bound matches what
+        # the env itself will actually allow, instead of silently truncating early.
+        effective_max_steps = int(getattr(env, "max_steps", ctx.max_steps))
         step_cfg = resolve_step_fn_kwargs(ctx.config, domain)
         step_cfg["c2_tie_break_seed"] = ep_id
         hist_keys = {
@@ -161,7 +165,7 @@ def run_phase1_job(
             model,
             stage,
             step_fn=step_fn,
-            max_steps=ctx.max_steps,
+            max_steps=effective_max_steps,
             on_step=on_step,
             save_logprob_distributions=capture_logprobs,
             save_vc_distributions=ctx.save_vc_distributions,
@@ -278,6 +282,10 @@ def run_phase2_job(
             script_name="run_phase2.py",
         )
         env = make_experiment_env(domain, inst, ctx.config, ctx.max_steps, ctx.repo_root)
+        # ToH's env may use a per-instance cap (3x optimal_steps) instead of ctx.max_steps
+        # (see src/utils/experiment_env.py) -- read it back so the step loop bound matches what
+        # the env itself will actually allow, instead of silently truncating early.
+        effective_max_steps = int(getattr(env, "max_steps", ctx.max_steps))
         rng = ctx.rng_for_episode(ep_id)
         on_step = None
         if ctx.verbose_steps and ctx.log_step_fn is not None:
@@ -294,7 +302,7 @@ def run_phase2_job(
             env,
             model,
             strategy,
-            max_steps=ctx.max_steps,
+            max_steps=effective_max_steps,
             rng=rng,
             policy=ep_policy,
             allocate_fn=ctx.allocate_fn,

@@ -127,6 +127,10 @@ class TowerOfHanoiEnv:
         if not self._optimal_solution:
             self._optimal_solution = _shortest_path_to_goal(self._state, self._num_disks)
 
+    @property
+    def max_steps(self) -> int:
+        return self._max_steps
+
     def _render_observation(self) -> str:
         lines = [
             "Current state:",
