@@ -2,6 +2,654 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-19 — ToH-Manifest final eingefroren: 4 Disks, C1-Referenz, `random_scramble`
+
+**Zweck:** Abschluss des Gate-D-ToH-Prozesses (siehe die zahlreichen Einträge der letzten Tage:
+Peg-C-Vermeidungs-Bias, Prompt-Fixes, State-Diversitäts-Proben, Korridor-Läufe). Dieser Eintrag
+dokumentiert die finale Entscheidung und den Freeze.
+
+**Vorgeschichte in Kürze:** C0 zeigte über drei unabhängige, echte Sweeps (n=10 gemischt 3+4 Disks,
+n=20 gemischt zufällig, n=30 gemischt `random_scramble`) konsistent ~0–17 % Erfolg — kein
+Schwierigkeitsproblem, sondern ein reproduzierbarer, per Trace-Analyse belegter Bias (Modell wählt
+den als Ziel benannten Peg nie als Zugquelle). Drei Prompt-Klarstellungen (Zielzustand statt
+Bewegungsanweisung, Disk-Größen-Erklärung, neutrales Format-Beispiel, plus ein Bugfix für ein
+domänenfremdes "go north"-Beispiel im geteilten Prompt-Template) haben den Bias abgeschwächt, aber
+nicht beseitigt — C0 bleibt kein Referenzkandidat. Korridor daher wie schon am 2026-07-17 vermutet
+an **C1** kalibriert.
+
+**Zwei strukturelle Bugs unterwegs gefunden und gefixt** (beide vor dem Freeze kritisch):
+1. Die ursprüngliche Instanzgenerierung (`partial_start_mode="optimal_prefix"`, deterministischer
+   Einzelpfad) besuchte nur `num_disks+1` Zustände — unter der Produktionsverteilung (Disks {3,4},
+   Partial-Start [0,3]) exakt **8 unterscheidbare Puzzles**, unabhängig davon, wie viele "Instanzen"
+   generiert wurden. Neuer Modus `partial_start_mode="random_scramble"` zieht ohne Zurücklegen aus
+   dem vollen, per BFS verifizierten 3ⁿ-Zustandsraum (27/81/243 für 3/4/5 Disks).
+2. `make_experiment_env()` rekonstruierte ToH-Instanzen zur Laufzeit immer mit dem alten
+   `optimal_prefix`-Standard, unabhängig vom Manifest — ein mit `random_scramble` gebautes Manifest
+   wäre zur Laufzeit stillschweigend auf den alten 8-Puzzle-Zustandsraum zurückgefallen. Gefixt:
+   Manifest speichert `num_disks_range`/`partial_start_range`/`partial_start_mode` jetzt pro Eintrag
+   (analog zum bestehenden `task_generation_seed`-Muster), `make_experiment_env()` liest diese
+   bevorzugt aus dem Manifest. End-to-End verifiziert (identischer Zustand bei Rekonstruktion).
+
+**Korridor-Entscheidung — bewusst nur an Erfolgsrate, nicht an AUROC.** Wichtiger methodischer
+Punkt, der während der Session explizit diskutiert wurde: Die Konfigurationswahl (welche Disk-Zahl
+einzufrieren ist) darf sich **nicht** an der späteren AUROC/Signalqualität orientieren — das wäre
+eine Form von Selektion auf die abhängige Variable ("Garden of Forking Paths"), selbst wenn die
+finalen 50 Instanzen aus einer frischen, unabhängigen Ziehung stammen. Ein zwischenzeitlich erwogener
+Filter ("3-Disk-Instanzen mit hoher `optimal_steps`, um gleichzeitig Korridor und gute AUROC zu
+treffen") wurde deshalb **verworfen** — unabhängig davon, dass er sich auch empirisch als Sackgasse
+erwies (der 3-Disk-Zustandsraum deckelt bei 7 Optimalzügen; C1 löst selbst die am weitesten
+entfernten 3-Disk-Zustände zu 75 %, kein nutzbares Schwierigkeitsgefälle).
+
+**Finale Konfiguration:** 4 Disks (fix, nicht {3,4} gemischt — 3 Disks separat getestet: 73 % Erfolg,
+deutlich zu leicht, siehe oben), `partial_start_mode=random_scramble`. Isolierte 4-Disk-Messung
+(n=15, Teilmenge eines n=30-Laufs, Seed 3141): **C1-Erfolg 40 %** — sauber im 30–50-%-Korridor.
+C0 zum Vergleich: 13–20 % je nach Schnitt, weiterhin kein Kandidat.
+
+**Freeze:** `scripts/build_toh_manifest.py --num-instances 50 --seed 271828 --holdout-count 5
+--holdout-policy mod-10 --num-disks-range 4 4 --partial-start-mode random_scramble`. Neuer Seed,
+disjunkt von allen Kalibrierungs-Seeds (42 alter Sweep, 2026 n=20-Lauf, 3141 n=30-Lauf). Verifiziert:
+**50 von 50 Instanzen sind echt unterschiedliche Zustände** (vorher wären es maximal 8 gewesen).
+`optimal_steps`-Spanne 3–15 (Ø 10,2) — reale Schwierigkeitsstreuung. Holdout mod-10 (Instanzen
+0/10/20/30/40), analog zu TextWorld.
+
+**Smoke:** `scripts/gate_d_manifest_smoke.py` war hart auf C0 verdrahtet (hätte für ToH mit
+C1-Referenz immer `Hard-GO: False` geliefert) — gefixt via neue `REFERENCE_STAGE_BY_DOMAIN`-Map
+(`textworld: C0, tower_of_hanoi: C1`). Mock-Lauf über alle 50 Instanzen: `holdout`/`difficulty_tier`
+kommen korrekt an, Referenzstufe korrekt C1. Kein echter Realmodell-Lauf über die vollen 50 gemacht
+(bewusst — die Erfolgsraten-Frage ist über die vier vorherigen echten Sweeps bereits hinreichend
+beantwortet; ein weiterer Lauf hätte hier nur AUROC-Neugier bedient, die laut obigem Prinzip nicht
+die Konfigurationswahl treiben soll).
+
+**Testsuite:** 357 passed (356 + neuer Test für `REFERENCE_STAGE_BY_DOMAIN`).
+
+**Offen:** Freeze-Tag (git tag) selbst noch nicht gesetzt — bewusst Usersache, keine technische
+Restarbeit. Blueprint-Checkboxen entsprechend aktualisiert, aber "Beide Manifeste final" bleibt
+unangehakt, bis der Tag gesetzt ist.
+
+## 2026-07-19 — H3-Power-Simulation mit korrigierter Episodenlängen-Annahme neu gelaufen
+
+**Zweck:** Die H3-Power-Simulation vom 2026-07-17 (`docs/gate_e_h3_power_simulation.md`) hatte für
+TextWorld eine uniforme Episodenlänge **8–15 Steps** angenommen — genau die A-priori-Vorgabe, die
+am 2026-07-18 durch die realen Post-Fix-Sweeps auf **15–40 Steps** revidiert wurde (siehe Eintrag
+"TextWorld-Episodenlängen-Vorgabe korrigiert" weiter unten). Die Power-Simulation nutzte damit eine
+seit gestern bekannt überholte Annahme. Neu gelaufen mit der aktuellen Vorgabe.
+
+**Änderung:** `scripts/h3_power_simulation.py` — `length_mode` für TextWorld von `"uniform_8_15"`
+(`rng.integers(8, 16)`) auf `"uniform_15_40"` (`rng.integers(15, 41)`) umgestellt, Rationale-Text
+in `build_design_cells()` entsprechend aktualisiert. ToH-Seite (Bootstrap aus Pilot-Längen)
+unverändert. Sonst identisches Simulationsdesign (400 Replikate/Zelle primär, 250 sekundär, echte
+`fit_h3_model`-GEE-Fits, Seed `20260717`).
+
+**Ergebnis** (`data/results/gate_e_h3_power/h3_power_simulation_v2.json`), TextWorld/TLE (der
+zentrale konfirmatorische Fall):
+
+| $\beta_{int}$ | Power alt (8–15, α=.05) | Power neu (15–40, α=.05) |
+|---:|---:|---:|
+| −0,10 | 21,5 % | **33,3 %** |
+| −0,15 (moderate Degradation, ~50 % Abschwächung) | 34,8 % | **51,3 %** |
+| −0,20 | 52,3 % | **73,3 %** |
+| −0,30 | 79,0 % | **97,8 %** |
+
+**80-%-Power-Schwelle:** vorher $|\beta_{int}|\approx0{,}307$ (≈102–120 % von $\beta_z=0{,}30$,
+praktisch vollständiger Signalverlust bis Episodenende nötig) → jetzt
+**$|\beta_{int}|\approx0{,}228$ (≈76 % von $\beta_z$)**. Bei moderater Degradation steigt die Power
+von ~35 % auf ~51 % (α=.05) bzw. ~23 % auf ~42 % (α=.025, Holm-konservativ) — ein substanzieller,
+kostenloser Gewinn allein aus der bereits beschlossenen Längen-Korrektur, kein neuer Trade-off.
+
+**Einordnung:** Ändert die grundsätzliche Aussage aus dem 07-17-Report nicht (Interaktionstests
+bleiben strukturell schwerer zu entdecken als Haupteffekte, moderate Degradation bleibt
+unterpowert), verbessert aber die konkrete Zahlengrundlage substanziell. Der 07-17-Report
+(`docs/gate_e_h3_power_simulation.md`) bleibt als historisches Dokument stehen, wird aber um einen
+Verweis auf diesen aktualisierten Lauf ergänzt, damit niemand versehentlich die überholten
+8–15-Zahlen zitiert.
+
+**Testsuite:** keine Quelländerung außerhalb von `scripts/h3_power_simulation.py` (reines
+Analyse-Skript, keine Produktionscode-Berührung); `python -m pytest -q` unverändert 356 passed.
+
+## 2026-07-18 — TextWorld-Instanzen final generiert und Manifest gebaut (Gate D, TextWorld-Teil)
+
+**Zweck:** Nach der n=16-Bestätigung (Eintrag unten) hat der User `r5_i1_take+cook` als finale Zelle
+gewählt (Cooking-Variante näher am "normalen" Spieldesign, bei ohnehin gleichwertigen Zahlen).
+Dieser Eintrag dokumentiert die Umsetzung: die tatsächlichen 50 produktiven Instanzen + Manifest.
+
+**Generierung:** `scripts/generate_textworld_games.py --num-rooms 5 --num-ingredients 1 --cook
+--seed 20260718 --num-instances 50 --output-dir data/tasks/textworld`. Seed bewusst neu gewählt
+(weder Sweep-Seed 42 noch Bestätigungs-Seed 9001), damit die finalen Instanzen unabhängig von der
+Kalibrierung sind. **Überschreibt 5 alte Dev-Fixture-Instanzen** (April, `num_ingredients=2`, auf
+die mehrere generische Dev/Smoke-Configs zeigen — nicht git-getrackt, `data/tasks/` ist komplett
+gitignored, jederzeit neu generierbar; User hat das Überschreiben explizit bestätigt).
+
+**Manifest:** `scripts/build_textworld_manifest.py --holdout-count 5 --holdout-policy mod-10`.
+`mod-10` (Spread-Holdout: Instanzen 0/10/20/30/40) statt `first-n` gewählt — die Thesis-Prosa legt
+die Auswahlpolitik nicht fest, Spread vermeidet den Anschein eines willkürlichen zusammenhängenden
+Blocks. `data/tasks/textworld/difficulty_manifest.json`: 50 Instanzen, `holdout_count=5,
+non_holdout_count=45`, `difficulty_tier`-Verteilung 30× easy / 20× medium (0× hard) — **das ist die
+Solver-Walkthrough-Länge** (Ø 7.98, Max 10 Steps optimal), nicht das empirische Modellverhalten; die
+beiden Zahlen sind unabhängig (siehe Rückfrage des Users dazu) — der Median-Sieg-Step aus der
+n=16-Bestätigung (15) bleibt die relevante Zahl für die H3-Längen-Diskussion, nicht `difficulty_tier`.
+
+**Smoke (`scripts/gate_d_manifest_smoke.py`, Blueprint-Punkt "holdout/difficulty_tier im
+Episode-JSON"):** Erster Lauf schlug fehl — `create_execution_backend(config, use_real_model)` rief
+die Factory positional statt mit dem laut Signatur (`*, use_real: bool`) erzwungenen Keyword auf;
+jeder andere Aufrufer im Repo nutzt bereits `use_real=...`. Nie zuvor ausgeführtes Script, daher nie
+aufgefallen. **Gefixt** (`create_execution_backend(config, use_real=use_real_model)`), Regressionstest
+`tests/test_gate_d_manifest_smoke.py` ergänzt (patcht die Factory und prüft den Keyword-Aufruf sowie
+dass `holdout`/`difficulty_tier` aus einem synthetischen Manifest-Eintrag im Report ankommen — ohne
+echte Spiel-/Modell-Abhängigkeit). Danach mit Mock-Modell über `--domains textworld` (ToH-Manifest
+existiert noch nicht, wäre sonst mit `FileNotFoundError` abgebrochen) auf allen 50 Instanzen
+gelaufen: `holdout`-Flags (0/10/20/30/40) und `difficulty_tier`-Werte kommen korrekt im
+Episode-Report an. **Bewusst kein echter Realmodell-Lauf über alle 50** (das wäre eine zusätzliche
+volle Korridor-Rekonfirmation auf derselben Parameterkombination, die die n=16-Bestätigung bereits
+unabhängig erbracht hat — separate Kosten-/Zeitentscheidung, nicht Teil dieser Plumbing-Prüfung).
+
+**Testsuite:** 353 passed (352 + neuer Regressionstest).
+
+**Offen:** ToH-Konfiguration/Manifest weiterhin nicht final — der Gate-D-HART-Punkt "Beide Manifeste
+final" bleibt bis dahin offen; nur der TextWorld-Teil ist jetzt fertig. Blueprint-Checkbox bewusst
+nicht angehakt (Gate-Status-Entscheidungen sind Usersache, siehe Konvention in diesem Log).
+
+## 2026-07-18 — TextWorld-Korridor-Kandidaten bei n=16 bestätigt: 3 von 4 halten, einer fällt raus
+
+**Zweck:** Die 4 Kandidatenzellen aus dem n=4-Sweep (2026-07-16, Cap 45: `r5_i1_take-only` als
+`best_candidate`, plus die 3 `corridor_candidates` `r5_i1_take+cook`, `r3_i2_take-only`,
+`r5_i3_take-only`) waren zwischen Cap-45- und Cap-70-Lauf nicht stabil (n=4/Zelle zu klein/verrauscht,
+siehe Eintrag "2026-07-16 — Post-Fix-Sweeps"). Bestätigung mit unabhängiger Neu-Stichprobe (n=16,
+eigener Seed statt Wiederverwendung der ursprünglichen 4 Instanzen — echte Replikation, kein
+Extend) via `scripts/validate_textworld_candidate.py` (existierte bereits seit `db5b482`, aber nie
+zuvor ausgeführt), auf dem 5090-Pod, `--real`, Cap 45.
+
+**Ergebnis** (`data/results/gate_d_calibration/textworld_candidate_confirmation/validation_results.json`):
+
+| Zelle | success@Cap (n=16) | Korridor (30–50%) | median_win_step | mean_len_success | Trunkierung |
+|---|---|---|---|---|---|
+| `r5_i1_take-only` | 0.375 | ✅ | 15.0 | 16.0 | 43.8% |
+| `r5_i1_take+cook` | 0.4375 | ✅ | 15.0 | 16.4 | 25.0% |
+| `r3_i2_take-only` | 0.4375 | ✅ | 14.0 | 16.9 | 37.5% |
+| `r5_i3_take-only` | **0.25** | ❌ | 13.5 | 16.5 | 56.3% |
+
+**Befund:** 3 von 4 Zellen bestätigen sich robust im Korridor (37.5–43.75%, sauber um die Mitte
+zentriert). `r5_i3_take-only` — bei n=4 noch bei 50% und als einzige Zelle "inside_length_guidance"
+unter der alten 8–15-Vorgabe — fällt bei n=16 auf 25% und damit unter den Korridor. Genau die
+Instabilität, die der n=4-Vergleich befürchten ließ, jetzt mit echten Daten aufgelöst statt vermutet.
+
+**Bezug zur Längen-Revision (siehe Eintrag "TextWorld-Episodenlängen-Vorgabe korrigiert" unten):**
+Alle 3 überlebenden Zellen liegen mit `median_win_step` 14–15 knapp **an**, nicht komfortabel über
+der neuen 15-Step-Untergrenze — ein Punkt, den man bei der finalen Zellwahl im Blick behalten sollte
+(knapper Puffer zur H3-load-bearing-Grenze), aber `mean_episode_length_success` (16.0–16.9) liegt
+etwas darüber.
+
+**Offen (User-Entscheidung, nicht autonom getroffen):** finale Wahl unter den 3 verbleibenden Zellen
+für den Gate-D-Freeze (50-Instanzen-Generierung). Reiner Zahlenvergleich: `r5_i1_take+cook` hat die
+niedrigste Trunkierungsrate (25%) bei vergleichbarem Erfolg; die drei sind bei n=16 im Rahmen des
+erwartbaren Rauschens praktisch gleichwertig, kein Kriterium sticht klar heraus.
+
+**Testsuite:** keine Quelländerung (nur Datenlauf über bestehendes, ungetestetes-aber-vorhandenes
+Script); kein neuer pytest-Lauf nötig.
+
+## 2026-07-18 — TextWorld-Episodenlängen-Vorgabe korrigiert: 8–15 → 15–40 Steps (A-priori-Zahl durch Post-Fix-Sweep-Daten widerlegt)
+
+**Korrektur zu:** Der in `blueprints/gate_p1_readiness.md` (Gate D, HART-Punkt "TextWorld-Difficulty-Sweep") und `docs/textworld.md` gesetzten Zielvorgabe "8–15 Steps mittlere Episodenlänge", wortgleich zitiert in der Thesis-Prosa (`../metacog-thesis/chapters/05_methodology.md` §5.5.1, dort bislang mit `[PENDING: difficulty calibration]` markiert) und `chapters/outline.md` §5.5.
+
+**Ursprung der alten Zahl:** reine A-priori-Setzung ohne empirische Grundlage (keine Sweep-Daten zum Zeitpunkt der Präregistrierung verfügbar) — vermutlich als "genug Positionsauflösung für H3, aber nicht zu lang" gedacht, nie gegen echte Modelldaten geprüft.
+
+**Widerlegt durch:** die echten Post-Fix-Sweeps (siehe Eintrag "2026-07-16" weiter unten, Config-Wiring-Bug-Fix). `data/results/gate_d_calibration/textworld_sweep/sweep_results.json` (Cap 45): `global_p90_win_step_success = 41.8`; die Zellen, die den 30–50-%-Erfolgskorridor erfüllen (`corridor_candidates` + `best_candidate`), haben `metrics.mean_episode_length_success`-Werte von **11.5, 13.5, 23.0, 41.5** — nur 2 von 4 liegen überhaupt in [8,15], und `ranked_results` zeigt insgesamt, dass praktisch alle Zellen mit realistischem Erfolg (Erfolgsrate ≥ 25 %) bei Sieg-Längen zwischen 5 und 43 Steps liegen, mit einem klaren Schwerpunkt oberhalb von 15. Die Kontroll-Sweep bei Cap 70 (`textworld_sweep_cap70/sweep_results.json`, identische Instanzen/Seed) bestätigt sowohl den fehlenden Floor-Effekt (`global_p90_win_step_success = 40.6`, Trunkierungsrate ähnlich zu Cap 45) als auch dieselbe n=4-Instabilität: dort erfüllen andere Zellen den Erfolgskorridor (Längen 10.5, 12.5, 29.0) als bei Cap 45 — einzelne Instanzen verschieben die Zellauswahl, aber die grobe Größenordnung (>10, oft >15, bis in die 40er) bleibt über beide Caps stabil.
+
+**Warum der alte Zielkorridor strukturell kaum in [8,15] zu treffen war:** Die beiden Sweep-Achsen (Rooms/Ingredients/Operations für Schwierigkeit, Episodenlänge für den nötigen Lösungsweg) sind nicht unabhängig — dieselben Parameter, die C0-Erfolg in den 30–50-%-Korridor senken (mehr Räume, mehr Zutaten, mehr Operationen), verlängern gleichzeitig den nötigen Lösungsweg. Ein starres UND aus "Erfolg 30–50 %" und "Länge 8–15" verlangt de facto eine seltene Koinzidenz zweier gekoppelter Variablen, kein unabhängig erreichbares Ziel.
+
+**Methodische Prüfung — schadet eine längere Episode H3?** H3 ist der Signal-×-`position_norm`-Interaktionstest; die `position_norm`-Formel selbst bleibt unverändert (eingefrorene Invariante, nicht angefasst). Die eigentliche Anforderung hinter der alten 8–15-Zahl ist Positionsauflösung, nicht die Zahl selbst — vgl. Kap. 4 §4.2.2 der Thesis-Prosa, die Tower of Hanoi exakt deshalb als H3-exploratorisch statt konfirmatorisch einstuft ("whose short and near-binary temporal structure limits it as an H3 instrument"; ToH liegt laut `chapters/outline.md` bei 7–15 optimalen Steps). Mit einer Untergrenze von 8 hätte sich TextWorld mit genau dem Bereich überlappt, der für ToH bereits als für H3 unzureichend gilt — die alte Untergrenze war also eher zu niedrig als zu hoch angesetzt. Eine längere Episode erhöht `position_norm`-Auflösung monoton (feinere Schrittweite zwischen 0 und 1) und schadet H3 nicht durch die Länge allein. Die beiden real existierenden Sorgen zu langen Episoden — Solution-Space-Kompression am Episodenende (`gate_p1_readiness.md`, Akzeptiertes Restrisiko #6) und Lost-in-the-Middle unter Full-History-Prompting (Restrisiko #2, Kap. 5 §5.9 der Prosa) — sind beide bereits als akzeptierte, nicht-blockierende Limitationen dokumentiert, unabhängig von der absoluten Episodenlänge; eine Verlängerung auf bis zu 40 Steps macht diese Limitationen graduell sichtbarer, führt aber zu keinem neuen, bisher unbenannten Risiko.
+
+**Neue Vorgabe:** Zielkorridor bleibt **30–50 % C0-Erfolg** (weiterhin HART, unverändert). Längen-Guidance wird zu **15–40 Steps** (mittlere Episodenlänge erfolgreicher Episoden) revidiert und von einem harten UND-Kriterium zu einer weichen Guidance mit einer einzigen load-bearing Grenze abgeschwächt: nur die **Untergrenze (15)** ist load-bearing für H3-Positionsauflösung (siehe Argument oben); die **Obergrenze (40)** ist ein praktischer, weicher Bezugspunkt (deutlich unter dem getesteten Production-Cap 45, verhindert Konfundierung mit Cap-nahen Trunkierungsartefakten), keine zweite harte Bedingung.
+
+**Geänderte Dateien (synchron gehalten):**
+- `blueprints/gate_p1_readiness.md` (Gate D, HART-Punkt "TextWorld-Difficulty-Sweep")
+- `docs/textworld.md` (Sweep-Zielbeschreibung)
+- `../metacog-thesis/chapters/05_methodology.md` §5.5.1 (löst das dortige `[PENDING: difficulty calibration]` auf)
+- `../metacog-thesis/chapters/outline.md` (§5.5-Fokus-Zeile)
+- `../metacog-thesis/notes/thesis_notes.md` (neuer Abschnitt "Coding-Session-Befunde (2026-07-18)")
+
+**Offene Punkte (bewusst nicht entschieden, zur Kenntnis):**
+1. `scripts/gate_d_metrics.py::LENGTH_GUIDANCE = (8, 15)` ist die Code-Konstante, die `sweep_textworld_difficulty.py`s `inside_length_guidance`-Flag und `target_window`-Feld im Sweep-JSON speist — **nicht geändert** (liegt außerhalb des für diese Korrektur beauftragten Scopes: nur Prosa/Docs/Blueprints/Log, kein Code). Muss vor dem nächsten Bestätigungssweep (n=16–20 auf dem Pod) aktualisiert werden, sonst berichtet der Sweep-Output weiterhin gegen die alte Zahl.
+2. Weitere, in dieser Korrektur bewusst nicht angefasste Fundstellen derselben alten 8–15-Zahl (außerhalb des explizit beauftragten Scopes): `blueprints/thesis_design.md` (zwei Stellen, Zeilen ~147/235 — laut `CLAUDE.md` bereits als gegenüber der Kapitel-Prosa veraltet/nachrangig markiert), `docs/gate_e_h3_power_simulation.md` (nutzt 8–15 als Input-Annahme für die am 2026-07-17 bereits abgeschlossene H3-Power-Simulation — historischer Bericht, nicht rückwirkend verändert), `docs/instrument_validation_session.md` (Freeze-Notiz erwähnt 8–15 beiläufig als "§5.5-Ziel"). Falls die Power-Simulation nach dieser Korrektur wiederholt werden soll — die dortige ToH-Vergleichszahl war explizit als "optimistischer Kontextwert gegen den TextWorld-8–15-Korridor" gerahmt, und dieser Rahmen ist jetzt selbst überholt —, ist das eine Entscheidung für den User, nicht hier getroffen.
+3. `../metacog-thesis/notes/thesis_notes.md`, bestehender Eintrag "Long sequential episodes: With 8–15 steps per episode…" (Prompt-Strukturierungs-Begründung, nicht Kapitel-Prosa): historischer, datierter Eintrag, bewusst nicht rückwirkend verändert (Konsistenzlog-Konvention: append-only, keine Geschichtsumschreibung); die Kernaussage (lange Episoden brauchen explizite Tag-Strukturierung) bleibt unter 15–40 Steps unverändert oder sogar verstärkt gültig.
+
+**Nicht angefasst:** `position_norm`-Formel (eingefrorene Invariante, nicht Gegenstand dieser Korrektur); finale Korridor-Zell-Auswahl (separater, laufender n=4→n=16–20-Bestätigungssweep-Schritt, unabhängig von dieser Kriteriums-Korrektur); kein Produktionscode (`src/`) geändert.
+
+## 2026-07-18 — Fix: C2-Tie-Break-RNG-Unabhängigkeit in `run_adaptive_episode`
+
+**Zweck:** Behebt die im Housekeeping-Pass vom 2026-07-17 gefundene, aber bewusst zurückgestellte
+offene Frage #1 (siehe Eintrag darunter): `run_adaptive_episode` (`src/agent/base_agent.py`) baute
+die Step-Funktion über `resolve(stage)` bei **jedem Schritt neu** statt einmal pro Episode. Für C2
+bedeutet das: `get_step_fn("C2", ...)` initialisiert `c2_call_index = 0` als lokale, per Closure
+gekapselte Zählervariable — ein Neuaufbau bei jedem Step setzt diesen Zähler jedes Mal zurück, sodass
+`call_index` in `c2_step_core` (`src/agent/stages/c2.py`) für **jeden** C2-Step derselben Episode
+konstant 0 blieb. Da der Tie-Break-RNG (`_seeded_rng(tie_break_seed, call_index)`) über
+`tie_break_seed` (konstant = `episode_id`) **und** `call_index` geseedet wird, nutzte jeder
+Stimmengleichstand innerhalb derselben Episode exakt dieselbe Zufallsziehung statt unabhängiger
+Ziehungen pro Step.
+
+**Fix:** `run_adaptive_episode` cached die aufgelöste Step-Funktion jetzt pro Stage
+(`step_fn_cache: dict[str, StepFn]`) für die Lebensdauer der Episode, statt sie pro Step über
+`resolve(stage)` neu zu bauen. Für C0/C1 folgenlos (deren Closures sind zustandslos, geprüft am
+Code); für C2 zählt `c2_call_index` jetzt korrekt über die ganze Episode hoch (`0, 1, 2, …`), sodass
+jeder Tie-Break einen unabhängigen Zug bekommt. Phase 1 (`run_phase1_job`) war nie betroffen (baut
+`step_fn` bereits außerhalb jeder Schleife). Kein Rückwirkungsrisiko — Phase 2 lief real noch nicht.
+
+**Test:** neuer Regressionstest
+`tests/test_base_agent_adaptive.py::test_run_adaptive_c2_call_index_increments_across_episode_steps`
+(monkeypatcht `c2_step_core`, erzwingt Strategie `always_c2` über 3 Steps, prüft
+`captured_indices == [0, 1, 2]`; wäre vor dem Fix `[0, 0, 0]` gewesen). Volle Suite:
+**352 passed** (Baseline vor diesem Fix: 351 — siehe Housekeeping-Eintrag).
+
+## 2026-07-17 — Codebase-Housekeeping: fünf parallele Audits (src/agent, environments/signals/execution, analysis, utils, scripts)
+
+**Zweck:** Allgemeine Fehler-/Ungereimtheiten-Suche über die gesamte Codebasis (nicht Gate-D-spezifisch), auf Wunsch parallel zu Sport-Abwesenheit. Fünf Agents in isolierten Worktrees, je ein Modulbereich, mit der Vorgabe: offensichtliche Bugs direkt fixen + testen, alles Design-/Theorie-Relevante (insbesondere die eingefrorenen Invarianten) nur als offene Frage sammeln, nicht selbst entscheiden. Alle Fix-Commits per Cherry-Pick zusammengeführt (ein Merge-Konflikt in `textworld_env.py`-Docstring, inhaltlich sinnvoll vereint). **Volle Suite danach: 351 passed, 0 failed** (Baseline vor diesem Pass: 335).
+
+### Gefixt (8 Commits)
+
+- **`cluster_bootstrap` sortierte NaN/Inf-Bootstrap-Replikate mit** (`src/analysis/inference.py`) — erklärt rückwirkend die im selben Tag im Gate-E-Rehearsal als "unklares Kleine-Cluster-Phänomen" notierte Anomalie (Punktschätzer außerhalb des eigenen CI): an den echten 105004-Pilotdaten reproduziert, 535/5000 Replikate waren NaN. Jetzt werden nicht-endliche Replikate vor der Perzentil-Berechnung gefiltert, effektive Anzahl mitreportiert.
+- **`holm`-Multiplizitätskorrektur fehlte der Monotonie-Schritt** (`src/analysis/inference.py`) — anti-konservativ, noch nirgends verdrahtet, aber die dokumentierte Korrektur für die H1–H4-Familien; vor erster echter Nutzung gefangen.
+- **`_load_merged_config`/`_deep_merge_overlay`** (`scripts/sweep_textworld_difficulty.py`) merge nur eine Ebene tief — ein Overlay-Wert auf einer verschachtelten Ebene hätte Geschwister-Keys stillschweigend gelöscht. Aktuell latent (keine Config trifft diese Tiefe), gleiche Fehlerklasse wie die gestrigen Gate-E-Bugs. Jetzt echter rekursiver Merge.
+- **YAML-Boolean-Falle in `compute_stage_selection.py`**: `compute_stages: no/yes` hätte (da `bool` in Python eine `int`-Subklasse ist) stillschweigend auf 0 bzw. `["C0"]` reduziert statt zu fehlern — dieselbe Fehlerklasse wie der `logprob_sidecar_mode: off`-Bug von heute Morgen. Jetzt expliziter Type-Guard.
+- **`load_pilot_config_with_lmstudio_override` (`src/utils/pilot_config.py`) löste `extends:` gar nicht auf** — **zweite, unabhängige Instanz** desselben Bug-Musters, betrifft `run_pilot.py`, `run_c1_handoff_gate.py`, `benchmark_inference.py`. Live reproduziert: Laden von `configs/dev/gate_d_diagnostic.yaml` über diesen Pfad lieferte eine Config ganz ohne `model`-Key. Jetzt `load_yaml_with_extends()` (gleicher Algorithmus wie oben).
+- **`inspect_gate_d_abort_actions.py` ignorierte den Cap des replayten Sweeps** — Copy-Paste-Divergenz zum Schwester-Script `analyze_gate_d_abort_distance.py`, das den Cap korrekt aus `sweep_results.json` liest. Ohne expliziten `--obs-ceiling` hätte ein Replay der Cap-70-Ergebnisse stillschweigend unter Cap 25 gelaufen. Jetzt Default aus dem Sweep selbst.
+- Totcode-Bereinigung in `token_entropy.py` (zwei byteidentische Branches) und Docstring/Test-Lücke in `textworld_env.py` (undokumentierter `reward<0.0`-Illegal-Fallback ohne Admissible-Cache) — keine Verhaltensänderung, nur Doku + Testabdeckung.
+- Stale Tuple-Arity-Docstrings in `compute_stages.py`/`base_agent.py` ("9-tuple" statt tatsächlichem 10-Tuple inkl. `call_detail`) korrigiert.
+- `docs/scripts.md`: 22 Python- und 2 Shell-Scripts nachgetragen, die seit Gate-C/D-Arbeit fehlten.
+
+### Offene Fragen für den User (bewusst nicht entschieden)
+
+1. ~~**Echter Bug im C2-Tie-Break-RNG für Phase-2-Adaptive-Episoden**~~ — **Gefixt 2026-07-18**, siehe Eintrag oben. `run_adaptive_episode` baute die Step-Funktion bei **jedem Schritt neu** statt einmal pro Episode — dadurch setzte sich `c2_call_index` jedes Mal auf 0 zurück, und jeder C2-Tie-Break **innerhalb derselben Episode nutzte denselben RNG-Seed** statt unabhängiger Ziehungen. Betraf nachweislich `episode_runner.py::run_phase2_job` (alle adaptiven Strategien); Phase 1 war unberührt (baut die Step-Funktion einmalig). Kein Rückwirkungsrisiko (Phase 2 lief real noch nicht).
+2. Toter Eps-Mismatch-Check in `ExecutionConfig.validate_frozen()` — berechnet die Abweichung von `frozen_tle_invariance_eps`, tut dann aber nichts (`pass`). Könnte vergessenes `msgs.append(...)` sein oder bewusst so (Kommentar: "frozen eps is authoritative when set", vermutlich Rückstand der Gate-C-1-N=32-Ausnahme). Sitzt auf der eingefrorenen N/eps-Invariante — nicht angefasst.
+3. Totcode in einem Legacy-VC-Schwellenwert-Pfad (`thresholds.py::derive_stage_thresholds`, nur relevant wenn ein Run kein `holdout`-Feld hat — für echte Phase-1/2-Daten nicht der Fall) und eine rein deskriptive Positions-Binning-Funktion (`calibration_by_step_position`), die `step_index/episode_length` statt der eingefrorenen `position_norm`-Formel nutzt — korrekt als "nicht die konfirmatorische H3-Kovariate berührend" eingeordnet (die nutzt durchgängig `position_norm`), nur zur Kenntnis.
+4. `scripts/probe_vllm_logprobs.py` und `scripts/probe_lmstudio_thinking_toggle.py` nutzen noch den ungefixten `load_yaml_path`-Pfad (nicht den jetzt gefixten `load_pilot_config_with_lmstudio_override`) — geringes aktuelles Risiko (eigenständige Pilot-Configs als Default), aber dieselbe Lücke, falls je auf ein `configs/dev/*.yaml`-Overlay gezeigt.
+
+**Nicht gefunden (positiv zu vermerken):** keine weitere Instanz des `get_step_fn`-ohne-`resolve_step_fn_kwargs`-Wiring-Bugs über die sechs bereits gestern gefixten Scripts hinaus — systematisch an allen `get_step_fn`/`create_execution_backend`/`run_episode`-Aufrufstellen in `scripts/` geprüft.
+
+**Hinweis:** zwei der fünf Worktrees waren versehentlich von einem alten Commit-Stand abgezweigt (vor den gestrigen Gate-D/E-Fixes) und wurden nicht vorab nachgezogen; nur ihre eigenen Fix-Commits wurden per Cherry-Pick übernommen (nicht die ganzen Branches gemerged), um nichts zurückzurollen.
+
+## 2026-07-17 — Gate E (WEICH): H3-Power-Simulation durchgeführt
+
+**Zweck:** `blueprints/gate_p1_readiness.md`, Gate E, WEICH-Punkt „H3-Power-Simulation" —
+§5.8 sieht eine simulationsbasierte Power-Prüfung für die H3-Interaktion (Signal × `position_norm`)
+vor, geseedet mit Pilot-ICC und Entropieverteilung, weil der konfirmatorische GEE-Interaktionstest
+keine geschlossene Power-Formel hat und der Pilot (9–12 Cluster/Domäne) die Interaktion selbst nicht
+verlässlich schätzen kann. Der WEICH-Punkt verlangt „durchführen oder die Limitation aktiv wählen" —
+dieser Eintrag dokumentiert die Durchführung.
+
+**Methode:** `scripts/h3_power_simulation.py` (neu). ICC (zwei Methoden: GEE-`dep_params` primär,
+ANOVA-ICC(1) als Kreuzcheck) und TLE/VC-Verteilung aus den 72 echten Pilot-Episoden
+(`data/results/instrument_validation/phase1_20260714_105004/`, dieselbe Quelle wie
+`docs/gate_e_rehearsal.md`). Echte Monte-Carlo-Simulation (kein geschlossenes Formel-Substitut):
+geclusterte Random-Intercept-Logit-Datensätze unter dem geplanten Phase-1-Design (50 Instanzen/
+Domäne, 5 Runs × 3 Stages gepoolt = 750 Episoden/Domäne) über ein Raster wahrer
+Interaktionseffektgrößen simuliert, jeder Datensatz mit der **echten** Produktionsfunktion
+`src/analysis/inference.py::fit_h3_model` (GEE, Exchangeable, Binomial) gefittet, empirische
+Ablehnrate = Power. 400 Replikate/Zelle (TLE-Hauptraster), 250 (VC-Sekundärraster),
+Multiprocessing über 7 Worker. Typ-I-Fehler-Check bei wahrem Nulleffekt bestätigt die
+Simulationsmaschinerie (Ablehnrate nahe/leicht unter dem nominalen Alpha in allen vier Zellen).
+
+**Ergebnis:** siehe `docs/gate_e_h3_power_simulation.md` für den vollständigen Report
+(Pilot-ICC/Entropie-Anker, Power-Tabellen, 80-%-Kreuzungspunkte, Annahmen). Kernbefund: der
+konfirmatorische TextWorld/TLE-H3-Test erreicht 80 % Power nur für Interaktionseffekte in der
+Größenordnung des vollen Haupteffekts (praktisch vollständiger Signalverlust bis Episodenende,
+$\beta_{int}\approx-0.31$ bei $\beta_z=0.30$); für plausiblere moderate Degradationsgrade
+(25–50 % Abschwächung, $\beta_{int}\approx-0.075$ bis $-0.15$) liegt die Power nur bei ~15–35 %.
+Tower of Hanoi zeigt in der Simulation höhere Power (niedrigere ICC, größerer Haupteffekt-Anker),
+aber mit einer wichtigen Einschränkung: die ToH-Episodenlängen stammen mangels eigenem
+Längenkorridor aus den noch nicht Gate-D-kalibrierten (nahe-Cap) Pilotlängen, während TextWorld
+den bereits definierten 8–15-Step-Zielkorridor nutzt — die ToH-Zahl ist daher ein optimistischer
+Kontextwert, nicht die belastbarste Aussage; ToH ist ohnehin nur exploratorisch (kein
+Holm-Familienschutz).
+
+**Einordnung:** kein HART-Blocker, keine Design-Änderung an diesem Punkt vorgenommen — die
+Simulation liefert eine quantifizierte Grundlage für die Interpretation eines nicht-signifikanten
+H3-Ergebnisses in Kapitel 6/7 (Nullbefund ≠ „keine Degradation", sondern „große Degradation
+ausgeschlossen, moderate bleibt plausibel und unterpowert"), konsistent mit der bereits in §5.9
+benannten Sorge zu Interaktionstest-Power. `blueprints/gate_p1_readiness.md`s WEICH-Checkbox-Zeile
+trägt jetzt einen Verweis auf diesen Eintrag; die Checkbox selbst bleibt unangetastet (offen), da
+keine Gate-Entscheidung getroffen wurde.
+
+**Testsuite:** keine Quelländerung außerhalb von `scripts/` und `docs/`; `python -m pytest tests/ -q`
+nicht erneut nötig, da kein Produktionscode berührt wurde (nur ein neues, eigenständiges Analyse-
+Skript, das ausschließlich bestehende, bereits getestete Funktionen (`load_run_dataset`,
+`fit_h3_model`) aufruft).
+
+## 2026-07-17 — C2-Tie-Break quantitativ geprüft: User-Hypothese (Temperatur-Diversität schlägt einzelne korrekte Kandidaten) selten, dominanter Effekt liegt vor der Abstimmung
+
+**Zweck:** Quantitative Nachprüfung der gestrigen qualitativen Beobachtung ("in den Traces wählte
+Voting teils einstimmig eine geteilt-falsche Aktion", Eintrag "Korridor-Kriterium korrigiert" oben)
+und einer eigenständigen Nutzerhypothese: schlägt C2s Sampling-Temperatur gezielt einen einzeln
+korrekten Kandidaten gegen zwei unabhängig-falsche zusammenlaufende Kandidaten? Bisher nur an n=2
+Episoden eyeballed, nicht gemessen.
+
+**Methode (Replay, kein Proxy):** Für beide verfügbaren C2-TextWorld-Traces mit vollem
+Per-Step-Log (`trace_trace_tw_C2_{0,1}.jsonl` — es existieren nur diese zwei aus der gestrigen
+`gate_d_trace_probe.py`-Session, keine weiteren) wurden die exakt gleichen TextWorld-Spiele
+deterministisch neu generiert (`_generate_combo_games` mit identischem Seed/Params) und
+byte-identisch gegen die gespeicherte `reset_observation` verifiziert. Anschließend Replay der
+**tatsächlich committeten** Aktionsfolge durch `TextWorldEnv.step()` — Korrektheitslabel und
+Quest-Distanzen stimmen für **alle 27 Steps** (19+8) exakt mit den gespeicherten
+`step_correctness`-Einträgen überein (kein einziger Abweicher), bevor der Ansatz auf die
+**Kandidaten**-Branches angewendet wurde: pro Step wird der Replay bis zum Pre-Step-Zustand
+wiederholt und für jeden der 3 rohen `subcalls[i].action_exec`-Kandidaten separat ein
+`env.step(candidate)` ausgeführt — dieselbe `_classify_quest_correctness`/Illegal-Logik, die die
+Produktions-Pipeline für die committete Aktion nutzt, jetzt pro Kandidat statt nur für den Gewinner.
+Kein Proxy-Fallback nötig. Wegwerf-Skript unter `/tmp` (nicht committed, kein Produktionscode
+berührt).
+
+**Ergebnis (n=27 Steps, 81 Kandidatenaktionen, 2 Episoden — explizit klein):**
+
+| Kennzahl | Wert |
+|---|---|
+| Kandidatenlabel-Verteilung (81 Aktionen) | illegal 37,0 %, legal 29,6 %, **optimal 19,8 %**, unlabeled 8,6 %, leer/unparsebar 4,9 % |
+| Steps mit 0 korrekten Kandidaten (von 3) | **20/27 (74 %)** |
+| Steps mit genau 1 korrektem Kandidaten (User-Szenario) | **1/27 (3,7 %)** |
+| — davon: einzeln-korrekter Kandidat verliert die Wahl/Tie-Break | **1/1** (einziges Vorkommen) |
+| Steps mit ≥2 korrekten Kandidaten | 6/27 — Gewinner in **6/6** korrekt |
+| `tie_broken=True` (RNG-Tie-Break aktiv) | 10/27 (37 %) — deckt sich mit der gestrigen "7/19"-Beobachtung (ep0: exakt 7/19) |
+| — davon Tie-Break landet auf korrektem Kandidaten | **0/10** |
+
+**Befund:** Der Tie-Break selbst hat in dieser Stichprobe **nie** einen korrekten Kandidaten
+verworfen — in allen 10 Tie-Break-Fällen war bereits keiner der 3 Samples optimal, die RNG
+arbitriert also unter bereits gleichwertig-suboptimalen Exploration-Aktionen (`examine`, `look`,
+`go west` an nicht-quest-relevanten Abzweigungen), nicht zwischen richtig und falsch. Die
+Nutzerhypothese (temperaturgetriebene Diversität lässt eine korrekte Probe gegen zwei unabhängig
+falsche verlieren) trat **genau einmal** auf (`trace_tw_C2_0`, Step 11: `go east` optimal vs. `go
+north`×2 legal, 2:1-Mehrheit gegen die korrekte Aktion) — real, aber mit n=1 nicht verallgemeinerbar.
+Der weit dominantere Effekt (74 % aller Steps) ist, dass **keiner** der 3 C2-Samples überhaupt eine
+optimale Aktion trifft — das Problem liegt vor der Abstimmung, nicht in ihr.
+
+**Gegenprobe zur "gemeinsamer Konsens beendet Episode vorzeitig"-Theorie:** Beide getraceten
+C2-Verluste enden an Steps mit game-endendem `lost=True` (`trace_tw_C2_1` Step 7: einstimmig 3/3
+`cook yellow onion with stove`, unlabeled/lost). Der C1-Sibling-Trace **auf demselben Game-Instance**
+(`trace_tw_C1_1`, ein einzelner Sample, keine Abstimmung) trifft an **exakt demselben Step dieselbe
+verlierende Aktion** — die Ursache ist ein geteilter Modell-/Parser-Kompetenzengpass (Onion nie
+erfolgreich genommen/geschnitten über 6 vorangehende Illegal-Versuche), keine C2-spezifische
+Konsens-Verstärkung durch das Voting selbst.
+
+**Fazit:** Weder die Tie-Break-Hypothese noch die Konsens-Termination-Hypothese sind in dieser
+Stichprobe die primäre Erklärung für C2 < C1 bei TextWorld — beide sind reale, aber seltene/geteilte
+Randeffekte. Der Haupttreiber scheint eine Generierungs-Abdeckungslücke zu sein (die optimale Aktion
+wird in 74 % der Steps in keiner der 3 Samples überhaupt vorgeschlagen), gemeinsam mit C1. **Kein
+Signifikanztest möglich** — n=2 Episoden, n=1 Zielereignis. Für echte Konfidenz bräuchte es einen
+größeren C2-Trace-Sweep (Größenordnung 25–40 Episoden / 500+ Steps, um bei der beobachteten
+~4-%-Basisrate auf ≥20 Zielereignisse zu kommen) sowie gepaarte C1-Traces auf denselben
+Game-Instanzen, um den geteilten-Kompetenz-Confound sauber zu trennen.
+
+**Nicht angefasst:** Kein Produktionscode geändert (reine Read-only-Analyse bestehender Traces).
+Keine Gate-D/E-Statusänderung — dies ist eine Verfeinerung einer bereits dokumentierten
+Beobachtung, kein neuer Blocker.
+
+## 2026-07-17 — Rückwirkungs-Check: Gate-E-Bugfixes betreffen keine bereits berichteten Gate-D/C-Ergebnisse
+
+**Zweck:** Die drei im Gate-E-Rehearsal gefundenen Bugs (siehe Eintrag unten) verifiziert gegen
+"hätte das ein vorher als sauber berichtetes Ergebnis verfälscht?" — per Grep auf tatsächliche
+Aufrufer, nicht nur Vermutung.
+
+- **`extends`-Overlay-Bug** (`run_phase1.py`/`run_phase2.py`): kein einziges Gate-D-Sweep-/
+  Feasibility-Script importiert diese Funktion — alle nutzen die korrekte `_load_merged_config` aus
+  `sweep_textworld_difficulty.py`. Unberührt.
+- **`logprob_sidecar_mode: off`-Crash** (`LogprobSidecarConfig.from_logging_config`): Aufrufer sind
+  ausschließlich `episode_runner.py`, `run_phase1.py`, `run_phase2.py`, `smoke_parallel.py` —
+  keines davon lief gestern. Wäre zudem ein **Crash**, kein stiller Fehler — nichts ist gestern
+  gecrasht.
+- **`load_run_dataset` verwirft Phase-2-Episoden:** betrifft nur episodenweise `strategy`-Daten;
+  solche existierten vor dem heutigen Gate-E-Rehearsal nicht (Phase 2 läuft real noch nicht). Die
+  Gate-C-Nutzung von `diagnose_tle_distribution.py` auf `105004` ist Phase-1-förmig
+  (`compute_stage`-Feld vorhanden) und damit ebenfalls unberührt.
+
+**Fazit:** Alle drei Bugs sind in genau der Session aufgetreten, die sie auch gefangen hat — keine
+Korrektur an früher berichteten Zahlen nötig.
+
+## 2026-07-17 — Gate E: Analyse-Rehearsal (End-to-End-Trockenlauf) auf Gate-C-Pilotdaten
+
+**Zweck:** Der zweite HART-Punkt aus Gate E — kompletter Trockenlauf der konfirmatorischen Kette
+Episode-JSONs → Step-Tabelle → `grid_search_thresholds` → Policy-Artefakt → `load_policy` →
+`run_phase2.py`-Smoke (`adaptive_tle`, Mock) → `cluster_bootstrap` auf ΔAUROC(TLE, VC) — auf den 72
+echten Gate-C-Episoden (`data/results/instrument_validation/phase1_20260714_105004/`), **vor**
+echten Phase-1-Daten. Voller Bericht mit Zahlen: [`docs/gate_e_rehearsal.md`](gate_e_rehearsal.md).
+
+| Bereich | Ergebnis |
+|---------|----------|
+| Step-Tabelle (`datasets.py`) | **OK** — 72 Episoden → 1363 Steps, 0 fehlende Spalten |
+| Künstlicher Holdout-Split | **Workaround** — instance<3/12 je Domäne (25 %, nicht die realen 5/50); begründet in `gate_e_rehearsal.md` §1 |
+| Grid-Search + Policy-Artefakt | **OK** — `objective_definition=step_level_proxy_v1`, `theta1=0.8`/`theta2=0.9` in allen 4 Domäne×Signal-Zellen (Extremwert-Beobachtung notiert, kein Bug) |
+| `load_policy` Sanity | **OK** — stage-wise ECDF lädt, low/mid/high-Probe → C0/C0/C2 in beiden Domänen |
+| `run_phase2.py`-Mock-Smoke | **OK** — 12/12 Episoden, 0 Fehler, Policy-Artefakt-SHA-256 in `run_metadata.json` |
+| `cluster_bootstrap`(ΔAUROC) | **OK** — gepoolt point=0.101, 90 %-CI [0.047, 0.157], n=1018 Steps/18 Cluster |
+| **Fund 1:** `run_phase1.py`/`run_phase2.py::load_config` ignorierte `extends` | **Fixed** — beide nutzen jetzt `scripts.sweep_textworld_difficulty._load_merged_config` (wie die vier Gate-D-Diagnoseskripte bereits) |
+| **Fund 2:** YAML-Falle `logprob_sidecar_mode: off` → Python-Bool `False` → `ValueError` | **Fixed** — `_normalize_mode` (`src/utils/logprob_sidecar.py`) behandelt `False` explizit als `"off"`; betraf 6 bestehende Dev-Configs, bisher nie ausgelöst |
+| **Fund 3:** `load_run_dataset` verwarf jede Phase-2-Episode still (kein `compute_stage`) | **Fixed** — `_validate_episode_record` akzeptiert `compute_stage` **oder** `strategy`; Regressionstest ergänzt |
+| Testsuite lokal | **OK** — `python -m pytest tests/ -q` → **335 passed**, 0 skipped |
+
+**Nicht angefasst:** `blueprints/gate_p1_readiness.md` Gate-E-Checkbox (Status-Entscheidung bleibt beim
+Nutzer, beide Gate-E-HART-Punkte — Pre-Analysis-Screen separat, dieses Rehearsal hier — sind jetzt mit
+Evidenz belegt).
+
+## 2026-07-17 — ToH-Repräsentationskonvention: Bottom-to-Top-Leserichtung der Peg-Listen expliziert
+
+**Problem:** Die ToH-Beobachtung zeigt den Zustand als `Peg A: [3, 2, 1]`, sagte aber nie, **welches
+Listenende die "oberste" Scheibe** ist (die einzige bewegbare). Der Code behandelt das *letzte*
+Listenelement als top (`state[src][-1]` in `_legal_moves`/`_apply_move`), diese Konvention wurde dem
+Modell jedoch nie genannt. Ohne sie kann ein kleines Modell die eigene Zuglegalität nicht
+selbstprüfen (Größenregel), was den bekannten C0-Nullbefund (Illegal-Rate 75–89 %, wiederholtes
+Anbieten desselben illegalen Zugs gegen unveränderten Zustand — Diagnose 2026-07-16) mit-erklärt.
+
+**Fix:** Eine reine Repräsentationsaussage in `TowerOfHanoiEnv._render_observation`
+(`src/environments/tower_of_hanoi.py`), direkt unter den drei Peg-Zeilen:
+`"Each peg's disks are listed bottom-to-top, so the last (rightmost) number is the top disk."`
+Die Renderfunktion ist die **einzige** Stelle, an der die Listendarstellung erscheint, und wird von
+`reset()` **und** `step()` geteilt → Konvention erscheint automatisch in jeder Beobachtung über
+C0/C1/C2 (kein zell-/schwierigkeits-/stufenspezifischer Prompt-Variant). Kein Eingriff in
+`domain_prompts.tower_of_hanoi.prefix`; der Prefix zeigt die Liste gar nicht, dort fehlt der Anker.
+`configs/dev/gate_d_calibration.yaml` und `gate_d_diagnostic.yaml` überschreiben `domain_prompts`
+nicht (nur `extends`), erben den Fix also identisch.
+
+**Verortung (analog TextWorld-Vokabular-Fix 2026-07-15, gleiches DV-Schutz-Prinzip):** TextWorld
+editierte den Config-`prefix`, weil dort die Beobachtung roher Engine-Text ist, den wir nicht
+autoren — der Prefix ist die einzige autorisierbare Fläche. ToH autort die Beobachtung selbst und
+dupliziert Regeln/Ausgabeformat bereits in `_render_observation`; die konsistente Stelle für die
+Leserichtung ist daher die Renderfunktion, direkt neben den Daten.
+
+**Abgrenzung (DV-Schutz):**
+- Reine Repräsentationsaussage (**wie** die Liste zu lesen ist), **kein** Zugbeispiel. Das bestehende
+  Ausgabeformat-Beispiel `e.g. A->C` (nur Syntax `[source]->[target]`) bleibt unverändert; es wurde
+  bewusst **kein** neues Peg-zu-Peg-Zugbeispiel ergänzt (Priming-Risiko auf gezeigte Pegs/Richtung).
+- Nennt **keine** legalen/admissiblen Züge, keine Strategie, keinen Zielpfad. `include_valid_moves`
+  bleibt `false` und unberührt; die Zugauswahl bleibt vollständig generativ.
+- Verbindet lediglich die bereits vorhandene Regel "move only the top disk" mit der Frage, welche
+  Scheibe das ist — ermöglicht Selbstprüfung der Legalität, nicht die Zugwahl.
+
+**Bewusst nicht geändert:** `domain_prompts.tower_of_hanoi.prefix` (kein Listen-Anker),
+Parsing (`_parse_action`), Label-Logik (`correctness`), TextWorld (unberührt).
+
+**Test:** `tests/test_07_tower_of_hanoi.py` — neue Fälle
+`test_env_reset_states_bottom_to_top_convention`, `test_env_step_observation_repeats_convention`
+(Konvention in Reset- **und** Step-Beobachtung) sowie erweiterter
+`test_env_reset_can_include_valid_moves_opt_in` (Insert-Index-Shift geprüft: `Valid moves:` bleibt
+vor der Reply-Format-Zeile). **Volle Suite: 332 passed** (`python -m pytest tests/ -q`).
+
+**Kein Empirie-Lauf:** Strukturell/Unit-getestet; die Verhaltenswirkung auf den C0-Nullbefund
+(Pod/vLLM) ist bewusst ein separater Folge-Schritt, nicht Teil dieser Änderung.
+
+## 2026-07-17 — Korridor-Kriterium korrigiert: kein striktes C0<C1<C2-Gefälle verlangen
+
+**Korrektur zu:** Dem am 2026-07-16 vorgeschlagenen Zwei-Teil-Korridor-Kriterium (Opus-Analyse).
+Teil (b) forderte ein "nachgewiesenes C0<C1<C2-Erfolgsgefälle" — das ist durch die eigenen Befunde
+widerlegt: TextWorld zeigt C1 (100%) > C2 (50%) in `r3_i1_take-only`, ToH zeigt C1=C2 (62,5%
+gleichauf). C2 schlägt C1 in keiner bisher getesteten Zelle. **Korrigiertes Kriterium:** "C0
+deutlich unter {C1, C2}", ohne strikte Reihenfolge zwischen C1 und C2 zu verlangen.
+
+**Bezug:** Der C1>C2-Befund ist theoretisch bereits durch Koriats Self-Consistency-Modell der
+Konfidenz und die zitierte Uncertainty-Collapse-Literatur (Kap. 2 der Thesis) erklärbar — Konsens
+unter Selbstkonsistenz-Sampling spiegelt Übereinstimmung, nicht Korrektheit; in den Traces wählte
+Voting teils einstimmig eine geteilt-falsche Aktion. **Entschieden (2026-07-17, User): 3
+Compute-Stufen bleiben** (Option B statt Reduktion auf 2) — Reduktion wäre unter Zeitdruck netto
+mehr Schreibarbeit gewesen (betrifft H2/Always-C2-Baseline, Baseline-Tabelle, C2-Methodik). Nur noch
+Prosa-Umsetzung offen (Kap. 5 Tab. 5.1 "Upper Bound" → "höchste Compute-Stufe" abschwächen, C1>C2
+theoretisch verankern) — Details in `../metacog-thesis/notes/thesis_notes.md`
+("Coding-Session-Befunde (2026-07-17)"). Keine weitere Code-Entscheidung nötig.
+
+## 2026-07-16 — ToH C0/C1/C2-Feasibility: C0-Nullbefund löst sich unter Reasoning auf
+
+**Zweck:** Direkte Anschlussfrage an den ToH-C0-Nullbefund (siehe Eintrag unten): löst sich das durch
+Reasoning auf, wie bei TextWorld? Kein bestehendes Script deckte ToH bei C1/C2 ab
+(`sweep_toh_difficulty.py` ist C0-only); dafür Einweg-Script `toh_feasibility.py` (nicht ins Repo
+committed, nur der Ergebnis-JSON) gebaut: 8× 3-Disk-Instanzen (seed 42, `partial_start_range=(0,3)`,
+`max_steps` pro Instanz = `optimal_steps*3`), `configs/dev/gate_d_calibration.yaml`,
+`resolve_step_fn_kwargs` korrekt verdrahtet.
+
+`data/results/gate_d_calibration/toh_feasibility/toh_feasibility_report.json`:
+
+| Stage | Erfolg |
+|---|---|
+| C0 | 0/8 = 0,0 % |
+| C1 | 5/8 = 62,5 % |
+| C2 | 5/8 = 62,5 % |
+
+**Befund:** Der C0-Nullbefund ist kein Bug und keine unlösbare Aufgabe — er ist reine
+C0-Schwäche (kein Reasoning). Mit Reasoning (C1) springt der Erfolg auf 62,5 %, weit über den
+30–50-%-Zielkorridor. **Anders als bei TextWorld liegen C1 und C2 hier gleichauf** (kein C1>C2-Gap;
+vgl. TW-Feasibility unten: C1 100 %, C2 50 %). Alle C0-Episoden liefen exakt bis zum jeweiligen
+Instanz-Cap durch, ohne zu gewinnen (`episode_length_steps == max_steps` in allen 8 Fällen) — passt
+zur schon bekannten hohen Illegal-Rate (75–89 %) aus dem C0-Sweep: die Aktionswahl selbst ist ohne
+Deliberation kaum brauchbar, nicht die Aufgabenschwierigkeit an sich.
+
+**Konsequenz für Gate D:** ToH-Schwierigkeitskalibrierung braucht vermutlich C1 oder C2 als
+Referenzstufe, nicht C0 — 3 Disks bei C0 ist strukturell zu hart für den 30–50-%-Korridor. Das ist
+eine Design-relevante Beobachtung (keine autonome Entscheidung getroffen, nur dokumentiert).
+
+## 2026-07-16 — Post-Fix-Sweeps (Pod, 4ac4431): Korridor-Kandidaten, ToH-Nullbefund, C1>C2
+
+**Kontext:** Erste echte Sweeps auf dem korrekt verdrahteten Code (siehe Eintrag unten), 5090-Pod,
+`--real`, alle mit `--config configs/dev/gate_d_calibration.yaml` bzw. `gate_d_diagnostic.yaml`.
+
+### TextWorld C0 Corridor-Sweep (27 Zellen × 4 Instanzen, `--runtime-max-steps 45`)
+
+`data/results/gate_d_calibration/textworld_sweep/sweep_results.json`. Production-Cap-Ableitung: 45
+(≈ obs_ceiling). **WARNUNG aus dem Script selbst:** Trunkierungsrate 68,5 % (Schwelle 5 %) → p90
+potenziell downward-biased. Top-Kandidaten (success@Cap=0.500): `r5_i1_take+cook`,
+`r3_i2_take-only`, `r5_i3_take-only`.
+
+**Kontrollmessung mit Cap 70** (`data/results/gate_d_calibration/textworld_sweep_cap70/`,
+gleiche Instanzen/Seed): Trunkierungsrate **steigt** leicht auf 70,4 % statt zu sinken.
+**Schlussfolgerung: kein Floor-Effekt** — gescheiterte Episoden hängen strukturell fest
+(Loops/Halluzinationen), nicht Step-Budget-limitiert. Höherer Cap ändert am Bild nichts;
+45 reicht für die Korridor-Entscheidung, muss nicht weiter erhöht werden. Neue Top-Kandidaten bei
+Cap 70 (success@Cap=0.500): `r5_i3_take-only`, `r3_i1_take+cut+cook`, `r7_i2_take-only` — teils
+andere Zellen als bei Cap 45, Kandidatenlage also nicht über beide Läufe stabil (n=4/Zelle ist klein
+und verrauscht; vor Freeze ggf. n erhöhen für die engere Auswahl).
+
+### Tower of Hanoi C0-Sweep (`--instances-per-combo 10`)
+
+`data/results/gate_d_calibration/toh_sweep/sweep_results.json`. **0,0 % Erfolg bei 3 UND 4 Disks**,
+Illegal-Rate 75,9 % (3 Disks) bzw. 89,3 % (4 Disks). Deutlich schlechter als TextWorld C0 und noch
+nicht eingeordnet, ob das echte Schwierigkeit oder eine ToH-spezifische Prompt-/Parsing-Lücke ist
+(anders als TextWorld hat ToH kein Reasoning-Vokabular-Problem, aber ggf. andere Parsing-Eigenheiten
+der `A->C`-Ausgabe). **Offen — braucht C1/C2-Vergleich, den es für ToH noch nicht gibt** (nur
+`sweep_toh_difficulty.py`, C0-only by design).
+
+### TW C0/C1/C2-Feasibility (r3_i1_take-only, n=8, Cap 45)
+
+`data/results/gate_d_diagnostic/feasibility/feasibility_report.json`. **C0: 37,5 % (3/8)** — liegt
+im 30–50-%-Zielkorridor. **C1: 100 % (8/8)** — deutlich über Korridor, Reasoning löst diese Zelle
+fast immer. **C2: 50 % (4/8)** — auffällig **niedriger als C1** trotz mehr Compute
+(Self-Consistency, N=3). Erste direkte Post-Fix-Evidenz für einen genuinen C1>C2-Befund, nicht durch
+den Wiring-Bug erklärbar (der ist ja gefixt).
+
+### Trace-Probe (6 Episoden, volle Token-Kette inkl. Reasoning-Text)
+
+`data/results/gate_d_calibration/trace_probe/` (`trace_*.json` + `traces/trace_*.jsonl` mit
+komplettem Prompt/Response pro Schritt, inkl. `<think>`-Blöcken). Ergebnis: TW-C1 1/2 (Sieg bei 39
+von 45 Schritten — knapp), TW-C2 0/2, ToH-C0 0/2. Bestätigt den C1>C2-Befund nochmal auf kleiner
+Stichprobe. **Diese Traces sind für eine manuelle Reasoning-Text-Analyse (warum verliert C2 gegen
+C1? was passiert bei den ToH-Fehlschlägen konkret?) noch nicht ausgewertet — nur die
+Erfolg/Miss-Zahlen liegen vor.**
+
+### Offene Fragen für nach der Session (keine autonome Entscheidung getroffen)
+
+- ToH C0-Nullbefund: braucht C1/C2-Vergleich, ggf. leichtere Konfigurationen (partial_start) vor
+  einer Domain-Viability-Entscheidung.
+- TW-Korridor-Kandidaten sind zwischen Cap-45- und Cap-70-Lauf nicht stabil — vor Manifest-Freeze
+  mit größerem n (statt 4) bestätigen.
+- Der C1>C2-Befund (auch strukturell durch die Traces bestätigt) ist eine echte, interessante
+  Eigenschaft dieser Aufgabe/dieses Modells — noch nicht durch Reasoning-Text-Lektüre erklärt.
+- Inventar-Beobachtbarkeits-Frage (siehe oben, 2026-07-16 Parser-Audit-Kontext) weiterhin
+  unangetastet, wartet auf explizites Go.
+
+## 2026-07-16 — Gate D diagnostic scripts: missing config wiring silently capped C1/C2 at ~128 tokens
+
+**Problem:** Sechs Gate-D-/Sweep-Dev-Scripts riefen `get_step_fn(stage)` ohne
+`resolve_step_fn_kwargs(config, domain)` auf. Ohne die aufgelösten Kwargs fiel
+`domain_prompts.<domain>.prefix` auf einen leeren Prompt zurück, und `cot_max_tokens`
+fiel von den konfigurierten 8192 auf den internen Nofallback `max(128, action_max_tokens*2)`
+≈ 128 Token — für C1/C2 (natives Thinking) faktisch unbrauchbar.
+
+**Betroffen:** `run_gate_d_feasibility.py`, `inspect_gate_d_abort_actions.py`,
+`analyze_gate_d_abort_distance.py`, `gate_d_manifest_smoke.py`,
+`sweep_textworld_difficulty.py` (der ursprüngliche 216-Episoden-Sweep selbst),
+`sweep_toh_difficulty.py`. **Nicht betroffen:** `src/execution/episode_runner.py`
+(Phase-1/2-Produktionspfad) und `run_c1_handoff_gate.py` — beide bereits korrekt verdrahtet.
+
+**Live-Beleg (Pod, `r3_i1_take-only`, 2 Instanzen):** Vor dem Fix brach C1 bei jedem
+Step auf die wörtliche Aktion `"<think>"` ab, C2 auf eine leere Aktion — 0/6 Erfolge über
+C0/C1/C2. Nach dem Fix (`prompt_prefix` nicht-leer, `c1_cot_max_tokens=c2_cot_max_tokens=8192`):
+2/6 echte Siege (C1 in 16 Schritten, C2 in 23), beide über `prepare meal → eat meal` mit
+korrekter `won`/`done`-Terminierung. Kein Terminierungs-Bug — der frühere Verdacht dazu ist
+damit ebenfalls entkräftet.
+
+**Fix:** Alle sechs Scripts nutzen jetzt `resolve_step_fn_kwargs(config, domain)` +
+neue Konstante `HISTORY_CFG_KEYS` (`src/utils/step_config.py`) statt eines pro Script
+duplizierten Key-Sets. Scripts sind gefixt, aber **noch nicht neu laufen gelassen**
+(zeitlicher Aufwand, Entscheidung steht aus).
+
+**Konsequenz — Baseline-Hygiene:** Alle vor diesem Fix erzeugten Gate-D-Ergebnisse
+(`feasibility_report.json`, `textworld_sweep/sweep_results.json`,
+`textworld_abort_distance/`, `textworld_abort_action_inspection*/`) spiegeln den
+~128-Token-Deckel bei C1/C2 wider und dürfen **nicht** zur Beurteilung von C1/C2-Schwierigkeit
+oder -Machbarkeit herangezogen werden. Das gilt zusätzlich zur bereits bekannten
+Vokabular-Baseline-Einschränkung vom 2026-07-15.
+
+**Nächster Schritt:** Sweeps mit den gefixten Scripts neu laufen lassen, sobald Zeit/Scope
+entschieden ist.
+
+## 2026-07-15 — FREEZE-REVIEW: TextWorld static prompt vocabulary completeness
+
+**Problem:** Die statische TextWorld-Template-Liste in `domain_prompts.textworld.prefix` deklarierte eine geschlossene erlaubte Kommandomenge (`Use only parser commands from the templates below` / `valid forms`), schloss aber lösungsnotwendige Aktionsklassen aus: Finish-Sequenz (`prepare meal`, `eat meal`) und cut-Varianten (`chop`/`slice`/`dice [object] with [tool]`). Das konfundiert Instruktionsbefolgung mit Aufgaben-Misserfolg.
+
+**Beleg:** Generator-Walkthrough-Audit über 27 Rasterzellen (`scripts/audit_textworld_prompt_vocabulary.py`, `data/results/gate_d_calibration/textworld_vocab_audit.json`): `prepare meal` und `eat meal` in 27/27; cut-Varianten in cut-Zellen.
+
+**Fix:** Template-Liste um genau diese fünf Formen ergänzt (`configs/experiment_core.yaml`), identisch über alle Zellen. `close [container]`, `look`, `put [object] in [container]` bleiben (legal, ggf. auf anderen Ziehungen lösungsnotwendig).
+
+**Abgrenzung (DV-Schutz):**
+- Kein admissible-commands-Einschluss; `include_admissible_commands: false` unverändert.
+- Generative Aktionswahl unverändert — statische Verb-Grammatik, keine zustandsabhängige Liste.
+- `fry`/`roast`/`grill` nicht im Walkthrough (nur `cook`); halluziniertes `fry` bleibt Planungsfehler in der DV.
+- Synonym-Fix (`look inventory` → `inventory` wenn admissible) separat dokumentiert (Eintrag Parser-Synonym).
+
+**Bewusst nicht im statischen Vokabular:** `put [object] on [surface]`, `insert [object] into [container]` — admissible-only, nicht lösungsnotwendig; werden als **legal** gelabelt, falls das Modell sie trifft.
+
+**Baseline-Hygiene:** Erster TW-Sweep (216 Ep.) und Kontrollmessungen auf unvollständigem Vokabular — **nicht** als Schwierigkeits-Baseline verwenden. Belastbare Baseline erst nach Vokabular-Fix + Diagnostik-Lauf (`data/results/gate_d_diagnostic/feasibility/`).
+
+## 2026-07-15 — Gate D TextWorld parser synonym fix (pre–sweep v2)
+
+**Entscheidung:** Korrektur des Aktions-Parsings für **Synonyme legaler Kommandos** in TextWorld (`textworld_env.py`). Das Modell-Output (`action_raw`) bleibt unverändert; ausgeführt wird die kanonische Form nur wenn sie pre-step admissible ist.
+
+**Erlaubt (Kategorie A, Audit `docs/gate_d_parser_audit.md`):**
+- `look inventory` → `inventory`
+- `check inventory` → `inventory` (gleiche Klasse, präventiv)
+
+**Explizit nicht geändert (DV-Schutz):**
+- Keine admissible commands im Prompt/Observation (`include_admissible_commands: false` unverändert)
+- Kein Umlenken von Planungsfehlern (`fry …` in take-only, falsche `go *`-Richtungen)
+- Keine zell- oder domain-spezifischen Prompt-Unterschiede; ToH unberührt
+
+**Operationalisierung:** Änderung besteht den Test „Synonym legaler Absicht vs. Hilfe bei Aktionswahl". Kontrollmessung: 8× `r3_i1_take-only` nach Fix (Gate D branch).
+
+**Kontrollmessung (2026-07-15):** Instanz 7 — `look inventory` jetzt `legal` (Synonym greift); Gesamt **0/8** Erfolg (Varianz vs. Pre-Replay 1/8). Label-Basis sauberer; Korridor weiter offen → Planungsbefund B/C.
+
+**Nächster Schritt:** Schwierigkeitskalibrierung auf sauberer Label-Basis (moderate Decke 30–35, nicht 50); ggf. cut/cook-Vereinfachung erst nach erneuter Baseline.
+
 ## 2026-07-14 — Logprob sidecar policy (pre–Gate D)
 
 **Entscheidung (Gate F Run-Hygiene, revidiert):** Kein binäres Sidecar an/aus. Drei Modi via `logging.logprob_sidecar_mode`:

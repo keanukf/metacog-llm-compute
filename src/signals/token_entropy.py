@@ -165,7 +165,6 @@ def slice_action_logprob_tokens(
         return dict_rows
 
     completion = text if text is not None else text_from_logprob_tokens(dict_rows)
-    out_text = (completion or "").lstrip()
 
     think_close_idx = (completion or "").lower().rfind("</think>")
     if think_close_idx >= 0:
@@ -198,23 +197,8 @@ def slice_action_logprob_tokens(
                 break
         return action_slice
 
-    is_multiline = "\n" in out_text
-    if is_multiline:
-        started = False
-        action_slice = []
-        for rec in dict_rows:
-            if not isinstance(rec, dict):
-                continue
-            tok = str(rec.get("token", ""))
-            if not started:
-                if tok.strip() == "":
-                    continue
-                started = True
-            action_slice.append(rec)
-            if started and ("\n" in tok):
-                break
-        return action_slice
-
+    # No thinking block: the committed action is the first non-empty line, whether or
+    # not the completion has further (post-action) lines after it.
     started = False
     action_slice = []
     for rec in dict_rows:

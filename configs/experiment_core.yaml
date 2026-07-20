@@ -102,6 +102,11 @@ domain_prompts:
       - close [container]
       - put [object] in [container]
       - cook [object] with [tool]
+      - chop [object] with [tool]
+      - slice [object] with [tool]
+      - dice [object] with [tool]
+      - prepare meal
+      - eat meal
       - inventory
       - look
     action_max_tokens: 32

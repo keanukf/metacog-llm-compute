@@ -1,0 +1,18 @@
+extends: ../experiment_core.yaml
+
+# Gate D calibration overlay — C0-only, no sidecars, Wegwerf runs.
+# episode.max_steps_per_episode updated after Cap is chosen in sweep.
+
+logging:
+  logprob_sidecar_mode: off
+  save_vc_distributions: false
+  save_step_traces: false
+  write_debug_views: false
+
+phase1:
+  compute_stages: C0
+  runs_per_condition: 1
+
+# Placeholder until Cap freeze; sweep uses --runtime-max-steps for observation ceiling.
+episode:
+  max_steps_per_episode: 25

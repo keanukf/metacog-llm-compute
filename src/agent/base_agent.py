@@ -108,8 +108,9 @@ def run_episode(
         max_steps: Cap on steps per episode.
         on_step: Optional callback after each env step; dict keys include step_index,
             episode_steps, max_steps, env_done, compute_stage, lm_calls_this_step, total_lm_calls.
-        save_logprob_distributions: If True, ``step_fn`` should return 7- or 9-tuples with raw action
-            logprob lists; result includes ``logprob_raw_per_step`` for sidecar export.
+        save_logprob_distributions: If True, ``step_fn`` should return 7- to 10-tuples with raw action
+            logprob lists (production step_fns return the full 10-tuple ``StepReturn``, including
+            ``call_detail``); result includes ``logprob_raw_per_step`` for sidecar export.
         save_vc_distributions: If True, include full VC follow-up records in ``vc_detail_per_step``
             (and sidecar JSON when the runner writes it).
         save_step_traces: If True, append one JSON line per env step to
@@ -596,6 +597,7 @@ def run_adaptive_episode(
     signal: dict[str, Any] | None = None
     signal_source_stage: str | None = None
     episode_fixed_stage: str | None = None
+    step_fn_cache: dict[str, StepFn] = {}
 
     trace_path: Path | None = None
     if save_step_traces:
@@ -646,7 +648,9 @@ def run_adaptive_episode(
                 signal_source_stage=signal_source_stage,
             )
             stage_per_step.append(stage)
-            step_fn = resolve(stage)
+            if stage not in step_fn_cache:
+                step_fn_cache[stage] = resolve(stage)
+            step_fn = step_fn_cache[stage]
 
             step_cm = contextlib.nullcontext(None)
             if trace_hook is not None and hasattr(trace_hook, "start_step_observation"):

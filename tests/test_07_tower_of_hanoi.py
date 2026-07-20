@@ -40,6 +40,41 @@ def test_generate_instances_schema():
         assert key in inst
 
 
+def test_generate_instances_random_scramble_is_deterministic_per_seed():
+    a = generate_instances(
+        10, seed=42, num_disks_range=(3, 4), partial_start_mode="random_scramble"
+    )
+    b = generate_instances(
+        10, seed=42, num_disks_range=(3, 4), partial_start_mode="random_scramble"
+    )
+    assert a == b
+
+
+def test_generate_instances_random_scramble_excludes_goal_state():
+    from src.environments.tower_of_hanoi import _sorted_goal_stack
+
+    instances = generate_instances(
+        30, seed=7, num_disks_range=(3, 3), partial_start_mode="random_scramble"
+    )
+    goal = {"A": [], "B": [], "C": _sorted_goal_stack(3)}
+    for inst in instances:
+        assert inst["initial_state"] != goal
+        assert inst["optimal_steps"] > 0
+
+
+def test_generate_instances_random_scramble_reaches_more_states_than_optimal_prefix():
+    prefix = generate_instances(50, seed=42, num_disks_range=(3, 4), partial_start_range=(0, 5))
+    scramble = generate_instances(
+        50, seed=42, num_disks_range=(3, 4), partial_start_mode="random_scramble"
+    )
+    distinct = lambda insts: {  # noqa: E731
+        tuple(tuple(i["initial_state"][p]) for p in "ABC") for i in insts
+    }
+    # The deterministic optimal-path prefix only ever visits num_disks+1 states per disk
+    # count; random_scramble draws without replacement from the full 3**num_disks space.
+    assert len(distinct(scramble)) > len(distinct(prefix))
+
+
 def test_env_reset_returns_observation():
     env = TowerOfHanoiEnv(task=_task(), max_steps=20)
     obs = env.reset()
@@ -52,6 +87,29 @@ def test_env_reset_can_include_valid_moves_opt_in():
     env = TowerOfHanoiEnv(task=_task(), max_steps=20, include_valid_moves=True)
     obs = env.reset()
     assert "Valid moves:" in obs
+    # Convention line and the trailing reply-format line must both survive the insert.
+    assert "the last (rightmost) number is the top disk" in obs
+    assert "Reply with a single move" in obs
+
+
+def test_env_reset_states_bottom_to_top_convention():
+    # Pure representation-reading clarification: which end of each peg list is the
+    # movable top disk. Must not name a specific move (DV protection).
+    env = TowerOfHanoiEnv(task=_task(), max_steps=20)
+    obs = env.reset()
+    assert "listed bottom-to-top" in obs
+    assert "the last (rightmost) number is the top disk" in obs
+
+
+def test_env_step_observation_repeats_convention():
+    # The convention travels with every per-step observation, not just reset,
+    # because both share the same render function.
+    task = _task()
+    env = TowerOfHanoiEnv(task=task, max_steps=20)
+    env.reset()
+    src, dst = task["optimal_solution"][0]
+    obs = env.step(f"{src} to {dst}")
+    assert "the last (rightmost) number is the top disk" in obs
 
 
 def test_env_step_returns_observation():

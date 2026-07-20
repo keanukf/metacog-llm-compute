@@ -29,10 +29,19 @@ _DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 
 
 def load_config(config_path: str | Path) -> dict:
-    import yaml
+    """Load a run config, merging ``extends: <relative-or-repo-relative path>`` if present.
 
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+    Dev/overlay configs (e.g. ``configs/dev/*.yaml``) commonly extend
+    ``experiment_core.yaml`` via an ``extends`` key (see ``configs/dev/gate_d_calibration.yaml``).
+    A plain ``yaml.safe_load`` silently drops every key not restated in the overlay (model,
+    episode, domain_prompts, paths, ...), which only surfaces as a downstream KeyError/behavior
+    change, not a load error. Reuse the same recursive merge Gate D's diagnostic scripts already
+    rely on (``scripts.sweep_textworld_difficulty._load_merged_config``) so overlay configs behave
+    identically here.
+    """
+    from scripts.sweep_textworld_difficulty import _load_merged_config
+
+    return _load_merged_config(Path(config_path))
 
 
 def _episode_mean_tle(ep: dict) -> float | None:

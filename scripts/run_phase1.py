@@ -27,10 +27,15 @@ _DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 
 
 def load_config(config_path: str | Path) -> dict:
-    import yaml
+    """Load a run config, merging ``extends: <relative-or-repo-relative path>`` if present.
 
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+    See ``scripts/run_phase2.py::load_config`` for rationale — same fix, same bug (overlay
+    configs like ``configs/dev/gate_d_calibration.yaml`` silently lost their base-config keys
+    under a plain ``yaml.safe_load``).
+    """
+    from scripts.sweep_textworld_difficulty import _load_merged_config
+
+    return _load_merged_config(Path(config_path))
 
 
 def _episode_mean_tle(ep: dict) -> float | None:

@@ -39,3 +39,31 @@ def test_resolve_compute_stages_unknown_raises() -> None:
     cfg = {"pilot": {"compute_stages": ["C9"]}}
     with pytest.raises(ValueError):
         resolve_compute_stages_for_domain(cfg, domain="textworld")
+
+
+def test_resolve_compute_stages_rejects_yaml_bareword_bool() -> None:
+    """
+    `compute_stages` is documented as int|str|list, never bool — but bool is a subclass of
+    int in Python, and YAML 1.1 parses a bare `no`/`off` as False and `yes`/`on` as True. Without
+    an explicit guard, `compute_stages: no` would silently fall through to `n=0` -> `[]` -> the
+    caller's default stage list (all 3 stages run instead of erroring), and
+    `compute_stages: yes`/`true` would silently resolve to just `["C0"]` (n=1). Both are the
+    kind of silent misconfiguration this repo's YAML bareword traps keep producing elsewhere
+    (see logprob_sidecar_mode: off, docs/gate_e_rehearsal.md) — reject instead of guessing.
+    """
+    cfg_false = {"pilot": {"compute_stages": False}}
+    with pytest.raises(TypeError):
+        resolve_compute_stages_for_domain(cfg_false, domain="textworld")
+
+    cfg_true = {"pilot": {"compute_stages": True}}
+    with pytest.raises(TypeError):
+        resolve_compute_stages_for_domain(cfg_true, domain="textworld")
+
+    cfg_by_domain = {
+        "pilot": {
+            "compute_stages": 3,
+            "compute_stages_by_domain": {"textworld": False},
+        }
+    }
+    with pytest.raises(TypeError):
+        resolve_compute_stages_for_domain(cfg_by_domain, domain="textworld")

@@ -126,12 +126,22 @@ def make_experiment_env(
         from src.utils.manifest import load_manifest, manifest_entry_for_instance
 
         cfg = config.get("tower_of_hanoi", {})
-        num_disks_range = cfg.get("num_disks_range", [3, 4])
-        partial_start_range = cfg.get("partial_start_range", [0, 3])
         manifest = manifest_entry_for_instance(domain, instance, config, repo_root)
         if manifest or load_manifest(domain, config, repo_root):
             base_seed = int(
                 manifest.get("task_generation_seed") or cfg.get("task_generation_seed", 42)
+            )
+            # Prefer the manifest's own generation parameters over config: these are what the
+            # frozen manifest was actually built with, and must match exactly or
+            # generate_instances() silently reconstructs a *different* instance at this index
+            # (e.g. defaulting back to partial_start_mode="optimal_prefix" would collapse the
+            # random_scramble state space back down to the num_disks+1-state ceiling).
+            num_disks_range = manifest.get("num_disks_range") or cfg.get("num_disks_range", [3, 4])
+            partial_start_range = manifest.get("partial_start_range") or cfg.get(
+                "partial_start_range", [0, 3]
+            )
+            partial_start_mode = manifest.get("partial_start_mode") or cfg.get(
+                "partial_start_mode", "optimal_prefix"
             )
             all_manifest = load_manifest(domain, config, repo_root)
             n_inst = len(all_manifest) if all_manifest else max(50, instance + 1)
@@ -140,6 +150,7 @@ def make_experiment_env(
                 seed=base_seed,
                 num_disks_range=(int(num_disks_range[0]), int(num_disks_range[1])),
                 partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
+                partial_start_mode=str(partial_start_mode),
             )[instance]
         else:
             import warnings
@@ -149,6 +160,8 @@ def make_experiment_env(
                 UserWarning,
                 stacklevel=2,
             )
+            num_disks_range = cfg.get("num_disks_range", [3, 4])
+            partial_start_range = cfg.get("partial_start_range", [0, 3])
             base_seed = int(cfg.get("task_generation_seed", 42))
             seed = base_seed + instance * 10007
             task_instance = generate_instances(
@@ -156,6 +169,7 @@ def make_experiment_env(
                 seed=seed,
                 num_disks_range=(int(num_disks_range[0]), int(num_disks_range[1])),
                 partial_start_range=(int(partial_start_range[0]), int(partial_start_range[1])),
+                partial_start_mode=str(cfg.get("partial_start_mode", "optimal_prefix")),
             )[0]
         include_vm = bool(dom_cfg.get("include_valid_moves", False)) if dom_cfg else False
         return TowerOfHanoiEnv(

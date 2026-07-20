@@ -47,7 +47,7 @@ def c1_step_core(
     reason_instruction = (
         "\n\n"
         "Before answering, briefly reason inside <think>...</think> tags.\n"
-        "After </think>, write one valid game action on its own line (e.g. go north)."
+        "After </think>, write one valid game action on its own line, in the format already shown above."
     )
     reason_prompt = f"{base_prompt}{reason_instruction}"
     act_tok = int(action_max_tokens) if action_max_tokens is not None else 32

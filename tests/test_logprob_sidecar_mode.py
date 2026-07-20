@@ -36,6 +36,20 @@ def test_parse_mode_explicit_and_default_off():
     assert parse_logprob_sidecar_mode({"logprob_sidecar_mode": "off"}) == "off"
 
 
+def test_parse_mode_tolerates_yaml_bare_off_boolean_gotcha():
+    """A bare (unquoted) `off` in YAML 1.1 parses to the Python bool False, not the str "off"
+    (several configs/dev/*.yaml write it this way). Gate E rehearsal (2026-07-17) caught this
+    crashing run_phase2.py; must resolve to the same "off" mode as the quoted string."""
+    assert parse_logprob_sidecar_mode({"logprob_sidecar_mode": False}) == "off"
+
+
+def test_parse_mode_rejects_yaml_bare_on_boolean_gotcha():
+    import pytest
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        parse_logprob_sidecar_mode({"logprob_sidecar_mode": True})
+
+
 def test_parse_mode_rejects_legacy_save_logprob_distributions():
     import pytest
 
