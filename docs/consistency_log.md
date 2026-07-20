@@ -2,6 +2,42 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-20 — Gate F: Resume-Korrektheit unter Nebenläufigkeit getestet, echter Bug gefunden und gefixt (PR #23)
+
+**Zweck:** Gate-F-HART-Punkt "Resume-Korrektheit unter Nebenläufigkeit" — laufenden gebatchten Smoke
+hart abbrechen, mit `--resume` fortsetzen, prüfen: kein halb geschriebenes Episode-JSON, kein
+Doppel-Eintrag, kein übersprungenes Work-Item über `list_completed_episodes`.
+
+**Pod nötig?** Nein — geprüft und lokal mit Mock-Backend durchgeführt. Die Korrektheitseigenschaft
+hängt ausschließlich an der Bookkeeping-/Threading-Logik des Harness (`ThreadPoolExecutor` in
+`src/execution/scheduler.py`, Dateisystem-Glob-basiertes Resume in `list_completed_episodes()`),
+nicht am Backend, das die Episoden-Inhalte liefert. Der Mock-Backend macht das Race sogar leichter
+reproduzierbar (mehr Episoden pro Sekunde als reales vLLM).
+
+**Bug gefunden:** `log_episode()` (`src/utils/logging_utils.py`) schrieb `json.dump()` direkt auf
+den finalen `ep_*.json`-Pfad, ohne Temp-Datei + Rename. Ein `SIGKILL` mitten im Schreiben hinterließ
+eine abgeschnittene Datei; `list_completed_episodes()` prüft nur Dateiexistenz (Glob), nicht
+Inhaltsvalidität — die korrupte Episode wäre bei `--resume` für immer als "fertig" gezählt und nie
+neu gelaufen. In echtem Phase-1/2-Betrieb hätte das Episoden stillschweigend aus dem Datensatz
+verschwinden lassen, ohne Fehlermeldung.
+
+**Reproduktion (nicht nur Herleitung):** Echtes `SIGKILL` gegen einen laufenden
+`scripts/run_phase1.py`-Batch (`scripts/gate_f_resume_smoke.py`, neues Script, wiederverwendbar) —
+2 unabhängige Batch-Zyklen produzierten je eine real korrupte, dauerhaft "stuck" Episodendatei.
+Zusätzlicher gezielter Write-Race-Probe (großes synthetisches Payload weitet das Schreibfenster):
+7/10 Treffer.
+
+**Fix:** Schreiben auf eine Sibling-Temp-Datei, dann `os.replace()` auf den finalen Pfad (atomar
+unter POSIX/Windows), mit Cleanup bei nicht-fatalen Schreibfehlern. Nach Fix: 0/8 reale
+Hard-Kill-Zyklen und 0/10 Probe-Trials zeigen die Race noch. Regressionstest ergänzt
+(`tests/test_checkpointing.py`), erzwingt einen Schreibfehler und prüft, dass weder der finale Pfad
+noch `list_completed_episodes()` davon betroffen sind.
+
+**Testsuite:** 358 passed (357 + neuer Regressionstest). PR #23, gemerged `dd38e44`.
+
+**Gate-F-HART-Punkt "Resume-Korrektheit" abgehakt.** Noch offen: Run-Hygiene-Checkliste,
+RunPod-Budget-Top-up-Entscheidung.
+
 ## 2026-07-20 — TextWorld-Difficulty-Sweep-HART-Punkt abgehakt; Freeze-Tag-Timing geklärt
 
 **Zweck:** User fragte, warum die TextWorld-Sweep-Box in `blueprints/gate_p1_readiness.md` trotz
