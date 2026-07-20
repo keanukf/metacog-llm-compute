@@ -152,7 +152,12 @@ vc:
     where 0 means certainly wrong and 100 means certainly correct.
 
 episode:
-  max_steps_per_episode: 20
+  # TextWorld production cap, validated in Gate D (docs/consistency_log.md, 2026-07-18/20:
+  # r5_i1_take+cook corridor confirmed at cap=45, n=16, 43.75% success). Tower of Hanoi ignores
+  # this in practice -- make_experiment_env() uses each manifest instance's own 3x-optimal_steps
+  # cap instead (src/utils/experiment_env.py); this value is only its fallback if no manifest
+  # entry is found.
+  max_steps_per_episode: 45
   avg_steps: 10
 
 # Tower of Hanoi: vary number of disks and partial-start depth.

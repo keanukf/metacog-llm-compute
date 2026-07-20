@@ -172,7 +172,13 @@ def make_experiment_env(
                 partial_start_mode=str(cfg.get("partial_start_mode", "optimal_prefix")),
             )[0]
         include_vm = bool(dom_cfg.get("include_valid_moves", False)) if dom_cfg else False
+        # Prefer the per-instance cap generate_instances() computes (3x optimal_steps) over the
+        # flat config/CLI value -- this is what the Gate D corridor calibration actually tested
+        # and froze (docs/consistency_log.md, 2026-07-20 Gate F budget re-estimate finding); a flat
+        # cap would silently diverge from the validated success rates.
+        instance_max_steps = task_instance.get("max_steps")
+        effective_max_steps = int(instance_max_steps) if instance_max_steps else max_steps
         return TowerOfHanoiEnv(
-            task=task_instance, max_steps=max_steps, include_valid_moves=include_vm
+            task=task_instance, max_steps=effective_max_steps, include_valid_moves=include_vm
         )
     return TextWorldEnv(game_file=None, max_steps=max_steps)
