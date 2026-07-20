@@ -1,0 +1,27 @@
+extends: ../experiment_core.yaml
+
+# Gate F resume-under-concurrency smoke — small mock-backend batch (no GPU), used only to
+# hard-kill a running scripts/run_phase1.py process and verify --resume recovers cleanly.
+# Not part of any preregistered experiment run. Do not use for Phase 1 data collection.
+
+logging:
+  logprob_sidecar_mode: off
+  save_vc_distributions: false
+  save_step_traces: false
+  write_debug_views: false
+
+tracing:
+  langfuse_enabled: false
+
+execution:
+  max_concurrent_episodes: 6
+
+phase1:
+  domains: ["tower_of_hanoi"]
+  instances_per_domain: 8
+  compute_stages: 3
+  runs_per_condition: 2
+  progress_every_episodes: 4
+
+episode:
+  max_steps_per_episode: 6
