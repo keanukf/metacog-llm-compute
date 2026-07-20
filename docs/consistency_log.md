@@ -2,6 +2,23 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-20 — Gate E vollständig abgeschlossen: H3-Power-Simulation-WEICH-Punkt abgehakt
+
+**Zweck:** User fragte nach einer Gesamtübersicht, welche Punkte in `blueprints/gate_p1_readiness.md`
+jetzt abgehakt werden können. Beim Durchgehen: der WEICH-Punkt "H3-Power-Simulation" verlangt laut
+eigenem Wortlaut "entweder durchführen oder die Limitation aktiv wählen und in §5.9 belassen" — beide
+Pfade sind inzwischen genommen (Simulation durchgeführt und zweimal mit besserer Evidenz neu gelaufen;
+§5.9-Absatz im Thesis-Repo ergänzt, Commit `77bfba9`, gepusht). Kein Nutzer-Entscheidungsrest mehr
+offen, Checkbox abgehakt.
+
+**Ergebnis:** Gate E steht damit auf "abgeschlossen" (beide HART-Punkte + der einzige WEICH-Punkt
+erledigt). Restliche offene Punkte im Dokument bleiben unverändert offen — echte, nicht-technische
+Gründe: Gate D (Freeze-Tag, wartet strukturell auf Gate F), Gate F (Run-Hygiene braucht Live-Pod-
+Verifikation; Block-Aufteilung noch nicht umgesetzt; Budget-Top-up ist eine Finanzentscheidung des
+Users), Gate A (offene [VERIFY]-Zitate, Literatur-Task im Thesis-Repo, blockiert nichts).
+
+**Testsuite:** keine Quelländerung (nur Dokumentation).
+
 ## 2026-07-20 — Run-Hygiene: Modell-Speicherort korrigiert, Preflight-Script gebaut
 
 **Zweck:** User korrigierte den gerade reparierten Run-Hygiene-Punkt: das Modell liegt **nie** auf
