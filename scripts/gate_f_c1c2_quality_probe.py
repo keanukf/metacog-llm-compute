@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""Gate F C1/C2 quality-control probe (HART) — real model, small n, full step traces.
+"""Gate F C1/C2 quality-control probe (HART) — real model, small n, fully parallel, full traces.
 
 Runs a handful of real episodes per (domain, stage) cell (C1 and C2 only) against the frozen
 production manifests, under the exact production config (configs/experiment_core.yaml: cot
-budget, sidecar policy, calibrated caps). Unlike the large Gate D/E sweeps, this deliberately
-turns on save_step_traces so every LM call (including all C2 self-consistency candidates) is
-captured in full for manual inspection, and adds automated checks for the three things Gate F
-flagged as needing verification before committing to the full Phase 1/2 run:
+budget, sidecar policy, calibrated caps) -- via the *actual* production job function
+(``src/execution/episode_runner.py::run_phase1_job``) and the *actual* production scheduler
+(``src/execution/scheduler.py::EpisodeScheduler``), not a reimplementation. All cells/episodes
+are submitted as one flat job list and run concurrently (bounded by ``--max-concurrent``), the
+same way a real Phase 1 block does -- this is a small slice of exactly that code path, not a
+separate one.
+
+Unlike the large Gate D/E sweeps, this deliberately turns on save_step_traces so every LM call
+(including all C2 self-consistency candidates) is captured in full for manual inspection, and
+adds automated checks for the three things Gate F flagged as needing verification before
+committing to the full Phase 1/2 run:
 
 1. Does C2's majority vote actually pick the majority action? Recomputed independently from the
    raw per-candidate vote keys in call_detail["subcalls"] and cross-checked against the recorded
@@ -18,7 +25,7 @@ flagged as needing verification before committing to the full Phase 1/2 run:
    Flags any parsed action longer than a generous threshold or containing reasoning markers.
 
 Usage:
-    python scripts/gate_f_c1c2_quality_probe.py --n-episodes 5 --real
+    python scripts/gate_f_c1c2_quality_probe.py --n-episodes 5 --real --max-concurrent 16
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -65,9 +73,7 @@ def _recompute_c2_majority(subcalls: list[dict[str, Any]]) -> tuple[str | None, 
     return (winners[0] if len(winners) == 1 else f"TIE[{','.join(winners)}]"), dict(counts)
 
 
-def _check_step(
-    domain: str, stage: str, ep_id: str, step_index: int, rec: dict[str, Any]
-) -> list[str]:
+def _check_step(stage: str, ep_id: str, step_index: int, rec: dict[str, Any]) -> list[str]:
     problems: list[str] = []
     action = str(rec.get("action_parsed") or "")
 
@@ -115,98 +121,143 @@ def _check_step(
             if not s.get("admissible") and tok >= 8000:
                 problems.append(
                     f"{ep_id} step{step_index}: sample {s.get('sample_index')} rejected "
-                    f"({s.get('reject_reason')}) after {tok} tokens -- looks like a cot_max_tokens=8192 truncation, "
-                    "not a genuine parse failure"
+                    f"({s.get('reject_reason')}) after {tok} tokens -- looks like a "
+                    "cot_max_tokens=8192 truncation, not a genuine parse failure"
                 )
     elif stage == "C1" and isinstance(call_detail, dict):
         tok = call_detail.get("tokens_generated") or rec.get("tokens_generated") or 0
         if not action and tok >= 8000:
             problems.append(
-                f"{ep_id} step{step_index}: no action parsed after {tok} tokens -- looks like cot_max_tokens=8192 truncation"
+                f"{ep_id} step{step_index}: no action parsed after {tok} tokens -- looks like "
+                "cot_max_tokens=8192 truncation"
             )
 
     return problems
 
 
-def run_cell(
-    domain: str, stage: str, n_episodes: int, out_dir: Path, use_real: bool
+def build_jobs(n_episodes: int) -> list[Any]:
+    from src.execution.worklist import EpisodeJob
+
+    jobs = []
+    for domain in DOMAINS:
+        for stage in STAGES:
+            for iid in INSTANCE_IDS[:n_episodes]:
+                jobs.append(
+                    EpisodeJob(
+                        episode_id=f"qc_{domain}_{iid}_{stage}",
+                        domain=domain,
+                        instance=iid,
+                        run=0,
+                        phase="phase1",
+                        compute_stage=stage,
+                    )
+                )
+    return jobs
+
+
+def run_probe(
+    n_episodes: int, use_real: bool, max_concurrent: int, out_dir: Path
 ) -> dict[str, Any]:
     from scripts.sweep_textworld_difficulty import _load_merged_config
-    from src.agent.base_agent import run_episode
-    from src.agent.compute_stages import get_step_fn
     from src.execution.backend.factory import create_execution_backend
-    from src.utils.experiment_env import make_experiment_env
-    from src.utils.step_config import HISTORY_CFG_KEYS, resolve_step_fn_kwargs
+    from src.execution.episode_runner import Phase1RunContext, run_phase1_job
+    from src.execution.scheduler import EpisodeScheduler
+    from src.utils.logprob_sidecar import LogprobSidecarConfig
 
+    out_dir.mkdir(parents=True, exist_ok=True)
     config = _load_merged_config(REPO_ROOT / "configs/experiment_core.yaml")
     model = create_execution_backend(config, use_real=use_real)
-    step_cfg = resolve_step_fn_kwargs(config, domain)
-    history_cfg = {k: step_cfg.pop(k) for k in list(step_cfg.keys()) if k in HISTORY_CFG_KEYS}
-    step_fn = get_step_fn(stage, **step_cfg)
+    max_steps = int(config.get("episode", {}).get("max_steps_per_episode", 45))
+    logging_cfg = config.get("logging") or {}
 
-    trace_dir = out_dir / "traces"
-    trace_dir.mkdir(parents=True, exist_ok=True)
-    ep_dir = out_dir / "episodes"
-    ep_dir.mkdir(parents=True, exist_ok=True)
+    ctx = Phase1RunContext(
+        config=config,
+        checkpoint_dir=out_dir,
+        repo_root=REPO_ROOT,
+        max_steps=max_steps,
+        model_cfg=config.get("model", {}),
+        logprob_sidecar=LogprobSidecarConfig.from_logging_config(logging_cfg),
+        save_vc_distributions=False,
+        vc_export_format=str(logging_cfg.get("vc_export_format", "json")),
+        vc_subdir=str(logging_cfg.get("vc_subdir", "vc")),
+        save_step_traces=True,
+        allow_history_truncation=False,
+        verbose_steps=False,
+        tracing_cfg=config.get("tracing"),
+        log_fn=print,
+    )
 
-    all_problems: list[str] = []
-    episode_summaries: list[dict[str, Any]] = []
+    jobs = build_jobs(n_episodes)
+    print(
+        f"Gate F C1/C2 quality probe -- {len(jobs)} episodes "
+        f"({len(DOMAINS)} domains x {len(STAGES)} stages x {n_episodes}/cell), "
+        f"max_concurrent={max_concurrent}, real={use_real}\n"
+    )
 
-    for iid in INSTANCE_IDS[:n_episodes]:
-        ep_id = f"qc_{domain}_{iid}_{stage}"
-        # max_steps: production default; ToH's env overrides internally via its own per-instance
-        # cap (src/utils/experiment_env.py), same mechanism the real Phase 1/2 pipeline now uses.
-        max_steps = config.get("episode", {}).get("max_steps_per_episode", 45)
-        env = make_experiment_env(domain, iid, config, max_steps, REPO_ROOT)
-        effective_max_steps = int(getattr(env, "max_steps", max_steps))
-        result = run_episode(
-            env,
-            model,
-            stage,
-            step_fn=step_fn,
-            max_steps=effective_max_steps,
-            save_step_traces=True,
-            episode_id=ep_id,
-            trace_output_dir=str(trace_dir),
-            **history_cfg,
-        )
-        (ep_dir / f"{ep_id}.json").write_text(json.dumps(result, indent=2, default=str))
-
-        trace_file = trace_dir / f"trace_{ep_id}.jsonl"
-        step_problems: list[str] = []
-        n_steps = 0
-        if trace_file.exists():
-            for line in trace_file.read_text().splitlines():
-                if not line.strip():
-                    continue
-                rec = json.loads(line)
-                n_steps += 1
-                step_problems.extend(_check_step(domain, stage, ep_id, rec["step_index"], rec))
-        all_problems.extend(step_problems)
-        episode_summaries.append(
-            {
-                "episode_id": ep_id,
-                "instance": iid,
-                "task_success": result.get("task_success"),
-                "steps": result.get("episode_length_steps"),
-                "max_steps": effective_max_steps,
-                "n_trace_steps": n_steps,
-                "n_problems": len(step_problems),
-            }
-        )
-        print(
-            f"  [{domain}/{stage}] inst={iid} steps={result.get('episode_length_steps')}/{effective_max_steps} "
-            f"success={result.get('task_success')} problems={len(step_problems)}"
-        )
-
+    scheduler = EpisodeScheduler(max_concurrent_episodes=max_concurrent)
+    t0 = time.perf_counter()
+    stats = scheduler.run(
+        jobs,
+        run_fn=lambda job: run_phase1_job(job, model, ctx),
+        checkpoint_dir=out_dir,
+        log_fn=lambda msg: print(f"  {msg}"),
+    )
+    wall_s = time.perf_counter() - t0
+    print(
+        f"\nDone in {wall_s:.0f}s: {stats.episodes_completed} completed, "
+        f"{stats.episodes_failed} failed, max_in_flight={stats.max_in_flight_observed}"
+    )
     return {
-        "domain": domain,
-        "stage": stage,
-        "n_episodes": len(episode_summaries),
-        "episodes": episode_summaries,
-        "problems": all_problems,
-        "pass": not all_problems,
+        "wall_s": wall_s,
+        "episodes_completed": stats.episodes_completed,
+        "episodes_failed": stats.episodes_failed,
     }
+
+
+def analyze(out_dir: Path, n_episodes: int) -> dict[str, Any]:
+    cells: dict[tuple[str, str], dict[str, Any]] = {
+        (d, s): {"domain": d, "stage": s, "episodes": [], "problems": []}
+        for d in DOMAINS
+        for s in STAGES
+    }
+    for domain in DOMAINS:
+        for stage in STAGES:
+            for iid in INSTANCE_IDS[:n_episodes]:
+                ep_id = f"qc_{domain}_{iid}_{stage}"
+                ep_path = out_dir / f"{ep_id}.json"
+                trace_path = out_dir / f"trace_{ep_id}.jsonl"
+                cell = cells[(domain, stage)]
+                if not ep_path.exists():
+                    cell["problems"].append(f"{ep_id}: episode did not complete (no output file)")
+                    continue
+                result = json.loads(ep_path.read_text())
+                step_problems: list[str] = []
+                n_steps = 0
+                if trace_path.exists():
+                    for line in trace_path.read_text().splitlines():
+                        if not line.strip():
+                            continue
+                        rec = json.loads(line)
+                        n_steps += 1
+                        step_problems.extend(_check_step(stage, ep_id, rec["step_index"], rec))
+                else:
+                    step_problems.append(f"{ep_id}: no trace file found")
+                cell["problems"].extend(step_problems)
+                cell["episodes"].append(
+                    {
+                        "episode_id": ep_id,
+                        "instance": iid,
+                        "task_success": result.get("task_success"),
+                        "steps": result.get("episode_length_steps"),
+                        "n_trace_steps": n_steps,
+                        "n_problems": len(step_problems),
+                    }
+                )
+
+    results = []
+    for (domain, stage), cell in cells.items():
+        results.append({**cell, "n_episodes": len(cell["episodes"]), "pass": not cell["problems"]})
+    return {"cells": results, "pass": all(r["pass"] for r in results)}
 
 
 def main() -> None:
@@ -215,39 +266,35 @@ def main() -> None:
     )
     parser.add_argument("--n-episodes", type=int, default=5)
     parser.add_argument("--real", action="store_true")
+    parser.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=16,
+        help="Bounded parallel episodes (<=32, the C-1 batch-invariance frozen ceiling).",
+    )
     parser.add_argument("--output-dir", default="data/results/gate_f_c1c2_quality_probe")
     args = parser.parse_args()
+    if args.max_concurrent > 32:
+        raise SystemExit("--max-concurrent must not exceed 32 (C-1 batch-invariance freeze)")
 
     out_dir = REPO_ROOT / args.output_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
+    run_stats = run_probe(args.n_episodes, args.real, args.max_concurrent, out_dir)
+    analysis = analyze(out_dir, args.n_episodes)
 
-    print(f"Gate F C1/C2 quality probe -- n={args.n_episodes}/cell, real={args.real}\n")
-    results = []
-    for domain in DOMAINS:
-        for stage in STAGES:
-            print(f"=== {domain} / {stage} ===")
-            cell_out = out_dir / f"{domain}_{stage}"
-            results.append(run_cell(domain, stage, args.n_episodes, cell_out, args.real))
-            print()
-
-    all_pass = all(r["pass"] for r in results)
-    summary = {
-        "n_episodes_per_cell": args.n_episodes,
-        "real": args.real,
-        "cells": results,
-        "pass": all_pass,
-    }
+    summary = {"n_episodes_per_cell": args.n_episodes, "real": args.real, **run_stats, **analysis}
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
-    print("=== Summary ===")
-    for r in results:
+    print("\n=== Summary ===")
+    for r in analysis["cells"]:
         status = "PASS" if r["pass"] else f"FAIL ({len(r['problems'])} problems)"
-        print(f"  {r['domain']}/{r['stage']}: {status}")
+        print(
+            f"  {r['domain']}/{r['stage']}: {status} ({r['n_episodes']}/{args.n_episodes} episodes)"
+        )
         for p in r["problems"]:
             print(f"    - {p}")
-    print(f"\n{'ALL PASS' if all_pass else 'ISSUES FOUND'}")
+    print(f"\n{'ALL PASS' if analysis['pass'] else 'ISSUES FOUND'}")
     print(f"Wrote {out_dir / 'summary.json'}")
-    if not all_pass:
+    if not analysis["pass"]:
         raise SystemExit(1)
 
 
