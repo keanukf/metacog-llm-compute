@@ -2,6 +2,29 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-20 — TextWorld-Difficulty-Sweep-HART-Punkt abgehakt; Freeze-Tag-Timing geklärt
+
+**Zweck:** User fragte, warum die TextWorld-Sweep-Box in `blueprints/gate_p1_readiness.md` trotz
+final eingefrorener Manifeste noch offen war, und bat, den Freeze-Tag zu setzen und alle Gate-D-
+Punkte abzuhaken.
+
+**TextWorld-Sweep-Box:** Reine Inkonsistenz, kein Sachgrund — die Korridor-Bestätigung existiert
+bereits seit 2026-07-18 (n=16, Seed 9001, identische Generierungsparameter wie das finale 50er-
+Manifest Seed 20260718): `r5_i1_take+cook` bei 43.75 % Erfolg, im 30–50-%-Korridor. Exakt dieselbe
+Evidenzqualität (Validierungssample statt Lauf auf den finalen Instanzen selbst), mit der die ToH-
+Zeile am 2026-07-19 bereits abgehakt wurde. Jetzt nachgezogen, abgehakt.
+
+**Freeze-Tag:** Kein Nachziehen, sondern eine echte Timing-Frage — dem User zur Bestätigung
+vorgelegt (`AskUserQuestion`), nicht autonom entschieden. Laut Dokument selbst (`gate_p1_readiness.md`,
+Zeilen 19 + 115) gibt es einen einzigen projektweiten Freeze-Tag, gesetzt nach Gate F, nicht pro
+Gate — Gate F hat mit dem Resume-Correctness-under-Concurrency-Test noch einen offenen HART-Punkt.
+User bestätigte: Tag bleibt bis nach Gate F offen, kein Vorziehen. Entsprechend bleibt die letzte
+Gate-D-Zeile ("Beide Manifeste final und im Freeze-Tag") formal offen, mit korrigierter Begründung
+(Tag-Timing statt "bewusst noch nicht gesetzt" ohne Kontext). Go/No-Go-Tabellenzeile für Gate D auf
+"teilweise" aktualisiert.
+
+**Testsuite:** keine Quelländerung (nur Dokumentation).
+
 ## 2026-07-20 — Gate E gegen aktuellen Code re-verifiziert, beide HART-Punkte abgehakt
 
 **Zweck:** Vor dem formalen Abhaken der Gate-E-Checkboxen geprüft, ob die am 2026-07-17
