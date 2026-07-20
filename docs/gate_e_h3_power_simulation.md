@@ -9,6 +9,22 @@
 > `data/results/gate_e_h3_power/h3_power_simulation_v2.json`. Dieser Report bleibt als historisches
 > Dokument der ursprünglichen Simulation stehen, ist aber **nicht** mehr die aktuelle Zahlengrundlage.
 
+> **Update 2026-07-20 (v3):** Die ToH-Seite nutzte bislang die rohe, nicht-schwierigkeitskalibrierte
+> Gate-C-Pilotlängen-Verteilung (Ø≈18 Steps) als Bootstrap-Pool, mit dem expliziten Vorbehalt "echte
+> ToH-Episoden dürften kürzer ausfallen" (Abschnitt 3 unten). Nach dem ToH-Freeze (4 Disks, C1,
+> `random_scramble`, 2026-07-19) neu gelaufen mit den **echten** Episodenlängen aus dem eingefrorenen
+> Korridor selbst (n=15, isolierte 4-Disk/C1-Teilmenge aus
+> `data/results/gate_d_calibration/toh_corridor_scramble_n30`, dieselben Daten, die die
+> Korridor-Entscheidung selbst trugen — Ø 28,4 Steps, Range 3–45). **Der Vorbehalt hat sich als
+> falsch herum erwiesen:** die echten kalibrierten Episoden sind länger, nicht kürzer, als die alte
+> Pilot-Annahme — ToH/TLE-Power bei moderater Degradation (β_int=−0,15) steigt von 51,0 % auf **71,8 %**
+> (α=.05) bzw. von 41,8 % auf **60,8 %** (α=.025). Die 80-%-Schwelle sinkt von |β_int|≈0,210 auf
+> **≈0,175** (α=.05). TextWorld-Zahlen unverändert (nicht Teil dieses Laufs). Aktuelle Zahlen:
+> `docs/consistency_log.md`, Eintrag "ToH-Seite der H3-Power-Simulation mit echten
+> Freeze-Korridor-Längen neu gelaufen", Artefakt `data/results/gate_e_h3_power/h3_power_simulation_v3.json`.
+> Weiterhin gilt die n=15-Einschränkung (kleiner Resampling-Pool, wenige diskrete Werte) — siehe
+> Konsistenz-Log-Eintrag für Details.
+
 **Datum:** 2026-07-17
 **Branch/Commit:** `feat/gate-d-calibration`
 **Skript:** [`scripts/h3_power_simulation.py`](../scripts/h3_power_simulation.py)

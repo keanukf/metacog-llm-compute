@@ -2,6 +2,54 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-20 — ToH-Seite der H3-Power-Simulation mit echten Freeze-Korridor-Längen neu gelaufen
+
+**Zweck:** `docs/gate_e_h3_power_simulation.md` (Abschnitt 3) flaggte explizit, dass die ToH-Seite
+der Simulation die rohe, nicht-schwierigkeitskalibrierte Gate-C-Pilotlängen-Verteilung (Ø≈18 Steps,
+viele nahe altem 20-Step-Cap) als Bootstrap-Pool nutzte, mit dem Vorbehalt: "echte ToH-Episoden
+könnten am Ende kürzer ausfallen" — die ToH-Zahlen seien daher "ein optimistischer Kontextwert,
+nicht die belastbarste Aussage". Nach dem ToH-Freeze (2026-07-19: 4 Disks, C1-Referenz,
+`random_scramble`) lag der reale Vergleichswert vor; neu gelaufen, um den Vorbehalt entweder zu
+bestätigen oder zu widerlegen statt ihn stehen zu lassen.
+
+**Änderung:** `scripts/h3_power_simulation.py` — neue Funktion `load_toh_frozen_corridor_lengths()`
+liest echte Episodenlängen aus `data/results/gate_d_calibration/toh_corridor_scramble_n30/`
+(derselbe n=30-Lauf, der schon die Korridor-Entscheidung selbst trug), filtert auf C1 + 4 Disks
+(Disk-Zahl steht nicht als eigenes Feld im Episode-JSON, sondern wird per Regex aus dem
+Judge-Prompt-Text "holds all N disks" extrahiert — verifiziert gegen die dokumentierte
+Erfolgsrate: 6/15 = 40,0 %, exakt der in der Freeze-Entscheidung berichtete Wert, also korrekt
+gefiltert). `build_design_cells()` nutzt diesen Pool jetzt für ToH statt der alten Pilotlängen, per
+neuem optionalem `--toh-length-run-dir`/`--toh-length-num-disks`-CLI-Flag (Default: altes Verhalten,
+Rückwärtskompatibilität zu v1/v2 erhalten). TextWorld-Seite unverändert.
+
+**Ergebnis** (`data/results/gate_e_h3_power/h3_power_simulation_v3.json`, n=15 echte Längen, Ø 28,4
+Steps, Range 3–45 — **länger**, nicht kürzer, als die alte Pilot-Annahme):
+
+| | ToH/TLE Power bei β_int=−0,15 (α=.05) | (α=.025) | 80-%-Schwelle \|β_int\| (α=.05) |
+|---|---:|---:|---:|
+| Alt (Pilot-Längen, Ø≈18) | 51,0 % | 41,8 % | 0,210 |
+| Neu (Freeze-Korridor, Ø 28,4) | **71,8 %** | **60,8 %** | **0,175** |
+
+**Befund:** Der Vorbehalt hat sich als falsch herum erwiesen — die echten, kalibrierten 4-Disk-C1-
+Episoden sind im Schnitt länger als die alte Pilot-Verteilung (mehr Fehlversuche/Umwege vor Erfolg
+oder Abbruch am Cap 45, nicht nur die reine Optimalzug-Länge von 15), was mehr Positionsauflösung
+und damit mehr Power liefert, nicht weniger. Die ToH-Zahlen sind damit keine Überschätzung mehr,
+sondern eine reale, korridor-treue Schätzung. TextWorld bleibt weiterhin der primäre,
+konfirmatorische Befund; ToH bleibt exploratorisch (§5.8/§5.9 der Thesis-Prosa), dieser Rerun ändert
+daran nichts, verbessert nur die Kontext-Zahlengrundlage.
+
+**Bekannte Einschränkung, unverändert:** n=15 ist ein kleiner Resampling-Pool (wenige diskrete
+Werte) — kleiner als der ursprüngliche gepoolte Pilot-Pool, aber zielgenau auf die tatsächlich
+eingefrorene Konfiguration statt großzügig auf eine veraltete.
+
+**Thesis-Prosa (`../metacog-thesis`):** Der neue §5.9-Absatz (siehe unten, Eintrag "H3-Power-
+Simulation..." — separat, im Thesis-Repo committed) erwähnt ToH nur qualitativ ("keine vergleichbare
+Power-Garantie"), keine ToH-Zahlen zitiert — bleibt nach diesem Rerun unverändert korrekt, keine
+Nachbesserung nötig.
+
+**Testsuite:** keine Produktionscode-Berührung (reines Analyse-Skript); `python -m pytest -q`
+unverändert 358 passed.
+
 ## 2026-07-20 — Gate F: Resume-Korrektheit unter Nebenläufigkeit getestet, echter Bug gefunden und gefixt (PR #23)
 
 **Zweck:** Gate-F-HART-Punkt "Resume-Korrektheit unter Nebenläufigkeit" — laufenden gebatchten Smoke

@@ -112,6 +112,37 @@ class DomainPilotStats:
     h3_pilot_vc: dict[str, Any]
 
 
+def load_toh_frozen_corridor_lengths(run_dir: Path, num_disks: int) -> list[int]:
+    """Real episode lengths for the frozen ToH corridor (C1, ``num_disks`` disks), read straight
+    off actual per-episode result JSONs rather than the stale pre-calibration Gate-C pilot.
+
+    ``num_disks`` isn't stored as its own field on these episode records, but every step's judge
+    prompt states it verbatim ("Goal state: Peg C holds all N disks, ..."), so it's recovered by
+    regex instead of re-deriving it from peg contents.
+    """
+    import re
+
+    lengths: list[int] = []
+    for f in sorted(Path(run_dir).glob("*_C1_*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        nd = None
+        for step in data.get("steps_detail") or []:
+            text = step.get("vc_prompt") or step.get("reason_prompt") or ""
+            m = re.search(r"holds all (\d+) disks", text)
+            if m:
+                nd = int(m.group(1))
+                break
+        if nd != num_disks:
+            continue
+        length = data.get("episode_length_steps") or data.get("steps")
+        if length:
+            lengths.append(int(length))
+    return lengths
+
+
 def _anova_icc1(rows: list[dict[str, Any]], group_key: str, value_key: str) -> float | None:
     """Classical one-way-ANOVA ICC(1) on a 0/1 outcome (cross-check for the GEE-based ICC)."""
     by_group: dict[str, list[float]] = {}
@@ -260,6 +291,7 @@ def build_design_cells(
     instances_per_domain: int,
     runs_per_condition: int,
     compute_stages: int,
+    toh_frozen_corridor_lengths: list[int] | None = None,
 ) -> dict[tuple[str, str], DesignCell]:
     cells: dict[tuple[str, str], DesignCell] = {}
     episodes_per_instance = runs_per_condition * compute_stages
@@ -297,6 +329,21 @@ def build_design_cells(
                 "difficulty calibration was not yet applied when the pilot ran (pre-calibration "
                 "episodes are harder/longer than the calibrated design will be)."
             )
+        elif toh_frozen_corridor_lengths:
+            length_mode = "bootstrap_toh_frozen_corridor"
+            n_pool = len(toh_frozen_corridor_lengths)
+            mean_len = sum(toh_frozen_corridor_lengths) / n_pool
+            rationale_len = (
+                f"Bootstrap-resampling {n_pool} real episode lengths from the frozen ToH corridor "
+                "itself (4 disks, C1 reference, partial_start_mode=random_scramble -- "
+                "data/results/gate_d_calibration/toh_corridor_scramble_n30, the isolated 4-disk/C1 "
+                "subset documented in docs/consistency_log.md 2026-07-19), superseding the earlier "
+                "run's bootstrap from the raw, not-yet-difficulty-calibrated Gate-C pilot lengths "
+                f"(mean ~18, many near the 20-step cap). Mean length in this pool: {mean_len:.1f} "
+                f"steps. Caveat: n={n_pool} is a small resampling pool (few distinct values), "
+                "smaller than the original cross-domain pilot pool but on-target for the actual "
+                "frozen config rather than off-target on a larger, stale one."
+            )
         else:
             length_mode = "bootstrap_pilot"
             rationale_len = (
@@ -306,6 +353,11 @@ def build_design_cells(
                 "yet frozen, so these lengths (mean ~18, many near the 20-step cap) may shorten once "
                 "calibrated."
             )
+        length_pool = (
+            toh_frozen_corridor_lengths
+            if (dom == "tower_of_hanoi" and toh_frozen_corridor_lengths)
+            else stats.episode_lengths
+        )
         for sig in ("tle", "vc"):
             beta_z = anchors[(dom, sig)]
             cells[(dom, sig)] = DesignCell(
@@ -314,7 +366,7 @@ def build_design_cells(
                 n_instances=instances_per_domain,
                 episodes_per_instance=episodes_per_instance,
                 length_mode=length_mode,
-                length_bootstrap_pool=list(stats.episode_lengths),
+                length_bootstrap_pool=list(length_pool),
                 target_base_rate=stats.base_rate,
                 beta_z=beta_z,
                 beta_pos=pos_anchors[dom],
@@ -562,6 +614,15 @@ def main() -> None:
         default="0,-0.15,-0.3,-0.5,-1.0",
         help="Reduced grid used for the VC secondary run.",
     )
+    parser.add_argument(
+        "--toh-length-run-dir",
+        default=None,
+        help="Directory of real per-episode ToH result JSONs to bootstrap episode lengths from "
+        "(e.g. data/results/gate_d_calibration/toh_corridor_scramble_n30), filtered to "
+        "--toh-length-num-disks and C1. Omit to fall back to the raw pre-calibration pilot "
+        "episode lengths (original v1/v2 behavior).",
+    )
+    parser.add_argument("--toh-length-num-disks", type=int, default=4)
     args = parser.parse_args()
 
     run_dir = (
@@ -579,8 +640,27 @@ def main() -> None:
             f"vc_mean/sd={s.vc_mean:.2f}/{s.vc_sd:.2f}"
         )
 
+    toh_frozen_lengths: list[int] | None = None
+    if args.toh_length_run_dir:
+        toh_run_dir = (
+            REPO_ROOT / args.toh_length_run_dir
+            if not Path(args.toh_length_run_dir).is_absolute()
+            else Path(args.toh_length_run_dir)
+        )
+        toh_frozen_lengths = load_toh_frozen_corridor_lengths(
+            toh_run_dir, num_disks=args.toh_length_num_disks
+        )
+        print(
+            f"Loaded {len(toh_frozen_lengths)} real ToH C1/{args.toh_length_num_disks}-disk "
+            f"episode lengths from {toh_run_dir} for the length bootstrap pool."
+        )
+
     cells = build_design_cells(
-        pilot, instances_per_domain=50, runs_per_condition=5, compute_stages=3
+        pilot,
+        instances_per_domain=50,
+        runs_per_condition=5,
+        compute_stages=3,
+        toh_frozen_corridor_lengths=toh_frozen_lengths,
     )
 
     effect_grid = sorted({float(x) for x in args.effect_grid.split(",")}, reverse=True)
