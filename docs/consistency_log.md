@@ -2,6 +2,60 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-20 — Vier Gate-Aufräumpunkte: [VERIFY]-Zitate raus, Budget-Top-up erledigt, C1/C2-QC-Punkt neu, Block-Aufteilung geklärt
+
+**[VERIFY]-Zitate:** Auf Nutzerwunsch komplett aus `blueprints/gate_p1_readiness.md` entfernt (Gate A,
+war WEICH, blockierte ohnehin nichts). Die zugrundeliegende Zitat-Nacharbeit selbst (Scalena/EAGer,
+Côté, Liu et al., Zhao-Erstautor) läuft weiter parallel zu Phase 1/2 im Thesis-Repo — nur nicht mehr
+als Gate-Tracking-Punkt hier.
+
+**Budget-Top-up:** Ursprüngliches "Offen: ~9 EUR Restguthaben"-Sub-Item war veraltet — User hat
+zwischenzeitlich auf 50 EUR aufgeladen, aktuell ~36 EUR, und explizit erklärt: Zeit ist jetzt der
+limitierende Faktor, nicht Geld. Als erledigt/akzeptiert markiert, zusammen mit der neuen
+Token-basierten Budget-Zahl (~37–76.5h statt der alten ~48h, siehe Eintrag "Gate F: TextWorld-Cap
+korrigiert..." oben).
+
+**C1/C2-Qualitätskontrolle:** Neuer HART-Punkt unter Gate F. Begründung: Gate C-2 (Format-Compliance)
+war ein kurzer Smoke, gelaufen vor der Gate-D-Kalibrierung UND vor dem `max_steps`-Fix — die jetzt
+viel längeren, echten Episoden (TW Cap 45, ToH bis 45/Instanz) wurden nie mit echtem C1/C2-Reasoning
+unter diesen Bedingungen geprüft. Bewusst mit der Run-Hygiene-Pod-Session gebündelt (User-Entscheidung),
+kein separater Pod-Trip.
+
+**Block-Aufteilung — Rechercheergebnis, offene Unterfragen:** Beim Nachschauen im Code zeigt sich, dass
+"getrennte Blöcke" aktuell nicht direkt umsetzbar ist, ohne das vorher zu klären:
+
+1. **Kein `--domains`-CLI-Flag.** `run_phase1.py`/`run_phase2.py` haben keinen Weg, eine einzelne
+   Domäne gezielt zu laufen — nur `phase1.domains`/`phase2.domains` in der Config (Liste beider
+   Domänen). Der `EpisodeScheduler` mischt beide Domänen in **einem** `ThreadPoolExecutor`-Lauf
+   (`src/execution/worklist.py::build_phase1_worklist` baut eine gemeinsame Job-Liste, keine
+   Domain-Reihenfolge-Garantie). Um echte, sequenzielle Blöcke zu bekommen, bräuchte es entweder
+   einen neuen `--domains`-Flag oder manuelles Umschreiben der Config zwischen den beiden Läufen.
+2. **Nebenläufigkeit zwischen Blöcken.** Falls zwei separate Prozesse (TextWorld-Block,
+   ToH-Block) parallel liefen, würde die gemeinsame N=32-Batch-Invarianz-Grenze (C-1-Freeze)
+   verletzt (bis zu 64 gleichzeitige Requests gegen denselben vLLM-Server). Blöcke müssen daher
+   strikt sequenziell laufen, nie überlappend — sollte explizit festgehalten werden, ist aber kein
+   Show-Stopper.
+3. **Ist die Trennung noch nötig?** Der ursprüngliche Zweck ("Fehlerisolation") ist inzwischen
+   teilweise schon durch den Gate-F-Resume-Fix gelöst (atomares Schreiben, korrektes Resume auf
+   Episoden-Ebene — ein Crash in einer Domäne beschädigt die andere nicht). Was eine echte
+   Domain-Trennung zusätzlich brächte: bewusst nach TextWorld pausieren und Kosten/Ergebnisse
+   sichten, bevor die teurere ToH-Domäne (laut Budget-Neuschätzung der größere Kostentreiber)
+   startet.
+4. **Rerun-Kriterium unscharf.** `errors.jsonl`-Einträge (`append_episode_error()`,
+   `src/execution/episode_runner.py`) enthalten nur einen freien Traceback-Text, kein
+   strukturiertes "Infrastruktur vs. Content"-Feld. `classify_exclusion_reason()`
+   (`src/utils/run_resilience.py`) kennt nur `env_assertion`/`label_error` (beides
+   Content-/Logikfehler, keine Infrastruktur-Kategorie). §5.8 der Thesis-Prosa sagt nur
+   "technisch fehlgeschlagene Episoden durch Infrastruktur werden dokumentiert und neu gelaufen"
+   — ohne zu definieren, was als "Infrastruktur" zählt. Für die Praxis fehlt noch: eine klare
+   Faustregel (z. B. Netzwerk-Timeout/Backend-Crash/OOM = Infrastruktur → Rerun; Modell antwortet
+   nur falsch/parst nicht = valides Datum, kein Rerun-Grund).
+
+**Nicht autonom entschieden** — dem User zur Klärung vorgelegt (siehe Chat), keine Code-Änderung in
+diesem Eintrag.
+
+**Testsuite:** keine Quelländerung (nur Dokumentation).
+
 ## 2026-07-20 — Gate E vollständig abgeschlossen: H3-Power-Simulation-WEICH-Punkt abgehakt
 
 **Zweck:** User fragte nach einer Gesamtübersicht, welche Punkte in `blueprints/gate_p1_readiness.md`
