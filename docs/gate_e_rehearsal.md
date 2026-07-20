@@ -1,5 +1,21 @@
 # Gate E — Analyse-Rehearsal (End-to-End-Trockenlauf)
 
+> **Update 2026-07-20:** Abschnitt 6 unten (`cluster_bootstrap` auf ΔAUROC) wurde mit dem
+> ursprünglich **buggy** `cluster_bootstrap` gerechnet — der NaN/Inf-Sortierbug, der am selben Tag
+> später gefunden und gefixt wurde (`docs/consistency_log.md`, Housekeeping-Eintrag 2026-07-17),
+> erklärt rückwirkend genau die dort als "raue Kante"/"Kleine-Cluster-Phänomen" dokumentierte
+> TextWorld-Anomalie (Punktschätzer außerhalb des eigenen CI, `skewness=NaN`). Mit dem gefixten Code
+> neu gerechnet (`python scripts/gate_e_rehearsal.py --run-dir
+> data/results/instrument_validation/phase1_20260714_105004 --holdout-instances 3`, identische
+> Eingabedaten): TextWorld-CI weitet sich korrekt auf `[-0.0195, 0.1688]` (535 von 5000
+> nicht-endlichen Replikaten jetzt herausgefiltert statt die Perzentile zu verfälschen), Punktschätzer
+> (0.0796) liegt jetzt sauber **innerhalb** des CI, `skewness=-0.402` (kein NaN mehr). Pooled- und
+> ToH-Zeilen waren nie betroffen (0 nicht-endliche Replikate), unverändert. Die restliche Kette
+> (Schritte 1–5 unten) wurde nicht separat neu verifiziert, ist aber von diesem spezifischen Bug
+> nicht betroffen (der Bug sitzt ausschließlich in der Perzentil-Berechnung von `cluster_bootstrap`,
+> nicht in den vorgelagerten Schritten). Damit ist der HART-Punkt "End-to-End-Trockenlauf" mit
+> aktuellem Code bestätigt, nicht nur mit dem Stand von vor dem Fix.
+
 **Datum:** 2026-07-17
 **Branch/Commit:** `feat/gate-d-calibration` @ `5f053da`
 **Quelle (Analyse-Kette):** `data/results/instrument_validation/phase1_20260714_105004/` — 72 reale

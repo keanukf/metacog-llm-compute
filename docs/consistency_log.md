@@ -2,6 +2,35 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-20 — Gate E gegen aktuellen Code re-verifiziert, beide HART-Punkte abgehakt
+
+**Zweck:** Vor dem formalen Abhaken der Gate-E-Checkboxen geprüft, ob die am 2026-07-17
+dokumentierte Rehearsal-Evidenz nach den seitdem gelandeten Fixes noch stimmt — nicht einfach
+angenommen. Der "Rückwirkungs-Check" vom 2026-07-17 (`docs/consistency_log.md`, Eintrag
+"Rückwirkungs-Check: Gate-E-Bugfixes betreffen keine bereits berichteten Gate-D/C-Ergebnisse") deckte
+nur die drei **während** des Rehearsals gefundenen Bugs ab (extends-Overlay, YAML-`off`,
+Phase-2-Episoden-Drop) — nicht den `cluster_bootstrap`-NaN-Sortierbug, der **später am selben Tag**
+im Housekeeping-Pass gefunden wurde und laut dessen eigenem Log-Eintrag "rückwirkend die im selben
+Tag im Gate-E-Rehearsal als 'unklares Kleine-Cluster-Phänomen' notierte Anomalie erklärt" — dieser
+Rückschluss wurde nie durch einen tatsächlichen Neu-Lauf verifiziert.
+
+**Nachgeholt:** `scripts/gate_e_rehearsal.py` mit identischen Eingabedaten
+(`data/results/instrument_validation/phase1_20260714_105004/`, `--holdout-instances 3`) gegen den
+aktuellen Code neu laufen lassen. Ergebnis: Die TextWorld-Anomalie ist weg — CI weitet sich korrekt
+auf `[-0.0195, 0.1688]` (535/5000 nicht-endliche Replikate jetzt korrekt gefiltert statt die
+Perzentile zu verfälschen), Punktschätzer (0,0796) liegt jetzt innerhalb des CI, `skewness=-0,402`
+statt `NaN`. Pooled/ToH-Zeilen unverändert (0 nicht-endliche Replikate, nie betroffen). Volles
+Detail: `docs/gate_e_rehearsal.md`, Update-Hinweis oben im Dokument.
+
+**Pre-Analysis-Screen-HART-Punkt:** keine der seit 2026-07-17 gelandeten Fixes berührt
+`preanalysis_screen.py` — unverändert gültig, keine Neu-Verifikation nötig.
+
+**Ergebnis:** Beide Gate-E-HART-Punkte in `blueprints/gate_p1_readiness.md` abgehakt. Der
+WEICH-Punkt (H3-Power-Simulation) bleibt bewusst unangehakt — nicht weil Arbeit fehlt (durchgeführt
+und am 2026-07-19 mit der korrigierten Längen-Annahme aktualisiert), sondern weil er laut eigener
+Formulierung eine Nutzer-Entscheidung verlangt (wie mit dem Power-Befund im Kapitel umgegangen wird),
+keine technische Restarbeit.
+
 ## 2026-07-19 — ToH-Manifest final eingefroren: 4 Disks, C1-Referenz, `random_scramble`
 
 **Zweck:** Abschluss des Gate-D-ToH-Prozesses (siehe die zahlreichen Einträge der letzten Tage:
