@@ -2,6 +2,39 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-20 — Run-Hygiene: Modell-Speicherort korrigiert, Preflight-Script gebaut
+
+**Zweck:** User korrigierte den gerade reparierten Run-Hygiene-Punkt: das Modell liegt **nie** auf
+dem persistenten Network Volume, immer auf der ephemeren Container-Disk. Der wiederhergestellte
+Volltext hatte fälschlich "Modell vorab auf dem Network Volume" übernommen — Verifikation gegen
+`docs/runpod.md` und `scripts/pod_runtime_env.sh` bestätigt: `HF_HOME=/root/.cache/huggingface`
+(ephemer), bewusst nicht `/workspace` (RunPods Template-Default zeigt dort fälschlich hin, wird von
+`pod_runtime_env.sh` korrigiert). Network Volume soll klein bleiben (nur Code + Results,
+"10 GB is enough"), Re-Download des Modells nach Container-Neustart ist einkalkuliert.
+
+**Weiterer Fund währenddessen:** `RESULTS_DIR`-Env-Var wird von keinem Script tatsächlich gelesen —
+reine Dokumentationskonvention. Der eigentliche Persistenz-Mechanismus ist, dass `--checkpoint-dir`
+relativ zum Repo-Root defaultet, und das Repo selbst unter `/workspace` liegt. Checkliste entsprechend
+korrigiert, damit sie den echten Mechanismus beschreibt statt der Env-Var.
+
+**Preflight-Script gebaut:** `scripts/gate_f_run_hygiene_preflight.py` — fünf Checks ohne GPU/
+Inferenz, lokal in Sekunden lauffähig:
+1. `HF_HOME` nicht unter `/workspace` + Modell+Revision tatsächlich im lokalen Cache vorhanden.
+2. Langfuse: entweder explizit aus, oder Credentials + SDK vorhanden.
+3. Repo-Checkout selbst liegt unter `/workspace`.
+4. History-Guard: keine Truncation-Parameter aktiv (spiegelt `src/utils/history_guard.py`'s eigene
+   Laufzeitprüfung, schlägt hier aber vorab fehl statt mitten im Batch).
+5. Sidecar-Mode `action_window`, Full-Instanzen kollidieren nicht mit Holdout, `execution.
+   max_concurrent_episodes=32` (C-1-Freeze).
+
+**Lokal getestet** (Mac, kein Pod): History-Guard und Sidecar/Concurrency-Checks laufen sauber grün
+(bestätigt, dass die aktuelle `experiment_core.yaml` an diesen Punkten schon korrekt ist); die drei
+pod-spezifischen Checks (HF_HOME, Langfuse, `/workspace`) schlagen erwartungsgemäß fehl, da lokal
+kein Pod-Environment vorliegt — Logikpfade einzeln mit simuliertem `HF_HOME` verifiziert (echter
+Cache-Treffer und `/workspace`-Fehlschlag beide korrekt erkannt).
+
+**Testsuite:** 358 passed (kein Produktionscode geändert, nur ein neues Dev-Script + Doku).
+
 ## 2026-07-20 — Run-Hygiene-Checklisten-Punkt: Dokubug seit 2026-07-14 gefixt
 
 **Zweck:** User fragte nach dem nächsten Schritt für die Gate-F-Run-Hygiene-Checkliste; beim
