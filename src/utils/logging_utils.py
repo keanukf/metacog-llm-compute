@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 import platform
 import socket
 import subprocess
@@ -94,8 +95,19 @@ def log_episode(
     path.parent.mkdir(parents=True, exist_ok=True)
     to_write = compact_episode_for_storage(data) if compact else dict(data)
     to_write.setdefault("schema_version", "episode.v1")
-    with open(path, "w") as f:
-        json.dump(to_write, f, indent=2)
+    # Write to a sibling temp file and atomically rename onto the final path (os.replace is
+    # atomic on POSIX and Windows). A direct open(path, "w") + json.dump can be interrupted
+    # mid-write (e.g. a killed batch job), leaving a truncated file that list_completed_episodes()
+    # -- a plain existence glob, not a content check -- would then treat as done forever, since
+    # resume never revisits it. See docs/consistency_log.md, 2026-07-20 Gate F entry.
+    tmp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with open(tmp_path, "w") as f:
+            json.dump(to_write, f, indent=2)
+        os.replace(tmp_path, path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
     return path
 
 
