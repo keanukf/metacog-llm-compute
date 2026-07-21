@@ -1,3 +1,11 @@
+"""TypedDicts for the persisted episode artifact (``episode.v1``; ADR-003 schema_version).
+
+Structural contract for the ``ep_*.json`` files written per episode and re-read by
+``src.analysis.datasets``. ``StepRecord`` is one environment step (with its TLE/VC/correctness);
+``EpisodeRecord`` is one episode. Required vs optional fields are split via TypedDict inheritance so
+best-effort validation (``datasets._validate_episode_record``) can accept both phases' records.
+"""
+
 from __future__ import annotations
 
 from typing import Any, TypedDict

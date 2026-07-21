@@ -1,3 +1,10 @@
+"""Repository-specific exception hierarchy.
+
+All rooted at ``MetacogError`` so callers (episode scheduler, backends, env labeling) can catch the
+whole family, and ``run_resilience.classify_exclusion_reason`` can distinguish an infrastructure
+fault worth quarantining from a data-labeling failure.
+"""
+
 from __future__ import annotations
 
 
