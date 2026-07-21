@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """
-Phase 2 — Adaptive Allocation: run domains x instances x strategies x runs.
-Supports --resume via checkpoint_dir.
+Phase 1 — Calibration: run domains x instances x compute_stages x runs.
+Supports --resume via checkpoint_dir; skips already completed episodes.
 Progress: timestamped batch lines (elapsed, ep/h, ETA); optional --verbose-episodes / --verbose-steps.
-Usage: python scripts/run_phase2.py --config configs/experiment_core.yaml [--resume] [--real]
+Usage: python scripts/run_phase1.py --config configs/experiment_core.yaml [--resume] [--real]
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import random
 import sys
 import time
 from collections import defaultdict
@@ -19,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -31,13 +29,9 @@ _DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 def load_config(config_path: str | Path) -> dict:
     """Load a run config, merging ``extends: <relative-or-repo-relative path>`` if present.
 
-    Dev/overlay configs (e.g. ``configs/dev/*.yaml``) commonly extend
-    ``experiment_core.yaml`` via an ``extends`` key (see ``configs/dev/gate_d_calibration.yaml``).
-    A plain ``yaml.safe_load`` silently drops every key not restated in the overlay (model,
-    episode, domain_prompts, paths, ...), which only surfaces as a downstream KeyError/behavior
-    change, not a load error. Reuse the same recursive merge Gate D's diagnostic scripts already
-    rely on (``scripts.sweep_textworld_difficulty._load_merged_config``) so overlay configs behave
-    identically here.
+    See ``scripts/run_phase2.py::load_config`` for rationale — same fix, same bug (overlay
+    configs like ``configs/dev/gate_d_calibration.yaml`` silently lost their base-config keys
+    under a plain ``yaml.safe_load``).
     """
     from scripts.sweep_textworld_difficulty import _load_merged_config
 
@@ -92,6 +86,7 @@ def _build_run_summary(
     episodes_failed: int,
     execution_metrics: dict[str, Any] | None = None,
 ) -> dict:
+    # Aggregate over all checkpoints currently present
     episodes: list[dict] = []
     for p in sorted(checkpoint_dir.glob("ep_*.json")):
         try:
@@ -99,7 +94,6 @@ def _build_run_summary(
                 episodes.append(json.load(f))
         except Exception:
             continue
-
     by_domain: dict[str, dict[str, float]] = {}
     domain_acc: dict[str, list[dict]] = defaultdict(list)
     for ep in episodes:
@@ -118,13 +112,12 @@ def _build_run_summary(
             "avg_steps": avg_steps,
             "avg_lm_calls": avg_calls,
         }
-
-    by_strategy: dict[str, dict[str, float]] = {}
-    strat_acc: dict[str, list[dict]] = defaultdict(list)
+    by_stage: dict[str, dict[str, float]] = {}
+    stage_acc: dict[str, list[dict]] = defaultdict(list)
     for ep in episodes:
-        s = str(ep.get("strategy", "unknown"))
-        strat_acc[s].append(ep)
-    for s, eps in strat_acc.items():
+        s = str(ep.get("compute_stage", "unknown"))
+        stage_acc[s].append(ep)
+    for s, eps in stage_acc.items():
         n = len(eps)
         if n == 0:
             continue
@@ -132,7 +125,7 @@ def _build_run_summary(
         avg_tokens = (
             sum(int(e.get("total_tokens_generated") or e.get("tokens") or 0) for e in eps) / n
         )
-        by_strategy[s] = {"episodes": n, "success_rate": succ / n, "avg_tokens": avg_tokens}
+        by_stage[s] = {"episodes": n, "success_rate": succ / n, "avg_tokens": avg_tokens}
 
     tle_means: list[float] = []
     vc_means: list[float] = []
@@ -165,7 +158,7 @@ def _build_run_summary(
         "total_wall_time_s": float(total_wall_time_s),
         "avg_episode_time_s": float(avg_episode_time_s),
         "by_domain": by_domain,
-        "by_stage_or_strategy": by_strategy,
+        "by_stage_or_strategy": by_stage,
         "signal_summary": signal_summary,
         "timestamp_end_utc": datetime.now(timezone.utc).isoformat(),
     }
@@ -174,24 +167,17 @@ def _build_run_summary(
     return summary
 
 
-def _rng_for_episode(ep_id: str) -> random.Random:
-    """Deterministic RNG per episode id (stable across processes for resume)."""
-    digest = hashlib.md5(ep_id.encode(), usedforsecurity=False).hexdigest()
-    seed = int(digest[:16], 16) % (2**32 - 1) + 1
-    return random.Random(seed)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/experiment_core.yaml")
-    parser.add_argument("--checkpoint-dir", default="data/results/phase2")
+    parser.add_argument("--checkpoint-dir", default="data/results/phase1")
     parser.add_argument(
         "--no-timestamp-run",
         action="store_true",
-        help="Write checkpoints directly under --checkpoint-dir instead of a new phase2_*_UTC folder. "
-        "Ignored when --resume.",
+        help="Write checkpoints directly under --checkpoint-dir instead of a new phase1_*_UTC folder. "
+        "Ignored when --resume (resume always uses the given directory).",
     )
-    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--resume", action="store_true", help="Skip completed episodes")
     parser.add_argument(
         "--real", action="store_true", help="Use real model (vLLM/HF) when available"
     )
@@ -229,7 +215,7 @@ def main() -> None:
     else:
         from src.utils.run_output_layout import make_run_subdirectory
 
-        checkpoint_dir = make_run_subdirectory(checkpoint_base, prefix="phase2")
+        checkpoint_dir = make_run_subdirectory(checkpoint_base, prefix="phase1")
     config = load_config(config_path)
     lg = config.get("logging") or {}
     from src.utils.logprob_sidecar import LogprobSidecarConfig
@@ -244,10 +230,10 @@ def main() -> None:
 
     from src.execution.backend.factory import create_execution_backend
     from src.execution.config import ExecutionConfig, write_frozen_execution_params
-    from src.execution.episode_runner import Phase2RunContext, run_phase2_job
+    from src.execution.episode_runner import Phase1RunContext, run_phase1_job
     from src.execution.metrics import build_execution_metrics
     from src.execution.scheduler import EpisodeScheduler
-    from src.execution.worklist import build_phase2_worklist
+    from src.execution.worklist import build_phase1_worklist
     from src.utils.checkpointing import list_completed_episodes
     from src.utils.logging_utils import write_run_metadata
     from src.utils.run_output_layout import write_short_run_info
@@ -265,56 +251,20 @@ def main() -> None:
     completed = list_completed_episodes(checkpoint_dir) if args.resume else set()
     quarantined = load_quarantined_episode_ids(checkpoint_dir)
     log(f"Checkpoint directory: {checkpoint_dir.resolve()}")
-    phase2 = config.get("phase2", {})
-    domains = phase2.get("domains", ["textworld", "tower_of_hanoi"])
-    instances_per_domain = phase2.get("instances_per_domain", 50)
-    strategies = phase2.get(
-        "strategies",
-        ["adaptive_tle", "always_c0", "always_c2", "random", "eager_style", "adaptive_vc"],
-    )
-    runs = phase2.get("runs_per_condition", 5)
+    phase1 = config.get("phase1", {})
+    domains = phase1.get("domains", ["textworld", "tower_of_hanoi"])
+    instances_per_domain = phase1.get("instances_per_domain", 50)
+    stages = ["C0", "C1", "C2"]
+    runs = phase1.get("runs_per_condition", 5)
     max_steps = config.get("episode", {}).get("max_steps_per_episode", 20)
-
-    from src.agent.allocation_policy import load_policy, policy_signal_for_strategy
-    from src.agent.allocator import POLICY_REQUIRED_STRATEGIES, allocate
-
-    policy_required = POLICY_REQUIRED_STRATEGIES & {str(s) for s in strategies}
-    policies_by_key: dict[tuple[str, str], Any] = {}
-    policy_artifact_path: str | None = None
-    policy_artifact_sha256: str | None = None
-    if policy_required:
-        artifact_rel = phase2.get("policy_artifact")
-        if not artifact_rel:
-            raise SystemExit(
-                "phase2.policy_artifact is required for strategies: "
-                + ", ".join(sorted(policy_required))
-            )
-        artifact_path = Path(str(artifact_rel))
-        if not artifact_path.is_absolute():
-            artifact_path = REPO_ROOT / artifact_path
-        if not artifact_path.is_file():
-            raise SystemExit(f"policy artifact not found: {artifact_path}")
-        policy_artifact_path = str(artifact_path)
-        policy_artifact_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
-        for dom in domains:
-            for strat in policy_required:
-                sig = policy_signal_for_strategy(str(strat))
-                if sig is None:
-                    continue
-                policies_by_key[(str(dom), str(strat))] = load_policy(
-                    artifact_path,
-                    domain=str(dom),
-                    signal=sig,
-                )
-
     progress_every = (
         int(args.progress_every)
         if int(args.progress_every) > 0
-        else int(phase2.get("progress_every_episodes", 10))
+        else int(phase1.get("progress_every_episodes", 10))
     )
-    total = len(domains) * instances_per_domain * len(strategies) * runs
+    total = len(domains) * instances_per_domain * len(stages) * runs
     log(
-        f"Phase 2 start — {len(domains)} domains × {instances_per_domain} inst × {len(strategies)} strategies × {runs} runs = {total} episodes "
+        f"Phase 1 start — {len(domains)} domains × {instances_per_domain} inst × {len(stages)} stages × {runs} runs = {total} episodes "
         f"| resume={args.resume} real={args.real} | already_done={len(completed)}"
     )
 
@@ -324,7 +274,7 @@ def main() -> None:
     write_run_metadata(
         checkpoint_dir,
         config,
-        script="run_phase2.py",
+        script="run_phase1.py",
         config_path=str(config_path),
         pilot_mode=pilot_mode,
         model_name=str(model_cfg.get("name", "unknown")),
@@ -349,20 +299,16 @@ def main() -> None:
                 eps_derived_under_load=bool(frozen.get("eps_derived_under_load", False)),
             ),
         )
-    if policy_artifact_path is not None or args.allow_history_truncation:
+    if args.allow_history_truncation:
         meta_path = checkpoint_dir / "run_metadata.json"
         with open(meta_path) as f:
             meta_obj = json.load(f)
-        if policy_artifact_path is not None:
-            meta_obj["policy_artifact_path"] = policy_artifact_path
-            meta_obj["policy_artifact_sha256"] = policy_artifact_sha256
-        if args.allow_history_truncation:
-            meta_obj["history_truncation_allowed"] = True
+        meta_obj["history_truncation_allowed"] = True
         with open(meta_path, "w") as f:
             json.dump(meta_obj, f, indent=2)
     write_short_run_info(
         checkpoint_dir,
-        script="run_phase2.py",
+        script="run_phase1.py",
         config_path=config_path,
         extra={
             "checkpoint_dir_resolved": str(checkpoint_dir.resolve()),
@@ -381,7 +327,7 @@ def main() -> None:
     rolling: list[dict] = []
     done_count = 0
 
-    run_ctx = Phase2RunContext(
+    run_ctx = Phase1RunContext(
         config=config,
         checkpoint_dir=checkpoint_dir,
         repo_root=REPO_ROOT,
@@ -394,15 +340,12 @@ def main() -> None:
         save_step_traces=save_step_traces,
         allow_history_truncation=bool(args.allow_history_truncation),
         verbose_steps=bool(args.verbose_steps),
-        policies_by_key=policies_by_key,
-        allocate_fn=allocate,
-        rng_for_episode=_rng_for_episode,
         tracing_cfg=config.get("tracing"),
         log_fn=log,
         log_step_fn=log_step_line if args.verbose_steps else None,
     )
 
-    jobs = build_phase2_worklist(config, completed=completed, quarantined=quarantined)
+    jobs = build_phase1_worklist(config, completed=completed, quarantined=quarantined)
     scheduler = EpisodeScheduler(exec_cfg.max_concurrent_episodes)
 
     def _on_complete(outcome: dict, stats) -> None:
@@ -414,10 +357,10 @@ def main() -> None:
         data = outcome.get("data") or {}
         if args.verbose_episodes:
             log_episode_line(
-                "Phase 2",
+                "Phase 1",
                 str(outcome.get("episode_id")),
                 domain=str(outcome.get("domain")),
-                label=str(outcome.get("strategy")),
+                label=str(outcome.get("compute_stage")),
                 instance=int(outcome.get("instance") or 0),
                 run=int(outcome.get("run") or 0),
                 steps=int(data.get("steps") or 0),
@@ -438,7 +381,7 @@ def main() -> None:
             remaining = total - total_done
             eta_s = (remaining / rate) if rate > 0 else None
             print_batch_progress(
-                phase="Phase 2",
+                phase="Phase 1",
                 total_done=total_done,
                 total=total,
                 new_in_run=done_count,
@@ -446,13 +389,13 @@ def main() -> None:
                 eta_s=eta_s,
                 rolling=rolling,
                 domain=str(outcome.get("domain")),
-                stage_or_strategy=str(outcome.get("strategy")),
-                label_key="strategy",
+                stage_or_strategy=str(outcome.get("compute_stage")),
+                label_key="compute_stage",
             )
 
     stats = scheduler.run(
         jobs,
-        run_fn=lambda job: run_phase2_job(job, model, run_ctx),
+        run_fn=lambda job: run_phase1_job(job, model, run_ctx),
         on_complete=_on_complete,
         errors_path=errors_path,
         checkpoint_dir=checkpoint_dir,
@@ -461,7 +404,7 @@ def main() -> None:
     )
     wall_total = time.perf_counter() - t_run_start
     log(
-        f"Phase 2 finished — new episodes: {stats.done_count}; checkpoints: {len(list_completed_episodes(checkpoint_dir))}; "
+        f"Phase 1 finished — new episodes: {stats.done_count}; checkpoints: {len(list_completed_episodes(checkpoint_dir))}; "
         f"wall {format_run_elapsed(wall_total)}; max_in_flight={stats.max_in_flight_observed}"
     )
     exec_metrics = build_execution_metrics(

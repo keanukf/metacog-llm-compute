@@ -36,7 +36,7 @@ def _short_prompt() -> str:
 
 
 def _create_real_model(config: dict[str, Any], pilot_mode: str):
-    from scripts.run_pilot import _create_real_model as create  # noqa: WPS433
+    from scripts.experiment.run_pilot import _create_real_model as create  # noqa: WPS433
 
     return create(config, pilot_mode=pilot_mode)
 

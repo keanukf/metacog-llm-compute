@@ -42,7 +42,7 @@ MAX_TRIALS = 12
 
 
 def _expected_episode_ids() -> set[str]:
-    from scripts.run_phase1 import load_config
+    from scripts.experiment.run_phase1 import load_config
     from src.execution.worklist import build_phase1_worklist
 
     config = load_config(REPO_ROOT / CONFIG)

@@ -169,7 +169,7 @@ model:
     result = subprocess.run(
         [
             sys.executable,
-            str(REPO_ROOT / "scripts" / "run_phase2.py"),
+            str(REPO_ROOT / "scripts" / "experiment" / "run_phase2.py"),
             "--config",
             str(cfg),
             "--checkpoint-dir",

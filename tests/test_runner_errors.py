@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.run_pilot import _assert_real_model_or_raise
+from scripts.experiment.run_pilot import _assert_real_model_or_raise
 from src.utils.errors import BackendError
 
 
