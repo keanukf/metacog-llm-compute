@@ -1,3 +1,17 @@
+"""Parser that recovers the committed action from a native-thinking (C1/C2) model response.
+
+Load-bearing for measurement integrity: TLE is defined over the *committed action* tokens, so which
+span counts as "the action" is a dependent-variable question, not a formatting one. This parser is
+allowed to affect only whether an action the model *already intended* gets recognized -- it must
+never change which action is chosen, and never inject domain hints (the project-wide "red line"; see
+CLAUDE.md). Hence the strict cascade of ``parse_method`` values, tried in order of trust:
+``lmstudio_command_tag`` (explicit <command> wrapper) -> ``post_think`` (first real line after the
+final </think>, the preregistered target) -> ``legacy_action_prefix`` (an "ACTION:" line) ->
+``first_line_fallback`` -> ``embedded_action_fallback`` (last resort, mining a command mention out of
+verbose reasoning). Admissibility in ``shared.assess_candidate_admissibility`` only trusts
+``post_think``; the looser methods exist for trace diagnostics, not for gating a step.
+"""
+
 from __future__ import annotations
 
 import re
@@ -24,7 +38,12 @@ def _looks_like_tag_artifact(line: str) -> bool:
 
 
 def parse_cot_action(cot_text: str) -> dict[str, str]:
-    """Structured parse result for C1 CoT outputs."""
+    """Structured parse of a C1/C2 reasoning output.
+
+    Returns a dict with ``action`` ("" if unparsed), ``status`` (parsed|unparsed), ``parse_method``
+    (which rule in the trust cascade fired -- see module docstring), ``reasoning_internal`` (inner
+    text of the last complete <think>...</think>, kept for traces only, never scored), and ``raw``.
+    """
     raw = cot_text or ""
     t = raw
     reasoning_internal = ""

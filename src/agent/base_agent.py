@@ -1,6 +1,15 @@
 """
-Minimal agent loop: observation -> LM call -> action -> next observation.
-No framework (no LangChain/LlamaIndex). Each compute stage is a clear function.
+Core sequential-agent episode loop: observation -> LM call -> action -> next observation.
+
+This is the experimental machinery that produces both study phases. ``run_episode`` drives a
+single fixed-compute-stage episode (Phase 1 calibration mapping: every cell runs one of C0/C1/C2
+and logs TLE/VC per step). ``run_adaptive_episode`` drives an episode whose per-step compute stage
+is chosen at runtime by the allocator (Phase 2: adaptive strategies vs. baselines). Both share the
+same trace/logging surface so Phase 1 and Phase 2 records are directly comparable.
+
+Deliberately framework-free (no LangChain/LlamaIndex): each compute stage is a plain step function
+so the measured surface (prompt structure, action-token TLE window) stays fully under our control
+and identical across stages -- a preregistration requirement, not a style choice.
 """
 
 from __future__ import annotations

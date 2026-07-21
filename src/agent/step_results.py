@@ -1,3 +1,11 @@
+"""Backward-compatible unpacking of step-function return tuples.
+
+Step functions have grown their return arity over the project's life (from a 3-tuple to the current
+10-tuple ``StepReturn``). This adapter lets the episode loop accept any historical width -- older
+mocks and tests still return short tuples -- and always hand back the full 10-field shape with
+missing trailing fields filled in. New code should return the full ``StepReturn``.
+"""
+
 from __future__ import annotations
 
 from typing import Any
