@@ -158,7 +158,7 @@ def build_jobs(n_episodes: int) -> list[Any]:
 def run_probe(
     n_episodes: int, use_real: bool, max_concurrent: int, out_dir: Path
 ) -> dict[str, Any]:
-    from scripts.sweep_textworld_difficulty import _load_merged_config
+    from scripts.difficulty_calibration.sweep_textworld_difficulty import _load_merged_config
     from src.execution.backend.factory import create_execution_backend
     from src.execution.episode_runner import Phase1RunContext, run_phase1_job
     from src.execution.scheduler import EpisodeScheduler

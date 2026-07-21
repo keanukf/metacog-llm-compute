@@ -33,7 +33,7 @@ def load_config(config_path: str | Path) -> dict:
     configs like ``configs/dev/gate_d_calibration.yaml`` silently lost their base-config keys
     under a plain ``yaml.safe_load``).
     """
-    from scripts.sweep_textworld_difficulty import _load_merged_config
+    from scripts.difficulty_calibration.sweep_textworld_difficulty import _load_merged_config
 
     return _load_merged_config(Path(config_path))
 

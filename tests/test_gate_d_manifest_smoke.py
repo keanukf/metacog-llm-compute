@@ -9,7 +9,7 @@ from typing import Any
 
 import src.execution.backend.factory as backend_factory
 import src.utils.experiment_env as experiment_env
-from scripts.gate_d_manifest_smoke import _run_domain_smoke
+from scripts.difficulty_calibration.manifest_success_smoke import _run_domain_smoke
 
 
 class _StubModel:
@@ -53,7 +53,7 @@ def test_run_domain_smoke_calls_create_execution_backend_with_keyword_arg(monkey
 
 
 def test_reference_stage_by_domain_uses_c1_for_tower_of_hanoi():
-    from scripts.gate_d_manifest_smoke import REFERENCE_STAGE_BY_DOMAIN
+    from scripts.difficulty_calibration.manifest_success_smoke import REFERENCE_STAGE_BY_DOMAIN
 
     # ToH C0 was found structurally near-0% regardless of configuration (goal-peg-avoidance
     # bias, not a difficulty problem) -- the corridor is calibrated and frozen against C1.

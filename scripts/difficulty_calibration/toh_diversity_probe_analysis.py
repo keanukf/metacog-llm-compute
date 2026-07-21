@@ -18,7 +18,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _auroc_with_ci(tle_vals: list[float], labels: list[int], *, z: float = 1.645) -> dict[str, Any]:

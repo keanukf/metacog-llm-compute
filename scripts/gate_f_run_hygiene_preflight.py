@@ -210,7 +210,7 @@ def main() -> None:
     parser.add_argument("--out", default=None, help="Optional path to write the JSON report to.")
     args = parser.parse_args()
 
-    from scripts.sweep_textworld_difficulty import _load_merged_config
+    from scripts.difficulty_calibration.sweep_textworld_difficulty import _load_merged_config
 
     config_path = (
         REPO_ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.sweep_textworld_difficulty import _load_merged_config
+from scripts.difficulty_calibration.sweep_textworld_difficulty import _load_merged_config
 
 
 def test_extends_merges_top_level_and_one_level_dicts(tmp_path: Path) -> None:

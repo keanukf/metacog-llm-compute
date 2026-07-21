@@ -9,12 +9,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.gate_d_metrics import SUCCESS_CORRIDOR, episode_record, success_rate_at_cap
-from scripts.sweep_textworld_difficulty import _load_merged_config
+from scripts.difficulty_calibration.difficulty_metrics import (
+    SUCCESS_CORRIDOR,
+    episode_record,
+    success_rate_at_cap,
+)
+from scripts.difficulty_calibration.sweep_textworld_difficulty import _load_merged_config
 
 # Compute stage whose success@Cap the corridor criterion is judged against, per domain. C0 for
 # ToH was found (2026-07) to be structurally near-0% regardless of configuration -- a systematic

@@ -3,7 +3,7 @@ diagnostic scripts (inspect_gate_d_abort_actions.py vs. analyze_gate_d_abort_dis
 
 from __future__ import annotations
 
-from scripts.inspect_gate_d_abort_actions import _resolve_obs_ceiling
+from scripts.difficulty_calibration.inspect_abort_last_actions import _resolve_obs_ceiling
 
 
 def test_resolve_obs_ceiling_defaults_to_sweep_value():

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scripts.gate_d_metrics import (
+from scripts.difficulty_calibration.difficulty_metrics import (
     derive_production_cap,
     episode_record,
     success_rate_at_cap,

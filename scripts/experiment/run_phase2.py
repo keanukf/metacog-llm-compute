@@ -39,7 +39,7 @@ def load_config(config_path: str | Path) -> dict:
     rely on (``scripts.sweep_textworld_difficulty._load_merged_config``) so overlay configs behave
     identically here.
     """
-    from scripts.sweep_textworld_difficulty import _load_merged_config
+    from scripts.difficulty_calibration.sweep_textworld_difficulty import _load_merged_config
 
     return _load_merged_config(Path(config_path))
 

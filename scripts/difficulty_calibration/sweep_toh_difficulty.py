@@ -10,17 +10,19 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.gate_d_metrics import (  # noqa: E402
+from scripts.difficulty_calibration.difficulty_metrics import (  # noqa: E402
     SUCCESS_CORRIDOR,
     aggregate_length_stats,
     episode_record,
     success_rate_at_obs,
 )
-from scripts.sweep_textworld_difficulty import _load_merged_config  # noqa: E402
+from scripts.difficulty_calibration.sweep_textworld_difficulty import (
+    _load_merged_config,  # noqa: E402
+)
 
 
 def _run_toh_c0_batch(
