@@ -10,7 +10,8 @@ import re
 from typing import Any
 
 from src.agent import compute_prompt_utils, cot_parser
-from src.signals import verbalized_confidence
+from src.signals import token_entropy, verbalized_confidence
+from src.utils.inference.lmstudio.wrapper import attach_lmstudio_diagnostics_to_subcalls
 
 # (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None, prompt_full, response_full, call_detail|None)
 StepReturn = tuple[str, dict[str, float] | None, float | None, int, int, Any, Any, str, str, Any]
@@ -28,6 +29,15 @@ DEFAULT_VC_FOLLOWUP_INSTRUCTION = (
 _SINGLE_LINE_OUTPUT_INSTRUCTION: str = (
     "Write one valid game action on a single line, in the format already shown above. "
     "Do not explain, add XML tags, or repeat these instructions."
+)
+
+# Shared between C1 and C2 -- both stages reason inside a native <think> block before committing
+# an action, so both use the same instruction text (previously C2 used the no-thinking
+# _SINGLE_LINE_OUTPUT_INSTRUCTION by accident of code reuse from C0; unified 2026-07-21, see
+# docs/consistency_log.md).
+_REASONING_OUTPUT_INSTRUCTION: str = (
+    "Before answering, briefly reason inside <think>...</think> tags. "
+    "After </think>, write one valid game action on its own line, in the format already shown above."
 )
 
 # Shared generation instruction body (reused to keep C0/C1 parity stable over time).
@@ -616,3 +626,338 @@ def _resolve_vc(
         )
     vc = verbalized_confidence.parse_confidence(inline_text)
     return vc, None, 0, 0
+
+
+# --------------------------------------------------------------------------------------------
+# Shared reasoning engine (C1 = 1 candidate / no vote, C2 = N candidates / majority vote).
+#
+# Both stages generate a native <think>...</think> reasoning block then commit one action; C2
+# additionally draws several candidates and votes. Before 2026-07-21 this admissibility/parsing
+# logic existed only in C2 (assess_c2_sample_admissibility); C1 used a separate, more naive path
+# (_normalize_action_line) with no closed-thinking check, so a candidate whose reasoning never
+# closed got its literal "<think>" text parsed as the action, and TLE got computed over the
+# opening-tag tokens instead of a real decision point (docs/consistency_log.md, 2026-07-20/21).
+# --------------------------------------------------------------------------------------------
+
+_THINK_CLOSE_TAG = "</think>"
+
+
+def _thinking_block_closed(text: str) -> bool:
+    return _THINK_CLOSE_TAG.casefold() in (text or "").casefold()
+
+
+def majority_vote(
+    vote_keys_in_order: list[str],
+    *,
+    rng: random.Random | None,
+) -> tuple[str, bool, dict[str, int]]:
+    """
+    Majority vote over pre-normalized vote keys.
+
+    Returns (winning_key, tie_broken, counts). Degenerates correctly for a single key (C1's
+    n_samples=1 case): one key, one vote, no tie.
+    """
+    if not vote_keys_in_order:
+        return "", False, {}
+    from collections import Counter
+
+    counts = Counter(vote_keys_in_order)
+    max_count = max(counts.values())
+    tied = [k for k, c in counts.items() if c == max_count]
+    if len(tied) == 1:
+        return tied[0], False, dict(counts)
+    r = rng or random.Random(0)
+    return str(r.choice(tied)), True, dict(counts)
+
+
+def assess_candidate_admissibility(response: str) -> dict[str, Any]:
+    """
+    A reasoning candidate is admissible only with a closed thinking block and a parseable
+    post-think action. Shared by C1 (single candidate, no vote) and C2 (N candidates + vote).
+    """
+    text = response or ""
+    if not _thinking_block_closed(text):
+        return {
+            "admissible": False,
+            "reject_reason": "thinking_unclosed",
+            "action_exec": "",
+            "vote_key": "",
+            "raw_first_line": "",
+            "parse_method": None,
+        }
+    parsed = _parse_cot_action(text)
+    parse_method = parsed.get("parse_method")
+    action = str(parsed.get("action") or "").strip()
+    if parsed.get("status") != "parsed" or parse_method != "post_think" or not action:
+        reject_reason = "no_parseable_action"
+        if parse_method:
+            reject_reason = f"parse_method_{parse_method}"
+        return {
+            "admissible": False,
+            "reject_reason": reject_reason,
+            "action_exec": "",
+            "vote_key": "",
+            "raw_first_line": "",
+            "parse_method": parse_method,
+        }
+    return {
+        "admissible": True,
+        "reject_reason": None,
+        "action_exec": _normalize_action_for_execution(action),
+        "vote_key": _normalize_vote_key(action),
+        "raw_first_line": action,
+        "parse_method": "post_think",
+    }
+
+
+def _build_reasoning_candidate(
+    *,
+    sample_index: int,
+    prompt: str,
+    text: str,
+    logprobs: Any,
+) -> dict[str, Any]:
+    sample: dict[str, Any] = {
+        "kind": "sample",
+        "sample_index": int(sample_index),
+        "prompt": prompt,
+        "response": text,
+        "logprobs": logprobs,
+        "tokens_generated": int(len(logprobs) if logprobs else 0),
+    }
+    sample.update(assess_candidate_admissibility(str(text or "")))
+    # TLE only for an admissible candidate -- otherwise the "action window" the extractor would
+    # slice is undefined (no closed think block means no real post-decision token span), and
+    # computing TLE on the opening-tag tokens would be a genuine signal-quality bug, not a
+    # harmless fallback.
+    lp = sample.get("logprobs")
+    raw_text = str(sample.get("response") or "")
+    if sample["admissible"] and lp:
+        sample["tle"] = token_entropy.extract_action_tle_from_response(raw_text, lp)
+    else:
+        sample["tle"] = None
+    if lp and isinstance(lp, list):
+        vals: list[float] = []
+        for x in lp:
+            if not isinstance(x, dict):
+                continue
+            lp_val = x.get("logprob")
+            if isinstance(lp_val, (int, float)):
+                vals.append(float(lp_val))
+        sample["mean_logprob"] = (sum(vals) / len(vals)) if vals else None
+    else:
+        sample["mean_logprob"] = None
+    return sample
+
+
+def reasoning_step_core(
+    observation: str,
+    history: list[str],
+    model: Any,
+    *,
+    n_samples: int,
+    sample_temperature: float,
+    cot_max_tokens: int | None,
+    stage_tag: str,
+    tie_break_seed: str | int | None = None,
+    call_index: int = 0,
+    save_action_logprobs: bool,
+    vc_mode: str,
+    prompt_prefix: str,
+    vc_followup_instruction: str,
+    action_max_tokens: int | None,
+    action_temperature: float | None,
+    action_stop: list[str] | None,
+    followup_max_tokens: int,
+    followup_temperature: float,
+    vc_followup_logprobs: bool,
+    followup_max_context_chars: int | None,
+    followup_cot_max_chars: int,
+    vc_raw_completion_max_chars: int,
+    vc_judged_context: str = "action_only",
+    vc_retry_on_parse_failure: bool = True,
+) -> StepReturn:
+    """
+    N reasoning candidates (native <think> block) -> majority vote. C1 calls this with
+    n_samples=1 (the vote is then trivial: the one admissible candidate, or none); C2 calls it
+    with n_samples>1 for genuine self-consistency. ``action_logprobs_raw`` is always returned as
+    one list per candidate (``[cand0_logprobs, cand1_logprobs, ...]``) -- callers that need a
+    single flat list (C1's external contract) unwrap it themselves.
+    """
+    prompt = (
+        f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_REASONING_OUTPUT_INSTRUCTION}"
+    )
+    act_tok = int(action_max_tokens) if action_max_tokens is not None else 32
+    sample_max_tokens = int(cot_max_tokens) if cot_max_tokens is not None else max(128, act_tok * 2)
+    if sample_max_tokens <= 0:
+        sample_max_tokens = max(128, act_tok * 2)
+    gen_kw = _action_generate_kwargs(action_max_tokens, float(sample_temperature), None)
+    gen_kw["max_tokens"] = sample_max_tokens
+    gen_kw["enable_thinking"] = True
+
+    samples: list[dict[str, Any]] = []
+    total_tokens = 0
+    n = max(1, int(n_samples))
+    if hasattr(model, "generate_many") and callable(getattr(model, "generate_many")):
+        outs = model.generate_many(prompt, n=n, logprobs=True, **gen_kw)
+        for i, (text, logprobs) in enumerate(outs):
+            samples.append(
+                _build_reasoning_candidate(
+                    sample_index=i, prompt=prompt, text=text, logprobs=logprobs
+                )
+            )
+            total_tokens += len(logprobs) if logprobs else 0
+    else:
+        for i in range(n):
+            text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
+            samples.append(
+                _build_reasoning_candidate(
+                    sample_index=i, prompt=prompt, text=text, logprobs=logprobs
+                )
+            )
+            total_tokens += len(logprobs) if logprobs else 0
+
+    admissible_samples = [s for s in samples if s.get("admissible")]
+    n_admissible = len(admissible_samples)
+    n_rejected = int(n) - n_admissible
+    vote_keys = [str(s.get("vote_key") or "") for s in admissible_samples if s.get("vote_key")]
+    step_outcome = "vote"
+    truncation_reason: str | None = None
+
+    if not vote_keys:
+        step_outcome = "truncation_no_action"
+        truncation_reason = "no_admissible_samples"
+        winning_key = ""
+        tie_broken = False
+        vote_counts: dict[str, int] = {}
+        vote_agreement = 0.0
+        unique_actions = 0
+        winner_index = None
+    else:
+        rng = _seeded_rng(tie_break_seed, call_index=int(call_index))
+        winning_key, tie_broken, vote_counts = majority_vote(vote_keys, rng=rng)
+        max_count = max(vote_counts.values()) if vote_counts else 0
+        vote_agreement = (float(max_count) / float(n_admissible)) if n_admissible > 0 else 0.0
+        unique_actions = len({k for k in vote_keys if k})
+        winner_index = None
+        for s in admissible_samples:
+            if str(s.get("vote_key") or "") == winning_key:
+                winner_index = int(s.get("sample_index") or 0)
+                break
+
+    winner_sample = samples[winner_index] if winner_index is not None else {}
+    winner_action_exec = str(winner_sample.get("action_exec") or "")
+    winner_raw_first = str(winner_sample.get("raw_first_line") or "")
+    winner_tle: dict[str, float] | None = (
+        winner_sample.get("tle") if winner_index is not None else None
+    )
+    winner_mean_logprob: float | None = None
+    if winner_index is not None:
+        mlp = winner_sample.get("mean_logprob")
+        winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
+    winner_completion = str(winner_sample.get("response") or "")
+
+    vc, vc_detail, extra_tok, extra_calls = None, None, 0, 0
+    if step_outcome == "vote" and winner_action_exec:
+        admissible_first_lines = [str(s.get("raw_first_line") or "") for s in admissible_samples]
+        vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
+            model,
+            vc_mode=vc_mode,
+            inline_text=winner_completion,
+            observation=observation,
+            history=history,
+            prompt_prefix=prompt_prefix,
+            stage_tag=stage_tag,
+            action_line=winner_action_exec,
+            vc_followup_instruction=vc_followup_instruction,
+            judged_context=vc_judged_context,
+            retry_on_parse_failure=vc_retry_on_parse_failure,
+            # cot_text feeds C1's "full" judged-context branch, c2_winner_completion feeds C2's --
+            # both point at the same winning completion so either stage's branch in
+            # _build_model_output_to_judge_section resolves correctly regardless of stage_tag.
+            cot_text=winner_completion,
+            c2_n_samples=n_admissible,
+            c2_sample_first_lines=admissible_first_lines,
+            c2_winner_completion=winner_completion,
+            vc_followup_logprobs=vc_followup_logprobs,
+            followup_max_tokens=followup_max_tokens,
+            followup_temperature=followup_temperature,
+            followup_max_context_chars=followup_max_context_chars,
+            followup_cot_max_chars=followup_cot_max_chars,
+            raw_completion_max_chars=vc_raw_completion_max_chars,
+        )
+
+    total_tokens += extra_tok
+    lm_calls = int(n) + extra_calls
+    if save_action_logprobs:
+        lp_saved: list[Any] | None = [
+            s.get("logprobs") if isinstance(s.get("logprobs"), list) else None for s in samples
+        ]
+    else:
+        lp_saved = None
+
+    sample_blocks = [
+        (
+            f"=== sample {int(s.get('sample_index', 0)) + 1}/{n} "
+            f"(admissible={bool(s.get('admissible'))}, "
+            f"first_line={str(s.get('raw_first_line') or '')!r}) ===\n"
+            f"{str(s.get('response') or '')}"
+        )
+        for s in samples
+    ]
+    response_full = "\n\n".join(sample_blocks)
+    subcalls = [
+        {
+            "kind": "sample",
+            "sample_index": int(s.get("sample_index", 0)),
+            "prompt": s.get("prompt") or "",
+            "response": s.get("response") or "",
+            "raw_first_line": s.get("raw_first_line") or "",
+            "action_exec": s.get("action_exec") or "",
+            "action_normalized": s.get("vote_key") or "",
+            "admissible": bool(s.get("admissible")),
+            "reject_reason": s.get("reject_reason"),
+            "parse_method": s.get("parse_method"),
+            "tokens_generated": int(s.get("tokens_generated") or 0),
+            "tle": s.get("tle"),
+            "mean_logprob": s.get("mean_logprob"),
+            "is_winner": bool(
+                winner_index is not None and int(s.get("sample_index") or 0) == int(winner_index)
+            ),
+        }
+        for s in samples
+    ]
+    attach_lmstudio_diagnostics_to_subcalls(model, subcalls)
+    call_detail = {
+        "stage": stage_tag,
+        "method": "self_consistency_majority_vote" if n > 1 else "single_reasoning_call",
+        "n_samples": int(n),
+        "n_samples_admissible": int(n_admissible),
+        "n_samples_rejected": int(n_rejected),
+        "step_outcome": step_outcome,
+        "truncation_reason": truncation_reason,
+        "enable_thinking": True,
+        "sample_temperature": float(sample_temperature),
+        "sample_max_tokens": int(sample_max_tokens),
+        "winner_index": int(winner_index) if winner_index is not None else None,
+        "winning_vote_key": winning_key,
+        "tie_broken": bool(tie_broken),
+        "vote_counts": vote_counts,
+        "vote_agreement": float(vote_agreement),
+        "unique_actions": int(unique_actions),
+        "winner_raw_first_line": winner_raw_first,
+        "winner_mean_logprob": winner_mean_logprob,
+        "subcalls": subcalls,
+    }
+    return (
+        winner_action_exec,
+        winner_tle,
+        vc,
+        int(total_tokens),
+        int(lm_calls),
+        lp_saved,
+        vc_detail,
+        prompt,
+        response_full,
+        call_detail,
+    )

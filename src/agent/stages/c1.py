@@ -1,4 +1,9 @@
-"""C1: single reasoning call with native thinking (one LM call)."""
+"""C1: single reasoning call with native thinking (one LM call).
+
+Thin wrapper over the shared reasoning engine (shared.reasoning_step_core) that C2 also uses --
+C1 is that engine called with n_samples=1 (one candidate, no vote). See shared.py's module
+docstring for the admissibility/parsing bug this unification fixed.
+"""
 
 from __future__ import annotations
 
@@ -7,13 +12,8 @@ from typing import Any
 from src.agent.stages.shared import (
     DEFAULT_VC_FOLLOWUP_INSTRUCTION,
     StepReturn,
-    _action_generate_kwargs,
-    _build_prompt,
-    _normalize_action_line,
-    _resolve_vc,
+    reasoning_step_core,
 )
-from src.signals import token_entropy
-from src.utils.inference.lmstudio.wrapper import attach_lmstudio_diagnostics_to_subcalls
 
 
 def c1_step_core(
@@ -43,78 +43,49 @@ def c1_step_core(
     C1: one LM call — reason inside <think>...</think>, then commit
     a final single-line action. TLE is measured on the action tokens only (post-think).
     """
-    base_prompt = _build_prompt(observation, history, prompt_prefix)
-    reason_instruction = (
-        "\n\n"
-        "Before answering, briefly reason inside <think>...</think> tags.\n"
-        "After </think>, write one valid game action on its own line, in the format already shown above."
-    )
-    reason_prompt = f"{base_prompt}{reason_instruction}"
-    act_tok = int(action_max_tokens) if action_max_tokens is not None else 32
-    reason_max_tokens = (
-        int(c1_cot_max_tokens) if c1_cot_max_tokens is not None else max(128, act_tok * 2)
-    )
-    if reason_max_tokens <= 0:
-        reason_max_tokens = max(128, act_tok * 2)
     reason_temp = c1_cot_temperature
     if reason_temp is None:
         reason_temp = float(action_temperature) if action_temperature is not None else 0.5
-    # Stop sequences apply to the full completion; they truncate native thinking blocks.
-    gen_kw = _action_generate_kwargs(action_max_tokens, float(reason_temp), None)
-    gen_kw["max_tokens"] = reason_max_tokens
-    gen_kw["enable_thinking"] = True
-    text, logprobs = model.generate(reason_prompt, logprobs=True, **gen_kw)
-    action = _normalize_action_line(text or "")
-    tokens_used = len(logprobs) if logprobs else 0
-    lm_calls = 1
-    tle = token_entropy.extract_action_tle_from_response(text, logprobs) if logprobs else None
 
-    vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
+    (
+        action,
+        tle,
+        vc,
+        tokens_used,
+        lm_calls,
+        lp_saved,
+        vc_detail,
+        prompt,
+        response_full,
+        call_detail,
+    ) = reasoning_step_core(
+        observation,
+        history,
         model,
-        vc_mode=vc_mode,
-        inline_text=text or "",
-        observation=observation,
-        history=history,
-        prompt_prefix=prompt_prefix,
+        n_samples=1,
+        sample_temperature=float(reason_temp),
+        cot_max_tokens=c1_cot_max_tokens,
         stage_tag="C1",
-        action_line=action,
+        save_action_logprobs=save_action_logprobs,
+        vc_mode=vc_mode,
+        prompt_prefix=prompt_prefix,
         vc_followup_instruction=vc_followup_instruction,
-        judged_context=vc_judged_context,
-        retry_on_parse_failure=vc_retry_on_parse_failure,
-        raw_action_completion=None,
-        cot_text=text or "",
-        verify_completion=None,
-        c2_n_samples=None,
-        c2_sample_first_lines=None,
-        c2_winner_completion=None,
-        vc_followup_logprobs=vc_followup_logprobs,
+        action_max_tokens=action_max_tokens,
+        action_temperature=action_temperature,
+        action_stop=action_stop,
         followup_max_tokens=followup_max_tokens,
         followup_temperature=followup_temperature,
+        vc_followup_logprobs=vc_followup_logprobs,
         followup_max_context_chars=followup_max_context_chars,
         followup_cot_max_chars=followup_cot_max_chars,
-        raw_completion_max_chars=vc_raw_completion_max_chars,
+        vc_raw_completion_max_chars=vc_raw_completion_max_chars,
+        vc_judged_context=vc_judged_context,
+        vc_retry_on_parse_failure=vc_retry_on_parse_failure,
     )
-    tokens_used += extra_tok
-    lm_calls += extra_calls
-
-    lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
-    response_full = text or ""
-    subcalls: list[dict[str, Any]] = [
-        {
-            "kind": "reason",
-            "prompt": reason_prompt,
-            "response": text,
-            "tokens_generated": int(len(logprobs) if logprobs else 0),
-            "temperature": float(reason_temp),
-            "max_tokens": int(reason_max_tokens),
-            "enable_thinking": True,
-        },
-    ]
-    attach_lmstudio_diagnostics_to_subcalls(model, subcalls)
-    call_detail = {
-        "stage": "C1",
-        "subcalls": subcalls,
-    }
+    # reasoning_step_core always returns action_logprobs_raw as one list per candidate
+    # ([cand0_logprobs]); C1's external contract (sidecar writer, K-sensitivity sweep) expects a
+    # single flat list, matching C0. Unwrap here rather than changing that contract.
+    lp_out = lp_saved[0] if lp_saved else None
     return (
         action,
         tle,
@@ -123,7 +94,7 @@ def c1_step_core(
         lm_calls,
         lp_out,
         vc_detail,
-        reason_prompt,
+        prompt,
         response_full,
         call_detail,
     )

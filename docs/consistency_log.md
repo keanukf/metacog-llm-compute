@@ -2,6 +2,63 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-21 — C1/C2-Reasoning-Engine vereinheitlicht (fixt den TextWorld-C1-`<think>`-Fund)
+
+**Zweck:** Der C1-`<think>`-Leak-Fund vom 2026-07-20 (`docs/consistency_log.md`, Eintrag "C1/C2-
+Qualitätskontroll-Probe gelaufen") gefixt — auf Nutzerwunsch nicht als isolierter Patch, sondern
+durch eine echte Vereinheitlichung: C1 ist jetzt strukturell "C2 mit n_samples=1, kein Voting"
+statt einer separaten, unabhängig gedrifteten Implementierung.
+
+**Root Cause bestätigt:** `src/agent/cot_parser.py::parse_cot_action()` ist laut eigenem Docstring
+"Structured parse result for C1 CoT outputs" — für C1 gebaut, aber nie von C1 genutzt. C1 rief
+stattdessen das naive `_normalize_action_line()` auf (nur *komplette* `<think>...</think>`-Paare
+werden entfernt; bleibt der Block offen, wird die erste Zeile — `<think>` — als Aktion
+durchgereicht). C2 hatte den korrekten Mechanismus (`assess_c2_sample_admissibility`,
+`thinking_unclosed`-Rejection) schon, nur nicht geteilt.
+
+**Zweiter Fund beim Nachschauen:** C1 und C2 nutzten unterschiedlichen Prompt-Text. C1 instruiert
+explizit über `<think>`-Tags; C2 nutzte denselben knappen `_SINGLE_LINE_OUTPUT_INSTRUCTION`-Text
+wie C0 (das *kein* Thinking hat) und verließ sich rein auf den Generation-Parameter
+`enable_thinking=True`. Kein inhaltlicher Grund für den Unterschied erkennbar — sieht nach
+organischem Drift aus (C2 vermutlich aus C0s Code-Pfad abgeleitet, Instruktion nicht angepasst).
+Auf Nutzerentscheidung vereinheitlicht: beide nutzen jetzt C1s ursprünglichen, bereits kalibrierten
+Wortlaut (`shared._REASONING_OUTPUT_INSTRUCTION`).
+
+**Auswirkung auf bestehende Ergebnisse:** Keine der Gate-D-Korridorentscheidungen ist betroffen —
+TextWorld wurde gegen C0 kalibriert, ToH gegen C1; C2 war nie Referenzstufe in beiden Domänen. Der
+bereits dokumentierte "C1>C2"-Befund (Basis für die "3 Compute-Stages bleiben"-Entscheidung) wurde
+mit C2s altem Prompt gemessen und ist damit technisch überholt — die zugrundeliegende Erklärung
+(Tie-Break-RNG, Self-Consistency-Theorie) bleibt unabhängig vom Prompt-Wortlaut gültig. Erneute
+Messung geplant im Rahmen der ohnehin vorgesehenen Nachtests nach dem Repo-Refactor.
+
+**Umsetzung:** Neue Funktion `shared.reasoning_step_core()` — die eigentliche Engine (N Kandidaten
+generieren, `</think>`-Admissibility-Check, `parse_cot_action()`, TLE *nur* bei zulässigem
+Kandidaten, Mehrheitsvotum). `c1_step_core`/`c2_step_core` sind jetzt dünne Wrapper, die dieselbe
+Engine mit `n_samples=1` bzw. `n_samples=3` aufrufen — externe Config-Parameter (`c1_cot_temperature`,
+`c2_cot_max_tokens`, etc.) unverändert, keine Breaking Changes an `configs/experiment_core.yaml`.
+`majority_vote()` von `c2.py` nach `shared.py` verschoben (zirkulärer Import sonst unvermeidbar),
+mit Re-Export für Rückwärtskompatibilität. VC-Auflösung ebenfalls dedupliziert (`c2_step_core`
+duplizierte vorher `_resolve_vc`'s Branching inline).
+
+**Sorgfältig geprüfter Fallstrick:** `action_logprobs_raw` hat für C1 aktuell eine flache Liste
+(K-Sensitivity-Sweep/Sidecar-Pipeline erwarten das so), für C2 eine Liste von Listen (eine pro
+Sample). Die geteilte Engine liefert immer die C2-Form; `c1_step_core`s Wrapper packt sie wieder
+aus (`lp_saved[0]`), um den externen Vertrag exakt zu erhalten — keine stille Formatänderung an
+einem bereits validierten Gate-C-Mechanismus.
+
+**Verifiziert:** Volle Testsuite 361 passed (360 bestehend + 1 neuer C1-Regressionstest, der
+beweist: unclosed `<think>` → leere Aktion, kein TLE, statt des literalen `'<think>'`-Strings).
+Neuer Guard-Test stellt sicher, dass der Reasoning-Instruktionstext nur einmal im Quellbaum
+definiert ist (Pendant zum bereits bestehenden Test für `_SINGLE_LINE_OUTPUT_INSTRUCTION`).
+Lokaler Mock-Smoke über `scripts/gate_f_c1c2_quality_probe.py` bestätigt: C1 gibt jetzt korrekt
+`""` zurück statt `'<think>'`, wenn Reasoning nicht schließt.
+
+**Noch offen:** Realer Verifikationslauf auf dem Pod (Mock-Backend kann den `</think>`-Fall nicht
+sauber simulieren, schließt seine Fake-Antworten nie). Gate-F-C1/C2-QC-Punkt bleibt bis dahin
+offen — der Fix ist verifiziert, aber noch nicht am echten Modell bestätigt.
+
+**Testsuite:** 361 passed.
+
 ## 2026-07-20 — C1/C2-Qualitätskontroll-Probe gelaufen (real, parallel): ToH/C1 sauber, ein echter C1-Parsing-Fund
 
 **Zweck:** Gate-F-HART-Punkt "C1/C2-Qualitätskontrolle" — 5 Episoden/Zelle, real, gegen die
