@@ -559,3 +559,21 @@ def test_single_line_output_instruction_literal_has_single_definition_in_src():
         if literal in txt:
             matches.append(p)
     assert len(matches) == 1, f"Found literal in multiple sources: {matches}"
+
+
+def test_reasoning_output_instruction_literal_has_single_definition_in_src():
+    """Regression guard: C1 and C2 used to have their own, independently drifted reasoning
+    instruction text (C1 explicit, C2 accidentally reusing C0's no-thinking instruction) --
+    unified 2026-07-21 into shared._REASONING_OUTPUT_INSTRUCTION. This fails again if a future
+    edit reintroduces a second copy instead of importing the shared constant."""
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent
+    literal = "Before answering, briefly reason inside <think>...</think> tags."
+    matches: list[Path] = []
+    for p in (repo_root / "src").rglob("*.py"):
+        txt = p.read_text(encoding="utf-8")
+        if literal in txt:
+            matches.append(p)
+    assert len(matches) == 1, f"Found literal in multiple sources: {matches}"
+    assert len(matches) == 1, f"Found literal in multiple sources: {matches}"
