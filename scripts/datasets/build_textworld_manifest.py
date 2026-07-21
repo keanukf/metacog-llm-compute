@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
 Build difficulty_manifest.json for final TextWorld dataset artifacts.
+
+Emits the frozen Domain-1 task set (50 instances + holdout split) that Phase 1/2 run against, built
+from the generated TextWorld games and their ``.meta.json`` sidecars. Frozen after Gate D at the
+``r5_i1_take+cook`` difficulty recipe (seed 20260718); ``holdout`` marks the threshold-search split.
 """
 
 from __future__ import annotations

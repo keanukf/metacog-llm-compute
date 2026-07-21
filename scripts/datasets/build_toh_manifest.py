@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Build difficulty_manifest.json for Tower of Hanoi task instances."""
+"""Build difficulty_manifest.json for Tower of Hanoi task instances.
+
+Emits the frozen Domain-2 task set (the 50 instances + holdout split marked per entry) that Phase 1
+and Phase 2 run against; the manifest is content-frozen after Gate D (4 disks, random_scramble,
+seed 271828). ``holdout`` flags the 5 instances reserved for allocator-threshold search.
+"""
 
 from __future__ import annotations
 
