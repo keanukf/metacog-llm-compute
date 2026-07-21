@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.apply_production_n import _recommended_n
+from scripts.instrument_validation.apply_production_n import _recommended_n
 
 
 def test_recommended_n_from_report(tmp_path: Path) -> None:

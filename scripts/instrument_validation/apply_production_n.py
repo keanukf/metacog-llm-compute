@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATHS = [
     REPO_ROOT / "configs" / "experiment_core.yaml",
     REPO_ROOT / "configs" / "dev" / "smoke.yaml",

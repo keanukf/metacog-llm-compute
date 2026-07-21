@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scripts.sweep_topk_sensitivity import (
+from scripts.instrument_validation.sweep_topk_sensitivity import (
     _pick_logprob_tokens,
     _sidecar_step_entry,
     _step_logprob_token_lists,

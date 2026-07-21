@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -87,7 +87,7 @@ def main() -> int:
         run_out.mkdir(parents=True, exist_ok=True)
         cmd = [
             sys.executable,
-            str(REPO_ROOT / "scripts" / "smoke_parallel.py"),
+            str(REPO_ROOT / "scripts" / "instrument_validation" / "smoke_parallel.py"),
             "--config",
             str(tmp_cfg),
             "--output-dir",
