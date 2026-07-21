@@ -1,4 +1,10 @@
-"""Bounded parallel episode scheduler (ThreadPoolExecutor)."""
+"""Bounded parallel episode scheduler (ThreadPoolExecutor).
+
+Runs Phase 1/2 episodes concurrently up to ``max_concurrent_episodes`` (N=32 in production) so vLLM's
+continuous batching stays fed. Concurrency here is what the Gate C batch-invariance probe and the
+Gate F resume-correctness-under-concurrency check validated, so the in-flight bound and the
+completed/quarantined resume sets are correctness-relevant, not just performance knobs.
+"""
 
 from __future__ import annotations
 
@@ -25,6 +31,12 @@ class RunStats:
 
 
 class EpisodeScheduler:
+    """Submits episode jobs to a thread pool and tallies outcomes.
+
+    Serial fast-path when ``max_concurrent_episodes <= 1``; otherwise a ThreadPoolExecutor. Tracks
+    peak in-flight count as a check that the effective concurrency matched the frozen N.
+    """
+
     def __init__(self, max_concurrent_episodes: int) -> None:
         self._max_concurrent = max(1, int(max_concurrent_episodes))
         self._in_flight = 0
@@ -56,6 +68,15 @@ class EpisodeScheduler:
         quarantined: set[str] | None = None,
         log_fn: Callable[[str], None] | None = None,
     ) -> RunStats:
+        """Execute all ``jobs`` and return aggregate ``RunStats``.
+
+        Each ``run_fn`` outcome is either completed (checkpoint already written by the worker) or
+        failed. Failures split two ways: an infrastructure fault that ``classify_exclusion_reason``
+        recognizes is *quarantined* (written to ``checkpoint_dir`` and added to ``quarantined`` so a
+        resumed run skips it rather than retrying forever); anything else is appended to
+        ``errors_path`` and the run continues. Either way a completed episode's id is durable on
+        disk, which is what makes interrupt/resume safe under concurrency.
+        """
         stats = RunStats()
         quarantined = quarantined if quarantined is not None else set()
         _log = log_fn or (lambda _m: None)

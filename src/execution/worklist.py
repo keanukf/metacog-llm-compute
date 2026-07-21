@@ -1,4 +1,11 @@
-"""Episode job enumeration for Phase 1 / Phase 2."""
+"""Episode job enumeration for Phase 1 / Phase 2.
+
+Expands the preregistered design grid into concrete ``EpisodeJob``s: Phase 1 = domains x
+instances x compute stages x runs (the 2x3 calibration cells over 50 instances, 5 runs each);
+Phase 2 = domains x instances x strategies x runs (adaptive + baselines). The ``ep_{domain}_
+{instance}_{stage-or-strategy}_{run}`` id is the resume key -- jobs already in ``completed`` or
+``quarantined`` are skipped, so re-running a partially finished collection only does the remainder.
+"""
 
 from __future__ import annotations
 
