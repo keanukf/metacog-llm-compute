@@ -16,7 +16,7 @@
 # Optional: DEST_DIR, REMOTE_RESULTS, RUNPOD_TCP_USER (default root), SSH_KEY, RUN_FOLDER (--run)
 
 set -euo pipefail
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DEST_DIR="${DEST_DIR:-${REPO_ROOT}/data/results/runpod_pilot}"
 REMOTE_RESULTS="${REMOTE_RESULTS:-/workspace/metacog-llm-compute/data/results}"
 SSH_KEY="${SSH_KEY:-${HOME}/.ssh/id_ed25519}"

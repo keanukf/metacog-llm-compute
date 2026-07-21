@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$REPO_ROOT"
 
 export RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/data/results}"
@@ -33,7 +33,7 @@ if [[ -f .env ]]; then
 fi
 
 if [[ "${RUN_SETUP_CLOUD:-0}" == "1" ]]; then
-  bash scripts/setup_cloud.sh
+  bash scripts/cloud/shell/setup_cloud.sh
 fi
 
 echo "== vLLM health =="

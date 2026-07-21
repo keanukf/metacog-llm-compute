@@ -48,7 +48,13 @@ def test_quarantine_roundtrip_and_resume_skip_set(tmp_path: Path):
 
 
 def test_autostop_wrapper_script_exists_and_has_pod_hook():
-    script = Path(__file__).resolve().parent.parent / "scripts" / "run_with_autostop.sh"
+    script = (
+        Path(__file__).resolve().parent.parent
+        / "scripts"
+        / "cloud"
+        / "shell"
+        / "run_with_autostop.sh"
+    )
     assert script.is_file()
     text = script.read_text()
     assert "RUNPOD_POD_ID" in text

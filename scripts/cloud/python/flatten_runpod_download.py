@@ -47,7 +47,7 @@ def main() -> int:
     p.add_argument("--dry-run", action="store_true", help="Print actions without moving files")
     args = p.parse_args()
 
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parent.parent.parent.parent
     dest = args.dest if args.dest.is_absolute() else (repo_root / args.dest).resolve()
     if not dest.is_dir():
         print(f"error: not a directory: {dest}", file=sys.stderr)

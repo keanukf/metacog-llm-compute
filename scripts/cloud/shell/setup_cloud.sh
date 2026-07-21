@@ -28,11 +28,11 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$REPO_ROOT"
 
 # shellcheck disable=SC1091
-source "${REPO_ROOT}/scripts/pod_runtime_env.sh"
+source "${REPO_ROOT}/scripts/cloud/shell/pod_runtime_env.sh"
 
 ENV_FILE="${ENV_FILE:-/workspace/secrets/env.sh}"
 DEPLOY_KEY="${DEPLOY_KEY:-/workspace/secrets/runpod_github_ed25519}"
@@ -80,7 +80,7 @@ _print_disk_layout() {
 
 _reassert_runtime_env() {
   # shellcheck disable=SC1091
-  source "${REPO_ROOT}/scripts/pod_runtime_env.sh"
+  source "${REPO_ROOT}/scripts/cloud/shell/pod_runtime_env.sh"
 }
 
 _ensure_github_reachable() {
@@ -282,7 +282,7 @@ echo "  HF_HOME: ${HF_HOME}"
 echo "  RESULTS_DIR: ${RESULTS_DIR}"
 echo ""
 echo "New SSH session:"
-echo "  source scripts/activate_pod_env.sh"
+echo "  source scripts/cloud/shell/activate_pod_env.sh"
 echo ""
 echo "When you need inference: start vLLM serve (see docs/runpod.md)."
 
