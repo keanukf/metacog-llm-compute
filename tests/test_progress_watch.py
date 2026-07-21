@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 
-from scripts.progress_watch import _classify, render, snapshot
+from scripts.run_readiness.progress_watch import _classify, render, snapshot
 
 
 def test_classify_extracts_domain_and_stage_from_production_naming():

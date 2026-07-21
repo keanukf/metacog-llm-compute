@@ -25,7 +25,7 @@ committing to the full Phase 1/2 run:
    Flags any parsed action longer than a generous threshold or containing reasoning markers.
 
 Usage:
-    python scripts/gate_f_c1c2_quality_probe.py --n-episodes 5 --real --max-concurrent 16
+    python scripts/run_readiness/c1_c2_quality_probe.py --n-episodes 5 --real --max-concurrent 16
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 

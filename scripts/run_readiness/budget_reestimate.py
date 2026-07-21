@@ -25,7 +25,7 @@ eager_style depend on Phase-1-derived thresholds unknown pre-hoc, so they're mod
 `random` as a stated, direction-flagged approximation (an effective adaptive policy should cost
 less on average by skipping C2 when unnecessary, so this likely overestimates Phase 2 cost).
 
-Usage: python scripts/gate_f_budget_reestimate.py
+Usage: python scripts/run_readiness/budget_reestimate.py
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 TOKENS_PER_SEC = 1188.4780965202558  # C-5 105004, execution_metrics.tokens_per_sec, N=32
 PILOT_RUN_DIR = REPO_ROOT / "data/results/instrument_validation/phase1_20260714_105004"

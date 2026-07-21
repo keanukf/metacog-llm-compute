@@ -24,7 +24,7 @@ all without running any episodes or touching the GPU:
    C-1-verified batch-invariant value.
 
 Usage:
-    python scripts/gate_f_run_hygiene_preflight.py --config configs/experiment_core.yaml
+    python scripts/run_readiness/run_hygiene_preflight.py --config configs/experiment_core.yaml
 
 Exit code 0 iff every check passes.
 """
@@ -38,7 +38,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
