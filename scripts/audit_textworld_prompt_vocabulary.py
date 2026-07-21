@@ -21,7 +21,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.generate_textworld_games import _instance_seed, _run_generate_command, _write_sidecar
+from scripts.datasets.generate_textworld_games import (
+    _instance_seed,
+    _run_generate_command,
+    _write_sidecar,
+)
 
 DIRS = frozenset({"north", "south", "east", "west", "up", "down"})
 COOK_VERBS = frozenset({"cook", "fry", "roast", "grill", "bbq", "broil", "toast"})

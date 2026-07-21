@@ -16,7 +16,7 @@ import random
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _to_abs(path: str | Path) -> Path:

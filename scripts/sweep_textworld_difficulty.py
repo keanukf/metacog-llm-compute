@@ -105,7 +105,7 @@ def _generate_combo_games(
     cook: bool,
     open_: bool,
 ) -> list[Path]:
-    from scripts.generate_textworld_games import _run_generate_command, _write_sidecar
+    from scripts.datasets.generate_textworld_games import _run_generate_command, _write_sidecar
 
     base_dir.mkdir(parents=True, exist_ok=True)
     files: list[Path] = []
