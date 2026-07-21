@@ -1,6 +1,7 @@
 # Scripts catalog
 
-All entry points live in [`scripts/`](../scripts/). Run from the **repository root** unless noted.
+All entry points live under [`scripts/`](../scripts/), grouped into purpose-named subfolders.
+Run from the **repository root** unless noted (e.g. `python scripts/experiment/run_pilot.py …`).
 
 **Status legend**
 
@@ -10,75 +11,115 @@ All entry points live in [`scripts/`](../scripts/). Run from the **repository ro
 | `pilot-optional` | Post-run analysis, validation, or batch helpers |
 | `phase-later` | Phase 1/2 experiments (after pilot) |
 | `textworld` | TextWorld dataset generation and exploration |
-| `dev` | Manual play / smoke tests without full experiment |
+| `dev` | Manual play / smoke tests / diagnostics without a full experiment |
 | `cloud` | RunPod setup or result transfer |
 
-## Python scripts
+## `scripts/experiment/` — production data-collection entry points
+
+The front door: what actually produces the thesis data.
 
 | Script | Purpose | When to use | Status |
 |--------|---------|-------------|--------|
-| [`run_pilot.py`](../scripts/run_pilot.py) | Pilot Tests 1–6, feasibility JSON, episode outputs | Mock / HF / CUDA / LM Studio sanity | `pilot-core` |
-| [`run_pilot_models.py`](../scripts/run_pilot_models.py) | Full pilot once per model id (subprocess batch) | Model shortlist on LM Studio or RunPod | `pilot-optional` |
-| [`validate_pilot_outputs.py`](../scripts/validate_pilot_outputs.py) | Check pilot folder for TLE/VC/trace integrity | After a pilot run | `pilot-optional` |
-| [`audit_pilot_signals.py`](../scripts/audit_pilot_signals.py) | VC/TLE by stage, C2 trace audit, feasibility summary | After RunPod download | `pilot-optional` |
-| [`summarize_pilot_calibration.py`](../scripts/summarize_pilot_calibration.py) | Aggregate episode JSONs (success, TLE, VC, ECE proxy) | After pilot with episode outputs | `pilot-optional` |
-| [`summarize_pilot_batch.py`](../scripts/summarize_pilot_batch.py) | Summarize `pilot_batch_*` from `run_pilot_models` | After multi-model batch | `pilot-optional` |
-| [`run_c1_handoff_gate.py`](../scripts/run_c1_handoff_gate.py) | Smoke-test C1 CoT→Verify parsing on real backend | Before trusting C1 on LM Studio / CUDA | `pilot-optional` |
-| [`benchmark_inference.py`](../scripts/benchmark_inference.py) | Standalone inference speed (pilot Test 1 logic) | Quick tok/s check without full pilot | `pilot-optional` |
-| [`analyze_run.py`](../scripts/analyze_run.py) | Post-hoc analysis for one run folder | Inspect a completed run directory | `pilot-optional` |
-| [`run_prompt_ab.py`](../scripts/run_prompt_ab.py) | A/B prompt variants on one model | RunPod prompt tuning before full batch | `pilot-optional` |
-| [`hf_model_card_gate.py`](../scripts/hf_model_card_gate.py) | Read-only Hub scan for model exclusion flags | Before GPU time on RunPod | `pilot-optional` |
-| [`run_phase1.py`](../scripts/run_phase1.py) | Phase 1 calibration runs with checkpointing | After pilot go/no-go | `phase-later` |
-| [`run_phase2.py`](../scripts/run_phase2.py) | Phase 2 adaptive allocation runs | After Phase 1 | `phase-later` |
-| [`generate_textworld_games.py`](../scripts/generate_textworld_games.py) | Generate Cooking `.z8` + metadata sidecars | Building `data/tasks/textworld/` | `textworld` |
-| [`sweep_textworld_difficulty.py`](../scripts/sweep_textworld_difficulty.py) | Grid sweep + C0 evaluation per cell | Tune difficulty before final 50 games | `textworld` |
-| [`build_textworld_manifest.py`](../scripts/build_textworld_manifest.py) | Build `difficulty_manifest.json` with holdout split | After final instance generation | `textworld` |
-| [`play_textworld.py`](../scripts/play_textworld.py) | Interactive play for one story file | Sanity-check a generated game | `dev` |
-| [`play_tower_of_hanoi.py`](../scripts/play_tower_of_hanoi.py) | Interactive ToH without a model | Verify env parsing / legality | `dev` |
-| [`gate_e_rehearsal.py`](../scripts/gate_e_rehearsal.py) | Analysis-side Gate E rehearsal: step table → grid-search → policy artifact → `load_policy` → `cluster_bootstrap` on ΔAUROC | End-to-end analysis dry run on pilot/C-5 data before real Phase 1 data | `dev` |
-| [`h3_power_simulation.py`](../scripts/h3_power_simulation.py) | Monte Carlo power simulation for the H3 signal×position_norm interaction: seeds ICC/entropy from pilot data, simulates clustered binary outcomes under the planned Phase 1 design, fits `fit_h3_model` (real GEE) on each replicate, reports empirical power vs. true effect size | Gate E WEICH item (`blueprints/gate_p1_readiness.md`); see `docs/gate_e_h3_power_simulation.md` for the report | `dev` |
-| [`build_toh_manifest.py`](../scripts/build_toh_manifest.py) | Build ToH `difficulty_manifest.json` (holdout split, difficulty tier by disk count) | After final ToH instance generation, mirrors `build_textworld_manifest.py` | `textworld` |
-| [`sweep_toh_difficulty.py`](../scripts/sweep_toh_difficulty.py) | ToH C0-only difficulty sweep (3 vs 4 disks) + illegal-action label distribution | Tune ToH difficulty before final instances (Gate D) | `dev` |
-| [`run_gate_d_feasibility.py`](../scripts/run_gate_d_feasibility.py) | TextWorld C0/C1/C2 feasibility diagnostic on one cell (success rate only, no signal analysis) | Gate D — is a corridor cell still C0-below-{C1,C2} after reasoning? | `dev` |
-| [`run_gate_d_toh_feasibility.py`](../scripts/run_gate_d_toh_feasibility.py) | ToH C0/C1/C2 feasibility diagnostic (companion to `run_gate_d_feasibility.py`; `sweep_toh_difficulty.py` only covers C0) | Gate D — resolve a ToH C0 null result via C1/C2 | `dev` |
-| [`gate_d_manifest_smoke.py`](../scripts/gate_d_manifest_smoke.py) | C0 success@Cap smoke over every instance in a frozen/candidate manifest (Hard-GO check) | Before/at Gate D manifest freeze | `dev` |
-| [`gate_d_trace_probe.py`](../scripts/gate_d_trace_probe.py) | Capture a handful of full per-step traces (prompt/response incl. reasoning text) via `save_step_traces` | Manual debugging of a specific stage/cell, not large sweeps | `dev` |
-| [`analyze_gate_d_abort_distance.py`](../scripts/analyze_gate_d_abort_distance.py) | Replay a TextWorld sweep's exact grid/seeds/obs_ceiling and record quest-distance-remaining at each aborted episode's final step | Telemetry recovery when the original sweep didn't persist per-step records | `dev` |
-| [`inspect_gate_d_abort_actions.py`](../scripts/inspect_gate_d_abort_actions.py) | Replay the easiest TW cell (r3_i1_take-only) and print the verbatim last N actions for near-goal aborts | Manual triage of *why* near-miss episodes abort (parsing vs. looping vs. cap) | `dev` |
-| [`validate_textworld_candidate.py`](../scripts/validate_textworld_candidate.py) | Re-run 2–3 corridor candidates with fresh C0 episodes at the chosen production Cap | Confirm a corridor candidate before manifest freeze | `dev` |
-| [`gate_d_holdout_descriptives.py`](../scripts/gate_d_holdout_descriptives.py) | Descriptive holdout-vs-non-holdout table (both domains) from frozen/candidate manifests | Sanity-check the holdout split isn't systematically different | `dev` |
-| [`audit_textworld_prompt_vocabulary.py`](../scripts/audit_textworld_prompt_vocabulary.py) | CPU-only audit of command verbs/forms the TW cooking grid actually needs vs. the prompt's template action list | Diagnose action-vocabulary gaps behind a hallucination/parsing failure mode | `dev` |
-| [`smoke_parallel.py`](../scripts/smoke_parallel.py) | Parallel-execution plumbing GO/NO-GO: `EpisodeScheduler` + mock/`ServerBackend`, checks completeness/uniqueness/concurrency | Before trusting concurrent Phase 1 execution on Pod | `dev` |
-| [`verify_backend_parity.py`](../scripts/verify_backend_parity.py) | Backend logprob parity: K-coverage, temperature invariance, batch invariance under load (thesis §5.7) | Gate C backend-parity checks; `--freeze-metadata-dir` freezes (N, eps) | `dev` |
-| [`run_tle_invariance_validation.py`](../scripts/run_tle_invariance_validation.py) | TLE temperature+batch invariance against a running vLLM server | Superseded by `verify_backend_parity.py --backend server`; kept for back-compat / `--freeze-metadata-dir` | `dev` |
-| [`measure_concurrent_throughput.py`](../scripts/measure_concurrent_throughput.py) | Compare batched-episode ep/h across candidate `max_concurrent_episodes` values | Choose production N on Pod, before `verify_backend_parity.py --backend server` | `cloud` |
-| [`apply_production_n.py`](../scripts/apply_production_n.py) | Write the chosen `max_concurrent_episodes` from a throughput-sweep report into a config's `execution` block | After `measure_concurrent_throughput.py` picks a value | `dev` |
-| [`diagnose_tle_distribution.py`](../scripts/diagnose_tle_distribution.py) | TLE distribution screen (near-zero mass, spread) from a completed run's logprob sidecars | §5.4 ECDF/threshold viability check (Phase 0) | `dev` |
-| [`sweep_topk_sensitivity.py`](../scripts/sweep_topk_sensitivity.py) | Recompute TLE at K ∈ {5,10,20} from stored top-K logprob sidecars | K-sensitivity check without rerunning inference (Gate C-6) | `dev` |
-| [`build_debug_views.py`](../scripts/build_debug_views.py) | Rebuild compact `debug_views/*.json` from existing `trace_*.jsonl` in a run directory | Regenerate human-readable views without a full rerun | `dev` |
-| [`probe_lmstudio_thinking_toggle.py`](../scripts/probe_lmstudio_thinking_toggle.py) | Compare LM Studio `/v1/responses` thinking-control payload variants (reasoning effort none/low/medium) | One-off LM Studio API probe before relying on a thinking toggle locally | `dev` |
-| [`toh_state_diversity_probe.py`](../scripts/toh_state_diversity_probe.py) | Run ToH episodes concurrently from non-canonical start states (diverse/random selection, configurable disk range and `partial_start_mode`) to test whether C0/C1 track the actual board or recite a fixed opener | Diagnose a suspected "same input → same output" bias, or generate real per-stage state-diversity data for a corridor decision | `dev` |
-| [`toh_diversity_probe_analysis.py`](../scripts/toh_diversity_probe_analysis.py) | Local, idempotent analysis of a `toh_state_diversity_probe.py` run: per-stage success rate, Hanley-McNeil TLE-AUROC + CI, peg-source bias breakdown | After a diversity/corridor probe, before deciding on it | `dev` |
-| [`gate_f_resume_smoke.py`](../scripts/gate_f_resume_smoke.py) | Hard-`SIGKILL` a real `run_phase1.py` batch (mock backend) mid-run across several cycles, verify `--resume` recovers with no missing/duplicate/corrupt episodes; targeted write-race probe on `save_episode_checkpoint` | Gate F resume-correctness-under-concurrency HART check | `dev` |
-| [`gate_f_run_hygiene_preflight.py`](../scripts/gate_f_run_hygiene_preflight.py) | Five automated checks before a real Phase 1/2 block: model cache on ephemeral disk (not the network volume), Langfuse credentials, repo checkout under `/workspace`, history-guard, sidecar/concurrency config — no GPU/inference | Run on the pod right before starting a real block | `cloud` |
-| [`gate_f_c1c2_quality_probe.py`](../scripts/gate_f_c1c2_quality_probe.py) | Small-n real-model probe (via the actual `EpisodeScheduler`/`run_phase1_job` path) verifying C2 majority-vote correctness (independently recomputed), truncation handling, and no reasoning-leaked-as-action parsing, for both C1 and C2 | Gate F C1/C2 quality-control HART check, or after any change to `src/agent/stages/` | `dev` |
-| [`gate_f_budget_reestimate.py`](../scripts/gate_f_budget_reestimate.py) | Token-based Phase 1+2 GPU-hour re-estimate from real local sweep data (tokens/sec throughput × tokens/episode per domain×stage), not a flat ep/h figure | Re-check the GPU budget whenever episode-length assumptions change (e.g. after a difficulty recalibration) | `dev` |
-| [`progress_watch.py`](../scripts/progress_watch.py) | Lightweight, run-agnostic progress watcher: polls a checkpoint/output directory from the outside (no hook into any run script), counts finished (`ep_*.json`/`qc_*.json`) and in-flight (`trace_*.jsonl` line counts) episodes grouped by domain/stage, reports rough steps/min | Point at any live output directory (local or over SSH) to check on a long-running batch without digging through logs | `dev` |
+| [`run_pilot.py`](../scripts/experiment/run_pilot.py) | Pilot Tests 1–6, feasibility JSON, episode outputs | Mock / CUDA / LM Studio sanity | `pilot-core` |
+| [`run_phase1.py`](../scripts/experiment/run_phase1.py) | Phase 1 calibration runs with checkpointing | After pilot go/no-go | `phase-later` |
+| [`run_phase2.py`](../scripts/experiment/run_phase2.py) | Phase 2 adaptive allocation runs | After Phase 1 | `phase-later` |
 
-## Shell scripts
+## `scripts/datasets/` — task-instance generation and interactive play
 
 | Script | Purpose | When to use | Status |
 |--------|---------|-------------|--------|
-| [`setup_cloud.sh`](../scripts/setup_cloud.sh) | Pod basics: secrets, deploy key, git pull (current branch), venv, deps, model cache | RunPod pod setup | `cloud` |
-| [`pod_runtime_env.sh`](../scripts/pod_runtime_env.sh) | Force HF/pip caches onto container disk (overrides RunPod `/workspace/.cache/*`) | Sourced by setup/activate | `cloud` |
-| [`activate_pod_env.sh`](../scripts/activate_pod_env.sh) | Source PATH/HF_HOME/RESULTS_DIR in new SSH sessions | After setup on pod | `cloud` |
-| [`run_with_autostop.sh`](../scripts/run_with_autostop.sh) | Run Phase 1/2 with best-effort pod stop via `runpodctl` | RunPod long runs (`STOP_POD=1`, `RUNPOD_POD_ID`) | `cloud` |
-| [`download_runpod_results.sh`](../scripts/download_runpod_results.sh) | `scp`/rsync results from pod; auto-flattens nested `results/` | After cloud pilot | `cloud` |
-| [`flatten_runpod_download.py`](../scripts/flatten_runpod_download.py) | Repair nested `results/` after manual scp | After cloud pilot download | `cloud` |
-| [`probe_vllm_logprobs.py`](../scripts/probe_vllm_logprobs.py) | One-shot vLLM logprob + TLE probe | RunPod L0.1 sanity before long pilot | `cloud` |
-| [`restore_cursor_plans.sh`](../scripts/restore_cursor_plans.sh) | Restore `.cursor/plans/*.plan.md` from git history (local only) | After merge removed tracked Cursor plans | `dev` |
-| [`instrument_validation_preflight.sh`](../scripts/instrument_validation_preflight.sh) | GPU/vLLM-server sanity checks before a Gate C instrument-validation run | RunPod, right before `run_instrument_validation_after_perf.sh` | `cloud` |
-| [`run_instrument_validation_after_perf.sh`](../scripts/run_instrument_validation_after_perf.sh) | Runs the Gate C instrument-validation sequence against an already-running vLLM server | RunPod, after `perf/vllm-server-concurrency` work lands | `cloud` |
+| [`generate_textworld_games.py`](../scripts/datasets/generate_textworld_games.py) | Generate Cooking `.z8` + metadata sidecars | Building `data/tasks/textworld/` | `textworld` |
+| [`build_textworld_manifest.py`](../scripts/datasets/build_textworld_manifest.py) | Build `difficulty_manifest.json` with holdout split | After final instance generation | `textworld` |
+| [`build_toh_manifest.py`](../scripts/datasets/build_toh_manifest.py) | Build ToH `difficulty_manifest.json` (holdout split, difficulty tier by disk count) | After final ToH instance generation, mirrors `build_textworld_manifest.py` | `textworld` |
+| [`play_textworld.py`](../scripts/datasets/play_textworld.py) | Interactive play for one story file | Sanity-check a generated game | `dev` |
+| [`play_tower_of_hanoi.py`](../scripts/datasets/play_tower_of_hanoi.py) | Interactive ToH without a model | Verify env parsing / legality | `dev` |
+
+## `scripts/difficulty_calibration/` — tune, sweep, verify, and freeze task difficulty
+
+Everything for the "tune and freeze difficulty" activity (former Gate D probes + the two
+difficulty sweeps).
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`sweep_textworld_difficulty.py`](../scripts/difficulty_calibration/sweep_textworld_difficulty.py) | Grid sweep + C0 evaluation per cell | Tune difficulty before final 50 games | `textworld` |
+| [`sweep_toh_difficulty.py`](../scripts/difficulty_calibration/sweep_toh_difficulty.py) | ToH C0-only difficulty sweep (3 vs 4 disks) + illegal-action label distribution | Tune ToH difficulty before final instances | `dev` |
+| [`difficulty_metrics.py`](../scripts/difficulty_calibration/difficulty_metrics.py) | Shared corridor/success-rate metrics library (Cap derivation, success@Cap; **no CLI/`main()`** — imported by the other calibration scripts) | Not run directly | `dev` |
+| [`manifest_success_smoke.py`](../scripts/difficulty_calibration/manifest_success_smoke.py) | C0 success@Cap smoke over every instance in a frozen/candidate manifest (Hard-GO check) | Before/at manifest freeze | `dev` |
+| [`capture_step_traces.py`](../scripts/difficulty_calibration/capture_step_traces.py) | Capture a handful of full per-step traces (prompt/response incl. reasoning text) via `save_step_traces` | Manual debugging of a specific stage/cell, not large sweeps | `dev` |
+| [`holdout_split_descriptives.py`](../scripts/difficulty_calibration/holdout_split_descriptives.py) | Descriptive holdout-vs-non-holdout table (both domains) from frozen/candidate manifests | Sanity-check the holdout split isn't systematically different | `dev` |
+| [`analyze_abort_quest_distance.py`](../scripts/difficulty_calibration/analyze_abort_quest_distance.py) | Replay a TextWorld sweep's exact grid/seeds/obs_ceiling and record quest-distance-remaining at each aborted episode's final step | Telemetry recovery when the original sweep didn't persist per-step records | `dev` |
+| [`inspect_abort_last_actions.py`](../scripts/difficulty_calibration/inspect_abort_last_actions.py) | Replay the easiest TW cell (r3_i1_take-only) and print the verbatim last N actions for near-goal aborts | Manual triage of *why* near-miss episodes abort (parsing vs. looping vs. cap) | `dev` |
+| [`run_textworld_feasibility_probe.py`](../scripts/difficulty_calibration/run_textworld_feasibility_probe.py) | TextWorld C0/C1/C2 feasibility diagnostic on one cell (success rate only, no signal analysis) | Is a corridor cell still C0-below-{C1,C2} after reasoning? | `dev` |
+| [`run_toh_feasibility_probe.py`](../scripts/difficulty_calibration/run_toh_feasibility_probe.py) | ToH C0/C1/C2 feasibility diagnostic (companion to `run_textworld_feasibility_probe.py`; `sweep_toh_difficulty.py` only covers C0) | Resolve a ToH C0 null result via C1/C2 | `dev` |
+| [`validate_textworld_candidate.py`](../scripts/difficulty_calibration/validate_textworld_candidate.py) | Re-run 2–3 corridor candidates with fresh C0 episodes at the chosen production Cap | Confirm a corridor candidate before manifest freeze | `dev` |
+| [`audit_textworld_prompt_vocabulary.py`](../scripts/difficulty_calibration/audit_textworld_prompt_vocabulary.py) | CPU-only audit of command verbs/forms the TW cooking grid actually needs vs. the prompt's template action list | Diagnose action-vocabulary gaps behind a hallucination/parsing failure mode | `dev` |
+| [`toh_state_diversity_probe.py`](../scripts/difficulty_calibration/toh_state_diversity_probe.py) | Probe whether C0/C1 track the actual ToH board vs. reciting a fixed move pattern (picks instances whose required first move isn't the canonical opener; concurrent traces at C0/C1) | Verify state-sensitivity, not just "same input → same output" | `dev` |
+| [`toh_diversity_probe_analysis.py`](../scripts/difficulty_calibration/toh_diversity_probe_analysis.py) | Local analysis of a ToH diversity/feasibility probe run: per-stage success, TLE-AUROC vs. optimal (Hanley-McNeil CI), peg-source bias breakdown | After a `toh_state_diversity_probe.py` / feasibility run | `dev` |
+
+## `scripts/instrument_validation/` — backend parity, throughput, logprob-invariance
+
+Checks run before/around a real run (former Gate C tooling).
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`verify_backend_parity.py`](../scripts/instrument_validation/verify_backend_parity.py) | Backend logprob parity: K-coverage, temperature invariance, batch invariance under load (thesis §5.7); `--freeze-metadata-dir` freezes (N, eps) | Backend-parity checks before Phase 1 | `dev` |
+| [`measure_concurrent_throughput.py`](../scripts/instrument_validation/measure_concurrent_throughput.py) | Compare batched-episode ep/h across candidate `max_concurrent_episodes` values | Choose production N on Pod, before `verify_backend_parity.py --backend server` | `cloud` |
+| [`apply_production_n.py`](../scripts/instrument_validation/apply_production_n.py) | Write the chosen `max_concurrent_episodes` from a throughput-sweep report into a config's `execution` block | After `measure_concurrent_throughput.py` picks a value | `dev` |
+| [`sweep_topk_sensitivity.py`](../scripts/instrument_validation/sweep_topk_sensitivity.py) | Recompute TLE at K ∈ {5,10,20} from stored top-K logprob sidecars | K-sensitivity check without rerunning inference | `dev` |
+| [`probe_vllm_logprobs.py`](../scripts/instrument_validation/probe_vllm_logprobs.py) | One-shot vLLM logprob + TLE probe | RunPod L0.1 sanity before a long pilot | `cloud` |
+| [`probe_lmstudio_thinking_toggle.py`](../scripts/instrument_validation/probe_lmstudio_thinking_toggle.py) | Compare LM Studio `/v1/responses` thinking-control payload variants (reasoning effort none/low/medium) | One-off LM Studio API probe before relying on a thinking toggle locally | `dev` |
+| [`smoke_parallel.py`](../scripts/instrument_validation/smoke_parallel.py) | Parallel-execution plumbing GO/NO-GO: `EpisodeScheduler` + mock/`ServerBackend`, checks completeness/uniqueness/concurrency | Before trusting concurrent Phase 1 execution on Pod | `dev` |
+
+## `scripts/analysis_rehearsal/` — full-pipeline dry run before real data exists
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`analysis_pipeline_rehearsal.py`](../scripts/analysis_rehearsal/analysis_pipeline_rehearsal.py) | Analysis dry run: step table → grid-search → policy artifact → `load_policy` → `cluster_bootstrap` on ΔAUROC | End-to-end analysis rehearsal on pilot/C-5 data before real Phase 1 data | `dev` |
+| [`h3_power_simulation.py`](../scripts/analysis_rehearsal/h3_power_simulation.py) | Monte Carlo power simulation for the H3 signal×position_norm interaction: seeds ICC/entropy from pilot data, simulates clustered binary outcomes under the planned Phase 1 design, fits `fit_h3_model` (real GEE) per replicate, reports empirical power vs. true effect size | H3 power check; see `docs/gate_e_h3_power_simulation.md` for the report | `dev` |
+
+## `scripts/run_readiness/` — budget, run-hygiene, resume, and output-quality checks
+
+Pre-real-run readiness checks (former Gate F tooling) plus the live progress watcher.
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`budget_reestimate.py`](../scripts/run_readiness/budget_reestimate.py) | Token-based Phase 1+2 GPU-hour budget re-estimate from real local data (per-domain/stage token counts × throughput), replacing the flat ep/h formula | Re-estimate budget after difficulty calibration changed episode lengths | `dev` |
+| [`c1_c2_quality_probe.py`](../scripts/run_readiness/c1_c2_quality_probe.py) | C1/C2 output quality control on the real backend via the actual `run_phase1_job` + `EpisodeScheduler`: full traces, majority-vote correctness, `</think>`/parse checks | Before committing to the full Phase 1/2 run | `dev` |
+| [`resume_correctness_smoke.py`](../scripts/run_readiness/resume_correctness_smoke.py) | Resume-under-concurrency hard-kill test: repeatedly SIGKILL a real `run_phase1.py` subprocess mid-run and resume, plus a write-race probe for truncated-file-treated-as-done | Confirm `--resume` correctness before long runs | `dev` |
+| [`run_hygiene_preflight.py`](../scripts/run_readiness/run_hygiene_preflight.py) | Fast pod-side preflight: model on ephemeral disk, Langfuse resolvable, repo under `/workspace`, no history-truncation params active | On the pod, right before a real Phase 1/2 block | `cloud` |
+| [`progress_watch.py`](../scripts/run_readiness/progress_watch.py) | Run-agnostic progress watcher: polls an output dir, counts finished episodes by (domain, stage), rough steps/min | Watch a live run locally or over SSH | `dev` |
+
+## `scripts/pilot_analysis/` — post-run pilot analysis, validation, summaries
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`validate_pilot_outputs.py`](../scripts/pilot_analysis/validate_pilot_outputs.py) | Check pilot folder for TLE/VC/trace integrity | After a pilot run | `pilot-optional` |
+| [`audit_pilot_signals.py`](../scripts/pilot_analysis/audit_pilot_signals.py) | VC/TLE by stage, C2 trace audit, feasibility summary | After RunPod download | `pilot-optional` |
+| [`summarize_pilot_calibration.py`](../scripts/pilot_analysis/summarize_pilot_calibration.py) | Aggregate episode JSONs (success, TLE, VC, ECE proxy) | After pilot with episode outputs | `pilot-optional` |
+| [`analyze_run.py`](../scripts/pilot_analysis/analyze_run.py) | Post-hoc analysis for one run folder | Inspect a completed run directory | `pilot-optional` |
+| [`build_debug_views.py`](../scripts/pilot_analysis/build_debug_views.py) | Rebuild compact `debug_views/*.json` from existing `trace_*.jsonl` in a run directory | Regenerate human-readable views without a full rerun | `dev` |
+| [`benchmark_inference.py`](../scripts/pilot_analysis/benchmark_inference.py) | Standalone inference speed (pilot Test 1 logic) | Quick tok/s check without full pilot | `pilot-optional` |
+| [`run_c1_handoff_gate.py`](../scripts/pilot_analysis/run_c1_handoff_gate.py) | Quality check on single-call C1 action parsing (`parse_method` / `draft_status`, unparsed rate + Wilson CI) on a real backend | Before trusting C1 on LM Studio / CUDA | `pilot-optional` |
+| [`hf_model_card_gate.py`](../scripts/pilot_analysis/hf_model_card_gate.py) | Read-only Hub scan for model exclusion flags (`--repo-id`, or `--models-file` with a user-supplied list) | Before GPU time on RunPod | `pilot-optional` |
+| [`diagnose_tle_distribution.py`](../scripts/pilot_analysis/diagnose_tle_distribution.py) | TLE distribution screen (near-zero mass, spread) from a completed run's logprob sidecars | §5.4 ECDF/threshold viability check (Phase 0) | `dev` |
+
+## `scripts/cloud/shell/` — pod setup, activation, autostop, download, preflight
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`setup_cloud.sh`](../scripts/cloud/shell/setup_cloud.sh) | Pod basics: secrets, deploy key, git pull (current branch), venv, deps, model cache | RunPod pod setup | `cloud` |
+| [`pod_runtime_env.sh`](../scripts/cloud/shell/pod_runtime_env.sh) | Force HF/pip caches onto container disk (overrides RunPod `/workspace/.cache/*`) | Sourced by setup/activate | `cloud` |
+| [`activate_pod_env.sh`](../scripts/cloud/shell/activate_pod_env.sh) | Source PATH/HF_HOME/RESULTS_DIR in new SSH sessions | After setup on pod | `cloud` |
+| [`run_with_autostop.sh`](../scripts/cloud/shell/run_with_autostop.sh) | Run Phase 1/2 with best-effort pod stop via `runpodctl` | RunPod long runs (`STOP_POD=1`, `RUNPOD_POD_ID`) | `cloud` |
+| [`download_runpod_results.sh`](../scripts/cloud/shell/download_runpod_results.sh) | `scp`/rsync results from pod; auto-flattens nested `results/` | After cloud pilot | `cloud` |
+| [`instrument_validation_preflight.sh`](../scripts/cloud/shell/instrument_validation_preflight.sh) | GPU/vLLM-server sanity checks before an instrument-validation run | RunPod, right before `run_instrument_validation_after_perf.sh` | `cloud` |
+| [`run_instrument_validation_after_perf.sh`](../scripts/cloud/shell/run_instrument_validation_after_perf.sh) | Runs the instrument-validation sequence against an already-running vLLM server | RunPod, after `perf/vllm-server-concurrency` work lands | `cloud` |
+
+## `scripts/cloud/python/` — cloud helper (Python)
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`flatten_runpod_download.py`](../scripts/cloud/python/flatten_runpod_download.py) | Repair nested `results/` after manual scp | After cloud pilot download | `cloud` |
 
 ## Related docs
 
