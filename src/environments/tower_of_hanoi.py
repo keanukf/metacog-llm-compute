@@ -1,5 +1,18 @@
 """
-Text-based Tower of Hanoi environment and reproducible instance generator.
+Text-based Tower of Hanoi environment and reproducible instance generator -- the study's Domain 2:
+combinatorial planning under *full* observability, the H4 contrast against TextWorld's
+partial-observability exploration. Same ``reset()``/``step()``/``step_results`` contract as
+``TextWorldEnv`` so the agent loop and analysis treat the two domains interchangeably.
+
+Per-step ``correctness`` (the calibration target) is defined by shortest-path (BFS) distance to the
+goal, computed exactly since the state space is small:
+- ``optimal``: a legal move that strictly reduces the optimal-moves-remaining distance,
+- ``legal``: a rule-valid move that does not reduce the distance,
+- ``illegal``: unparseable, or violates the disk-size rule / empty-source rule.
+
+Manifest is frozen for Phase 1 (Gate D): 4 disks, ``partial_start_mode="random_scramble"``, seed
+271828. The generator is kept general (disk-count range, two start modes) for the difficulty-
+calibration probes that selected those frozen values.
 """
 
 from __future__ import annotations
@@ -117,6 +130,9 @@ class TowerOfHanoiEnv:
         self._state: PegState = _copy_state(self._initial_state)
         self._error_message = ""
         self._max_steps = int(max_steps)
+        # DV contaminant: listing the legal moves in the observation hands the model the
+        # admissible-command set, which the project's "red line" forbids for real runs. Keep this
+        # False for Phase 1/2 Core; it exists only for difficulty-calibration/parse probes.
         self._include_valid_moves = bool(include_valid_moves)
         self.observation: str = ""
         self.done = False
@@ -316,6 +332,8 @@ def generate_instances(
                 state = _apply_move(state, path[0])
                 applied_partial += 1
         optimal_solution = _shortest_path_to_goal(state, num_disks)
+        # 3x the optimal length: enough slack to recover from a few suboptimal moves while still
+        # bounding failing episodes so the step cap terminates them.
         max_steps = max(1, len(optimal_solution) * 3)
         instances.append(
             {

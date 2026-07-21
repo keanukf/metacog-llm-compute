@@ -1,7 +1,10 @@
 """
-TextWorld wrapper: reset(), step(action), .observation, .done.
-Optional dependency guard for 'textworld' so stub works without install.
-When game_file is set and textworld is installed, loads and plays real games.
+TextWorld wrapper -- the study's Domain 1: partial-observability exploration (Cooking games), the
+H4 contrast against Tower of Hanoi's full-observability planning, and the primary domain for the H3
+temporal-degradation analysis over episode position.
+
+reset(), step(action), .observation, .done. Optional dependency guard for 'textworld' so the stub
+works without install. When game_file is set and textworld is installed, loads and plays real games.
 
 Per-step records in ``step_results`` mirror TowerOfHanoiEnv (``step_index``, ``action_raw``,
 ``action_parsed``, ``correctness``, ``state_before``, ``state_after``) plus optional
@@ -103,6 +106,11 @@ def _append_admissible_to_observation(observation: str, info: dict[str, Any]) ->
     """
     When TextWorld exposes ``admissible_commands`` in ``info``, append a single line so the
     policy can align with parser-legal actions (similar to Tower of Hanoi ``Valid moves``).
+
+    DV contaminant -- only reachable via ``include_admissible_commands=True``, which must stay False
+    for Phase 1/2 Core (exposing the admissible-command list is the project's "red line"). The
+    admissible cache is still consulted internally for *illegal-move labeling*; that never enters the
+    prompt. This flag is for calibration/parse probes only.
     """
     adm = info.get("admissible_commands")
     if adm is None:
