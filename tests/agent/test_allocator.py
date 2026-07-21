@@ -8,8 +8,10 @@ from pathlib import Path
 from src.agent.allocation_policy import FrozenPolicy, load_policy, load_policy_pilot
 from src.agent.allocator import allocate, eager_fixed_stage_from_signal
 
-FIXTURE = Path(__file__).resolve().parent / "fixtures" / "policy_artifact_v1.json"
-LEGACY_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "policy_artifact_legacy_pooled.json"
+FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "policy_artifact_v1.json"
+LEGACY_FIXTURE = (
+    Path(__file__).resolve().parent.parent / "fixtures" / "policy_artifact_legacy_pooled.json"
+)
 
 
 def test_frozen_policy_percentile_and_stage():

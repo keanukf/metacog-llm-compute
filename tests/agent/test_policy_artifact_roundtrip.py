@@ -10,7 +10,7 @@ import pytest
 from src.agent.allocation_policy import load_policy
 from src.analysis.thresholds import write_threshold_artifact
 
-STEPS_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "policy_roundtrip_steps.json"
+STEPS_FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "policy_roundtrip_steps.json"
 
 
 @pytest.fixture

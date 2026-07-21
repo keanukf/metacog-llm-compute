@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-FIXTURE = Path(__file__).resolve().parent / "fixtures" / "episode_compact_real.json"
+FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "episode_compact_real.json"
 
 _EPISODE_JOIN_KEYS = ("episode_id", "domain", "instance", "run")
 _STEP_REQUIRED_KEYS = (

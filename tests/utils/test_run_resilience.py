@@ -49,7 +49,7 @@ def test_quarantine_roundtrip_and_resume_skip_set(tmp_path: Path):
 
 def test_autostop_wrapper_script_exists_and_has_pod_hook():
     script = (
-        Path(__file__).resolve().parent.parent
+        Path(__file__).resolve().parent.parent.parent
         / "scripts"
         / "cloud"
         / "shell"

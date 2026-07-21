@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from src.agent.compute_stages import get_step_fn
 from src.agent.stages.shared import assess_candidate_admissibility
-from tests.test_c1_c2_umbau import _action_logprobs
+from tests.agent.test_c1_c2_umbau import _action_logprobs
 
 
 def _closed(action: str, *, reasoning: str = "plan") -> str:

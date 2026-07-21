@@ -8,7 +8,7 @@ from src.agent.allocation_policy import load_policy
 from src.agent.base_agent import run_adaptive_episode
 
 POLICY = load_policy(
-    Path(__file__).resolve().parent / "fixtures" / "policy_artifact_v1.json",
+    Path(__file__).resolve().parent.parent / "fixtures" / "policy_artifact_v1.json",
     domain="textworld",
     signal="tle_mean_entropy",
 )

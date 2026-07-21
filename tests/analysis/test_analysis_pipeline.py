@@ -152,7 +152,10 @@ def test_analyze_run_script_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr("sys.argv", argv)
     runpy.run_path(
         str(
-            Path(__file__).resolve().parent.parent / "scripts" / "pilot_analysis" / "analyze_run.py"
+            Path(__file__).resolve().parent.parent.parent
+            / "scripts"
+            / "pilot_analysis"
+            / "analyze_run.py"
         ),
         run_name="__main__",
     )

@@ -551,7 +551,7 @@ def test_single_line_output_instruction_is_present_in_c1_reason_prompt():
 def test_single_line_output_instruction_literal_has_single_definition_in_src():
     from pathlib import Path
 
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parent.parent.parent
     literal = "Write one valid game action on a single line"
     matches: list[Path] = []
     for p in (repo_root / "src").rglob("*.py"):
@@ -568,7 +568,7 @@ def test_reasoning_output_instruction_literal_has_single_definition_in_src():
     edit reintroduces a second copy instead of importing the shared constant."""
     from pathlib import Path
 
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parent.parent.parent
     literal = "Before answering, briefly reason inside <think>...</think> tags."
     matches: list[Path] = []
     for p in (repo_root / "src").rglob("*.py"):

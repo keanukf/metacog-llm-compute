@@ -18,7 +18,7 @@ from src.agent.stages.shared import (
 from src.analysis.calibration import compare_signal_calibration
 from src.utils.history_guard import enforce_full_history_or_exit, history_truncation_active
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def test_random_allocate_reproducible_by_episode_seed():
