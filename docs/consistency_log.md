@@ -2,6 +2,41 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-21 — Struktureller Repo-Refactor: Skripte/Tests umsortiert, toter Code entfernt
+
+**Zweck:** Rein struktureller Housekeeping-Refactor (Gate A–F alle abgeschlossen), mit harter
+Zero-Functional-Change-Vorgabe. Über eine Multi-Modell-Pipeline ausgeführt: Oper plant ein
+eingefrorenes Move/Rename-Manifest + Do-not-touch-Liste, ein Ausführungsmodell macht nur die
+strukturellen Moves, ein unabhängiges Modell reviewt den Diff, ein separater code-frozen
+Doku-Pass zieht Kommentare/Docs nach.
+
+**Was passiert ist:** 55 Skripte + 12 Testdateien in zweckbenannte Unterordner verschoben/umbenannt
+(`scripts/experiment/`, `scripts/datasets/`, `scripts/difficulty_calibration/`,
+`scripts/instrument_validation/`, `scripts/analysis_rehearsal/`, `scripts/run_readiness/`,
+`scripts/pilot_analysis/`, `scripts/cloud/{shell,python}/`); Gate-A–F-Jargon aus Datei- und
+Testnamen entfernt (z. B. `gate_d_metrics.py` → `difficulty_metrics.py`,
+`gate_f_c1c2_quality_probe.py` → `c1_c2_quality_probe.py`); numerische Präfixe der neun
+`test_0N_*.py`-Dateien gestrichen. Zusätzlich 11 bestätigt tote Dateien entfernt: die tote
+Prompt-A/B-Werkzeugkette (`run_prompt_ab.py` + `configs/prompt_variants/`), die tote
+Multi-Modell-Vergleichs-Infrastruktur (`run_pilot_models.py`, `summarize_pilot_batch.py`,
+`configs/models.yaml`, `configs/models_runpod.yaml`), ein ungenutzter Signal-Stub
+(`src/signals/semantic_consistency.py`) plus `configs/experiment_ext.yaml`, ein redundanter
+Validierungs-Wrapper (`run_tle_invariance_validation.py`) und ein Einmal-Wartungsskript
+(`restore_cursor_plans.sh`).
+
+**Verifikation:** Null Funktionsänderungen — bestätigt durch ein unabhängiges Diff-Review plus die
+komplett grüne Testsuite nach jedem Batch (367 Tests). Der code-frozen Doku-Pass hat außerdem eine
+vorab freigegebene tote `sys.path`-Insert-Zeile in `benchmark_inference.py` entfernt (nachweislich
+inert).
+
+**Historische Einträge:** Sämtliche Dateinamen in *früheren* Einträgen dieses Logs beziehen sich auf
+die Pre-Refactor-Pfade (z. B. `gate_e_rehearsal.py`, `gate_f_c1c2_quality_probe.py`) und bleiben
+bewusst unverändert — Append-only-Prinzip, gleiches Vorgehen wie bei `docs/adrs.md` ADR-001
+(stale-but-labeled historischer Datensatz).
+
+**Testsuite:** unverändert grün (367), keine inhaltliche Quelländerung außer der einen freigegebenen
+Dead-Code-Entfernung.
+
 ## 2026-07-21 — Freeze-Tag-Timing final geklärt: erst nach Refactor + Re-Verifikation
 
 **Zweck:** User fragte nach dem letzten offenen Gate-D-Punkt (Manifest-Freeze-Tag). Inhaltlich ist
