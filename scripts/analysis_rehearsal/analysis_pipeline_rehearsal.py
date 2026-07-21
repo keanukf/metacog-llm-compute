@@ -21,7 +21,7 @@ separate CLI invocation that consumes the policy artifact this script writes; it
 run from here (see docs/gate_e_rehearsal.md for the exact command).
 
 Usage:
-  python scripts/gate_e_rehearsal.py \
+  python scripts/analysis_rehearsal/analysis_pipeline_rehearsal.py \
       --run-dir data/results/instrument_validation/phase1_20260714_105004 \
       --holdout-instances 3 \
       --artifact-out data/results/gate_e_rehearsal/policy_artifact.json \
@@ -37,7 +37,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
