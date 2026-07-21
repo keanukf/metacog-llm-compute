@@ -2,6 +2,51 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-21 — Gate F komplett abgeschlossen: C1/C2-Fix real bestätigt, Run-Hygiene 3× bestätigt, neues Progress-Tool
+
+**Zweck:** PR #25 (C1/C2-Vereinheitlichung) gemergt; realer Recheck auf neu gestartetem Pod
+(`e21lf03kz5htos`, via `runpodctl` neu hochgefahren) nachgeholt, da der Mock-Backend den
+`</think>`-Bug-Fall nicht realistisch simulieren kann.
+
+**Neuer Lernpunkt zum Pod-Handling:** `runpodctl stop` räumt die Container-Disk komplett leer (nur
+`/workspace` bleibt persistent) — jeder Neustart braucht ein volles `setup_cloud.sh` (venv + Modell
+neu, ~einige Minuten), nicht nur ein Reconnect. Zusätzlich ändert sich der öffentliche SSH-Port bei
+jedem Neustart (zweimal bestätigt, gleiche Pod-ID, unterschiedlicher Port) — `~/.ssh/config` muss
+danach jedes Mal aktualisiert werden (`runpodctl get pod <id> -a`, Spalte `PORTS`).
+
+**Run-Hygiene:** dritte unabhängige Bestätigung, wieder 5/5. Checkbox abgehakt.
+
+**C1/C2-QC-Recheck (n=2/Zelle, 8 Episoden real, N=16 parallel, Laufzeit ~30 Min statt der ~59 Min
+gestern bei n=5):**
+
+| Zelle | Ergebnis |
+|---|---|
+| TextWorld/C1 | Kein `<think>`-Leak mehr — "no action parsed at all" statt literalem String. 3 legitime `cot_max_tokens=8192`-Trunkierungen. |
+| TextWorld/C2 | 6 legitime `thinking_unclosed`-Rejections (derselbe, schon vorher korrekte Mechanismus). |
+| ToH/C1 | Sauber, keine Befunde. |
+| ToH/C2 | Sauber, keine Befunde. |
+
+Voting-Korrektheit erneut unabhängig bestätigt (kein einziger Fall, in dem der aufgezeichnete
+Sieger vom neu berechneten Mehrheitsvotum abwich). **Gate-F-C1/C2-QC-Checkbox abgehakt.**
+
+**Damit ist Gate F komplett abgeschlossen** (alle HART-Punkte + WEICH-Punkt gestrichen/erledigt).
+Go/No-Go-Tabelle aktualisiert.
+
+**Datensauberkeit:** Lokaler Sync hatte kurzzeitig alte (Pre-Fix, n=5) und neue (Post-Fix, n=2)
+Episodendaten gemischt in `data/results/gate_f_c1c2_quality_probe/` (rsync ohne `--delete` lässt
+Dateien liegen, die remote nicht mehr existieren). Mit `rsync --delete` bereinigt, lokal jetzt exakt
+deckungsgleich mit dem Pod-Stand (25/25 Dateien).
+
+**Neues Tool: `scripts/progress_watch.py`.** Auf Nutzerwunsch — leichtgewichtiger, von den
+eigentlichen Run-Scripts komplett entkoppelter Fortschritts-Beobachter. Schaut nur von außen auf
+ein Output-Verzeichnis (kein Hook in `run_phase1.py`/`run_phase2.py`/Probe-Scripts nötig), zählt
+fertige Episoden (`ep_*.json`/`qc_*.json`) und laufende (`trace_*.jsonl`-Zeilenzahl), gruppiert nach
+Domain/Stage per Dateinamen-Regex, meldet grobe Steps/Min-Rate. Live gegen den laufenden Pod-Recheck
+getestet (erkannte korrekt 8/8 fertig, keine offenen Traces mehr). 6 neue Tests
+(`tests/test_progress_watch.py`).
+
+**Testsuite:** 367 passed (361 + 6 neue Progress-Watch-Tests).
+
 ## 2026-07-21 — C1/C2-Reasoning-Engine vereinheitlicht (fixt den TextWorld-C1-`<think>`-Fund)
 
 **Zweck:** Der C1-`<think>`-Leak-Fund vom 2026-07-20 (`docs/consistency_log.md`, Eintrag "C1/C2-
