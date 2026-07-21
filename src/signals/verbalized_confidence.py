@@ -1,7 +1,15 @@
 """
-Verbalized Confidence (VC): extract numeric confidence 0-100 from model output.
-Prompt: "Answer, then rate your confidence 0-100."
-Fallback: few-shot examples in prompt; robust parsing here.
+Verbalized Confidence (VC) parsing -- the study's second metacognitive signal (Factor 1), the
+"gray-box" Feeling-of-Knowing proxy that H1 predicts is *less* well calibrated than TLE because
+RLHF biases it toward overconfidence.
+
+VC is elicited in a separate follow-up call after the step action is committed (see
+``src.agent.stages.shared._run_vc_followup``), asking how likely the chosen action is to be correct
+as a single integer 0-100 with explicitly anchored scale ends (0 = certainly wrong, 100 = certainly
+correct; Yang et al., 2024). No few-shot number examples are given -- for small models those bias
+the distribution -- so the model's format compliance is imperfect. This module therefore does the
+robust extraction: normalize a bare ``Confidence:`` echo, then try a cascade of numeric patterns and
+report which one matched (``vc_pattern_matched``) for transparency in the calibration analysis.
 """
 
 from __future__ import annotations
