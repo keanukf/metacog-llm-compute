@@ -2,6 +2,22 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-21 — Freeze-Tag-Timing final geklärt: erst nach Refactor + Re-Verifikation
+
+**Zweck:** User fragte nach dem letzten offenen Gate-D-Punkt (Manifest-Freeze-Tag). Inhaltlich ist
+nichts mehr offen (beide Manifeste final, committed, Mock-Smoke bestanden) — nur der eigentliche
+git tag fehlt noch. Da Gate F seit heute komplett abgeschlossen ist, wäre die im Dokument selbst
+genannte Vorbedingung ("Tag nach Gate F") jetzt technisch erfüllt.
+
+**Entscheidung (User, per Rückfrage bestätigt):** Tag trotzdem nicht jetzt setzen, sondern erst
+nach dem geplanten Repo-Refactor und der finalen Re-Verifikation aller eingefrorenen Configs.
+Begründung: Der Tag soll den tatsächlichen Endzustand markieren, mit dem Phase 1 real läuft — nicht
+einen Zwischenstand, der durch die anschließende Refactor-Arbeit sofort wieder überholt würde
+(auch wenn der Refactor rein strukturell ist und keine Funktion ändern soll, wäre der getaggte
+Commit sonst nicht der, der tatsächlich für Phase 1 verwendet wird).
+
+**Testsuite:** keine Quelländerung (nur Dokumentation).
+
 ## 2026-07-21 — Gate F komplett abgeschlossen: C1/C2-Fix real bestätigt, Run-Hygiene 3× bestätigt, neues Progress-Tool
 
 **Zweck:** PR #25 (C1/C2-Vereinheitlichung) gemergt; realer Recheck auf neu gestartetem Pod
