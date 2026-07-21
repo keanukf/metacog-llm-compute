@@ -134,10 +134,18 @@ def test_analyze_run_script_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     _write_ep(run_dir, ep)
 
     out_dir = tmp_path / "analysis_out"
-    argv = ["scripts/analyze_run.py", "--run-dir", str(run_dir), "--out-dir", str(out_dir)]
+    argv = [
+        "scripts/pilot_analysis/analyze_run.py",
+        "--run-dir",
+        str(run_dir),
+        "--out-dir",
+        str(out_dir),
+    ]
     monkeypatch.setattr("sys.argv", argv)
     runpy.run_path(
-        str(Path(__file__).resolve().parent.parent / "scripts" / "analyze_run.py"),
+        str(
+            Path(__file__).resolve().parent.parent / "scripts" / "pilot_analysis" / "analyze_run.py"
+        ),
         run_name="__main__",
     )
 

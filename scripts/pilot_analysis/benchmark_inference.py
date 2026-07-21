@@ -18,7 +18,7 @@ import json
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -26,8 +26,7 @@ if str(REPO_ROOT) not in sys.path:
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
-import run_pilot  # noqa: E402
-
+from scripts.experiment import run_pilot  # noqa: E402
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override  # noqa: E402
 
 

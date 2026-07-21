@@ -31,7 +31,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _http_get_json(url: str, *, token: str | None) -> dict[str, Any]:

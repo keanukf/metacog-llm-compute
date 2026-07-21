@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.audit_pilot_signals import audit
+from scripts.pilot_analysis.audit_pilot_signals import audit
 
 
 def test_audit_reports_signals_by_stage(tmp_path: Path) -> None:
