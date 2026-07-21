@@ -4,7 +4,7 @@ Core experiments use **TextWorld Cooking** (partial observability / exploration)
 
 **Related:** [`docs/scripts.md`](scripts.md), [`configs/experiment_core.yaml`](../configs/experiment_core.yaml) (`paths.tasks_dir`).
 
-## Generation (`scripts/generate_textworld_games.py`)
+## Generation (`scripts/datasets/generate_textworld_games.py`)
 
 Generates TextWorld Cooking games via `python -m textworld.challenges.tw_cooking` with:
 
@@ -18,7 +18,7 @@ Optional: `--write-manifest` writes `difficulty_manifest.json` in the output dir
 Example (from repo root; requires `textworld` installed):
 
 ```bash
-python scripts/generate_textworld_games.py \
+python scripts/datasets/generate_textworld_games.py \
   --num-rooms 5 \
   --num-ingredients 2 \
   --cook \
@@ -28,23 +28,23 @@ python scripts/generate_textworld_games.py \
 
 This writes `data/tasks/textworld/textworld_0.z8` … `textworld_2.z8`, matching `textworld_{i}.json` (game dump) and `textworld_{i}.meta.json`. Add `--cut` for cutting, or omit `--cook` for a take-only style run, depending on the sweep cell you are testing.
 
-## Difficulty sweep (`scripts/sweep_textworld_difficulty.py`)
+## Difficulty sweep (`scripts/difficulty_calibration/sweep_textworld_difficulty.py`)
 
-Runs a grid over rooms `{3,5,7}` × ingredients `{1,2,3}` × operations `{take-only, take+cook, take+cut+cook}`, generates a small batch per cell, runs **C0** episodes via the existing agent loop, and writes **`sweep_results.json`** plus a ranked console summary. Goal: land near **30–50% C0 task success** (primary, hard criterion) before freezing parameters for the final 50 instances, with mean successful-episode length ideally in the **15–40 step** range (revised 2026-07-18 from the original 8–15 target — see `docs/consistency_log.md`; only the 15-step floor is load-bearing for H3 position resolution, the 40-step ceiling is a soft practical bound, not a second hard AND-condition, since difficulty and episode length are empirically coupled across this grid). NB: `scripts/gate_d_metrics.py`'s `LENGTH_GUIDANCE` constant still hardcodes the old `(8, 15)` window as of this doc update and needs a code change before the next confirmation sweep (tracked as an open item in `docs/consistency_log.md`). Use `--real` with `configs/experiment_core.yaml` (or your sweep config) so the model matches the thesis run (e.g. **`Qwen/Qwen3-8B`** on GPU).
+Runs a grid over rooms `{3,5,7}` × ingredients `{1,2,3}` × operations `{take-only, take+cook, take+cut+cook}`, generates a small batch per cell, runs **C0** episodes via the existing agent loop, and writes **`sweep_results.json`** plus a ranked console summary. Goal: land near **30–50% C0 task success** (primary, hard criterion) before freezing parameters for the final 50 instances, with mean successful-episode length ideally in the **15–40 step** range (revised 2026-07-18 from the original 8–15 target — see `docs/consistency_log.md`; only the 15-step floor is load-bearing for H3 position resolution, the 40-step ceiling is a soft practical bound, not a second hard AND-condition, since difficulty and episode length are empirically coupled across this grid). NB: `scripts/difficulty_calibration/difficulty_metrics.py`'s `LENGTH_GUIDANCE` constant still hardcodes the old `(8, 15)` window as of this doc update and needs a code change before the next confirmation sweep (tracked as an open item in `docs/consistency_log.md`). Use `--real` with `configs/experiment_core.yaml` (or your sweep config) so the model matches the thesis run (e.g. **`Qwen/Qwen3-8B`** on GPU).
 
-## Manual play (`scripts/play_textworld.py`)
+## Manual play (`scripts/datasets/play_textworld.py`)
 
 Interactive terminal play for a single compiled story (`.z8` or `.ulx`): observations, score vs max score, and termination as `YOU WON` / `YOU LOST` / `MAX STEPS REACHED`. Use this to sanity-check generated games before long sweeps. Requires `textworld` (same stack as generation).
 
 Example (from repo root; path matches instances produced by `generate_textworld_games.py`):
 
 ```bash
-python scripts/play_textworld.py data/tasks/textworld/textworld_0.z8
+python scripts/datasets/play_textworld.py data/tasks/textworld/textworld_0.z8
 ```
 
 Use `--max-steps N` to change the interactive cap for the session (default 50).
 
-## Final manifest (`scripts/build_textworld_manifest.py`)
+## Final manifest (`scripts/datasets/build_textworld_manifest.py`)
 
 After generating the **50** immutable instances with chosen parameters, build **`data/tasks/textworld/difficulty_manifest.json`**: metadata per instance, difficulty tier, and **`holdout: true/false`** for **5 / 45** split (Phase 1 threshold tuning vs Phase 2). Policies: `--holdout-policy first-n` or `mod-10`.
 

@@ -2,7 +2,7 @@
 
 The pilot with `--real` is designed for **~2 GPU-hours** on an **RTX 5090** (32 GB VRAM). Budget: about **$0.44** (see [`blueprints/infrastructureplan_pilot.md`](../blueprints/infrastructureplan_pilot.md) Section V).
 
-**Related:** [`docs/pilot.md`](pilot.md) (pilot modes), [`docs/scripts.md`](scripts.md), [`configs/models_runpod.yaml`](../configs/models_runpod.yaml).
+**Related:** [`docs/pilot.md`](pilot.md) (pilot modes), [`docs/scripts.md`](scripts.md), [`configs/experiment_core.yaml`](../configs/experiment_core.yaml) (production model + inference config).
 
 ## Step 1 — Create & start the pod (dashboard settings)
 
@@ -41,14 +41,14 @@ Expected:
 - `/` reflects your **Container Disk** size (ephemeral)
 - `/workspace` is mounted (your **Network Volume**, persistent)
 
-**RunPod template caveat:** The PyTorch template sets `HF_HOME`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, and related vars to `/workspace/.cache/*` in the container environment. That fills the **network volume** during `pip install` and model download. `setup_cloud.sh` overrides this via `scripts/pod_runtime_env.sh` — do **not** re-export the template paths in your shell before setup.
+**RunPod template caveat:** The PyTorch template sets `HF_HOME`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, and related vars to `/workspace/.cache/*` in the container environment. That fills the **network volume** during `pip install` and model download. `setup_cloud.sh` overrides this via `scripts/cloud/shell/pod_runtime_env.sh` — do **not** re-export the template paths in your shell before setup.
 
 If you want **results persistent** but **models ephemeral**, use the repo scripts (recommended):
 
 ```bash
 cd /workspace/metacog-llm-compute
-bash scripts/setup_cloud.sh
-source scripts/activate_pod_env.sh
+bash scripts/cloud/shell/setup_cloud.sh
+source scripts/cloud/shell/activate_pod_env.sh
 ```
 
 Manual overrides (only if not using `setup_cloud.sh`):
@@ -68,9 +68,9 @@ Some checkpoints are **gated** on the Hub. On the pod:
 export HF_TOKEN="..."   # read-only token is enough for downloads
 ```
 
-This also improves rate limits for metadata scripts like `scripts/hf_model_card_gate.py`.
+This also improves rate limits for metadata scripts like `scripts/pilot_analysis/hf_model_card_gate.py`.
 
-**Fast Hub downloads (`hf_transfer`):** Some RunPod images or `/workspace/secrets/env.sh` set `HF_HUB_ENABLE_HF_TRANSFER=1`. That requires the `hf_transfer` package — it is pinned in `requirements.txt` (Linux) and installed by `scripts/setup_cloud.sh`. If you see `Fast download using 'hf_transfer' is enabled … but 'hf_transfer' package is not available`, re-run setup or `pip install hf_transfer`.
+**Fast Hub downloads (`hf_transfer`):** Some RunPod images or `/workspace/secrets/env.sh` set `HF_HUB_ENABLE_HF_TRANSFER=1`. That requires the `hf_transfer` package — it is pinned in `requirements.txt` (Linux) and installed by `scripts/cloud/shell/setup_cloud.sh`. If you see `Fast download using 'hf_transfer' is enabled … but 'hf_transfer' package is not available`, re-run setup or `pip install hf_transfer`.
 
 **Optional — Langfuse tracing (recommended if you want cloud traces)**
 
@@ -166,7 +166,7 @@ On a **new pod** (fresh container disk), one command from the repo root on `/wor
 
 ```bash
 cd /workspace/metacog-llm-compute   # skip clone if the volume already has the repo
-bash scripts/setup_cloud.sh
+bash scripts/cloud/shell/setup_cloud.sh
 ```
 
 `setup_cloud.sh` prepares a **runnable pod** (secrets, SSH, Python env, model cache). It does **not** start vLLM or run Gate C / probes — you choose what to run afterward.
@@ -178,13 +178,13 @@ bash scripts/setup_cloud.sh
 | GitHub deploy key | copies `/workspace/secrets/runpod_github_ed25519` → `~/.ssh/` |
 | Git sync | `git fetch origin`, then **ff-only pull on the branch already checked out** (no branch switch). Optional override: `GIT_BRANCH=main` |
 | venv | `/root/venv-metacog` on **container disk** |
-| Caches | `scripts/pod_runtime_env.sh` → `HF_HOME=/root/.cache/huggingface`, `PIP_CACHE_DIR=/root/.cache/pip` (overrides RunPod `/workspace/.cache/*`) |
+| Caches | `scripts/cloud/shell/pod_runtime_env.sh` → `HF_HOME=/root/.cache/huggingface`, `PIP_CACHE_DIR=/root/.cache/pip` (overrides RunPod `/workspace/.cache/*`) |
 | deps + model | `requirements.txt` + optional `Qwen/Qwen3-8B` pre-download |
 
 **Skip flags** (e.g. stopped pod with venv + model still on container disk):
 
 ```bash
-SKIP_MODEL_DOWNLOAD=1 bash scripts/setup_cloud.sh
+SKIP_MODEL_DOWNLOAD=1 bash scripts/cloud/shell/setup_cloud.sh
 # SKIP_GIT_SYNC=1   — no fetch/pull (deploy key still installed)
 # SKIP_VENV=1       — reuse existing venv
 ```
@@ -194,15 +194,15 @@ SKIP_MODEL_DOWNLOAD=1 bash scripts/setup_cloud.sh
 ```bash
 cd /workspace/metacog-llm-compute
 git checkout main   # or any branch you use
-bash scripts/setup_cloud.sh
-# or one-shot: GIT_BRANCH=main bash scripts/setup_cloud.sh
+bash scripts/cloud/shell/setup_cloud.sh
+# or one-shot: GIT_BRANCH=main bash scripts/cloud/shell/setup_cloud.sh
 ```
 
 **New SSH session** (after setup):
 
 ```bash
 cd /workspace/metacog-llm-compute
-source scripts/activate_pod_env.sh
+source scripts/cloud/shell/activate_pod_env.sh
 ```
 
 Start **vLLM serve** separately when you need GPU inference — see `docs/runpod.md`.
@@ -214,7 +214,7 @@ This installs the **pinned** dependency set from `requirements.txt` (includes `v
 ```bash
 export MODEL_NAME="Qwen/Qwen3-8B"
 export SKIP_MODEL_DOWNLOAD=0
-bash scripts/setup_cloud.sh
+bash scripts/cloud/shell/setup_cloud.sh
 ```
 
 Store models on the **container disk** (`HF_HOME=/root/.cache/huggingface`) so the 10 GB network volume is not filled; results stay under `/workspace/metacog-llm-compute/data/results`.
@@ -227,7 +227,7 @@ From repo root on the pod (after `setup_cloud.sh`):
 
 ```bash
 cd /workspace/metacog-llm-compute
-python scripts/generate_textworld_games.py \
+python scripts/datasets/generate_textworld_games.py \
   --num-rooms 5 \
   --num-ingredients 2 \
   --cook \
@@ -235,12 +235,12 @@ python scripts/generate_textworld_games.py \
   --num-instances 5
 ```
 
-This writes under `data/tasks/textworld/` (see [`docs/textworld.md`](textworld.md)). For a quick smoke test, `--num-instances 5` matches `pilot.instances` in `configs/pilot.yaml`. The final experiment uses 50 instances via [`scripts/build_textworld_manifest.py`](scripts/build_textworld_manifest.py) after difficulty calibration.
+This writes under `data/tasks/textworld/` (see [`docs/textworld.md`](textworld.md)). For a quick smoke test, `--num-instances 5` matches `pilot.instances` in `configs/pilot.yaml`. The final experiment uses 50 instances via [`scripts/datasets/build_textworld_manifest.py`](scripts/datasets/build_textworld_manifest.py) after difficulty calibration.
 
 Optional sanity check:
 
 ```bash
-python scripts/play_textworld.py data/tasks/textworld/textworld_0.z8
+python scripts/datasets/play_textworld.py data/tasks/textworld/textworld_0.z8
 ```
 
 ## Step 7 — Hugging Face model-card gate (before burning GPU time)
@@ -249,8 +249,11 @@ Quick, read-only Hub scan for obvious exclusion flags (MoE-ish language, multimo
 
 ```bash
 cd /workspace/metacog-llm-compute
-python scripts/hf_model_card_gate.py --models-file configs/models_runpod.yaml
+python scripts/pilot_analysis/hf_model_card_gate.py --repo-id Qwen/Qwen3-8B
 ```
+
+(`--models-file` also accepts an ad-hoc YAML list of repo ids if you want to scan several at once;
+the former shipped shortlist files were removed in the 2026-07-21 refactor.)
 
 ## Step 8 — Run unit tests on the pod (no GPU needed)
 
@@ -271,7 +274,7 @@ Run the pilot **with real inference** on the pod (Pilot 2). Use the persistent r
 ```bash
 cd /workspace/metacog-llm-compute
 export RESULTS_DIR="/workspace/metacog-llm-compute/data/results"
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir "${RESULTS_DIR}" --pilot-mode cuda --real
+python scripts/experiment/run_pilot.py --config configs/pilot.yaml --output-dir "${RESULTS_DIR}" --pilot-mode cuda --real
 ```
 
 Or use `--real` to auto-detect (on the pod this will select `cuda`).
@@ -283,9 +286,9 @@ Or use `--real` to auto-detect (on the pod this will select `cuda`).
 - **C1 format compliance** is evaluated with thinking **ON**. Before trusting C1 on a new shortlist model, run the handoff gate (both domains if possible):
 
 ```bash
-python scripts/run_c1_handoff_gate.py --config configs/experiment_core.yaml --pilot-mode cuda --real \
+python scripts/pilot_analysis/run_c1_handoff_gate.py --config configs/experiment_core.yaml --pilot-mode cuda --real \
   --output-dir "${RESULTS_DIR}" --domain textworld --n-episodes 3 --max-steps 5
-python scripts/run_c1_handoff_gate.py --config configs/experiment_core.yaml --pilot-mode cuda --real \
+python scripts/pilot_analysis/run_c1_handoff_gate.py --config configs/experiment_core.yaml --pilot-mode cuda --real \
   --output-dir "${RESULTS_DIR}" --domain tower_of_hanoi --n-episodes 3 --max-steps 5
 ```
 
@@ -296,12 +299,11 @@ Inspect `c1_handoff_gate_*.md` and `debug_views/` for `parse_method: post_think`
 | Script | Typical output |
 |--------|----------------|
 | `run_pilot.py` | `${RESULTS_DIR}/pilot_YYYYMMDD_HHMMSS/` |
-| `run_prompt_ab.py` | `data/results/runpod_pilot/ab_YYYYMMDD_HHMMSS/` (default `--output-dir`) |
 
 Optional vLLM logprob probe before a long run:
 
 ```bash
-python scripts/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode cuda --real
+python scripts/instrument_validation/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode cuda --real
 ```
 
 ### Troubleshooting: weird model outputs (blank actions / prompt echo / VC always null / C1 parse failures)
@@ -316,7 +318,6 @@ python scripts/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode c
   - If you run `run_pilot.py` with `configs/pilot.yaml`, temporarily mirror those `vc.*` keys from `experiment_core.yaml` for comparable VC rates — the pilot file’s **24**-token follow-up is a legacy convenience, not the thesis default.
 - **Thinking text floods the action / C1 unparsed steps**
   - C1 is always evaluated with thinking **ON** on the reason call. Do not disable thinking globally to “fix” C0; use the C1 handoff gate above and inspect `debug_views/` (`reason` block, `parse_method` in traces).
-  - For prompt A/B only, `configs/prompt_variants/v_think.yaml` toggles thinking for controlled comparisons — not the production stage contract.
 
 **If vLLM fails during model init with a KV-cache / max-seq-len error (common on 24 GB GPUs):**
 
@@ -324,7 +325,7 @@ Some models advertise very large context lengths (e.g. 40960). On 24 GB GPUs, vL
 
 **vLLM dtype:** use `model.dtype: float16` in YAML. vLLM 0.19+ does not accept the alias `fp16` when constructing the engine (affects `verify_backend_parity.py`, Phase 1/2 runners, and pilot smoke tests).
 
-**vLLM logprobs mode:** pin `logprobs_mode="raw_logprobs"` on the **engine** (`LLM(...)`), not on `SamplingParams`. V1 default is raw (pre-temperature). Parity gate: `python scripts/verify_backend_parity.py --backend vllm` (TLE tolerance + Same-T diagnostic; see `docs/pilot.md` §5.7).
+**vLLM logprobs mode:** pin `logprobs_mode="raw_logprobs"` on the **engine** (`LLM(...)`), not on `SamplingParams`. V1 default is raw (pre-temperature). Parity gate: `python scripts/instrument_validation/verify_backend_parity.py --backend vllm` (TLE tolerance + Same-T diagnostic; see `docs/pilot.md` §5.7).
 
 You should see a new timestamped folder like `data/results/pilot_YYYYMMDD_HHMMSS/` containing at least:
 
@@ -332,42 +333,14 @@ You should see a new timestamped folder like `data/results/pilot_YYYYMMDD_HHMMSS
 - `pilot_sanity.json`, `pilot_test1_inference.json`, `pilot_test2_tle.json`, `pilot_test3_vc.json`, `pilot_test5_toh.json`, `pilot_feasibility.json`
 - TextWorld + ToH episode JSONs (`ep_*.json`) plus optional `trace_*.jsonl`, `logprobs/`, `vc/`
 
-## Multi-model batch (recommended for model selection)
-
-```bash
-cd /workspace/metacog-llm-compute
-python scripts/run_pilot_models.py --config configs/pilot.yaml --pilot-mode cuda --real \
-  --models-file configs/models_runpod.yaml --continue-on-fail
-```
-
-Afterwards, summarize the batch folder with:
-
-```bash
-python scripts/summarize_pilot_batch.py data/results/pilot_batch_YYYYMMDD_HHMMSS
-```
-
-## Prompt A/B testing (small, fast)
-
-This repo includes a small A/B harness to compare prompt variants on a single model before running the full shortlist batch.
-
-- **Variant configs**: `configs/prompt_variants/` (`v_base.yaml`, `v_nofewshot.yaml`, `v_think.yaml`)
-- **Runner**:
-
-```bash
-cd /workspace/metacog-llm-compute
-python scripts/run_prompt_ab.py --pilot-mode cuda --output-dir data/results/runpod_pilot
-```
-
-This writes `data/results/runpod_pilot/ab_YYYYMMDD_HHMMSS/ab_summary.json` plus per-variant pilot folders.
-
 ## Phase 1 / Phase 2 autostop
 
-Wrap long runs with [`scripts/run_with_autostop.sh`](../scripts/run_with_autostop.sh) (best-effort `runpodctl stop` when `RUNPOD_POD_ID` is set; local no-op):
+Wrap long runs with [`scripts/cloud/shell/run_with_autostop.sh`](../scripts/cloud/shell/run_with_autostop.sh) (best-effort `runpodctl stop` when `RUNPOD_POD_ID` is set; local no-op):
 
 ```bash
 cd /workspace/metacog-llm-compute
 export RESULTS_DIR="/workspace/metacog-llm-compute/data/results"
-STOP_POD=1 ./scripts/run_with_autostop.sh scripts/run_phase1.py \
+STOP_POD=1 ./scripts/cloud/shell/run_with_autostop.sh scripts/experiment/run_phase1.py \
   --config configs/experiment_core.yaml --real --resume \
   --checkpoint-dir "${RESULTS_DIR}/phase1/phase1_YYYYMMDD_HHMMSS_UTC"
 ```
@@ -388,7 +361,7 @@ From your **local machine** (repo root). RunPod shows **two** SSH options in the
 **Recommended:** copy **IP, port, and user** from **Pod → Connect → “SSH over exposed TCP”**, then:
 
 ```bash
-./scripts/download_runpod_results.sh --tcp root YOUR_IP YOUR_PORT ~/.ssh/id_ed25519
+./scripts/cloud/shell/download_runpod_results.sh --tcp root YOUR_IP YOUR_PORT ~/.ssh/id_ed25519
 ```
 
 The script copies remote `data/results/` into `data/results/runpod_pilot/` and **flattens** the common `runpod_pilot/results/pilot_*` nesting that plain `scp -r …/results/` creates.
@@ -396,14 +369,14 @@ The script copies remote `data/results/` into `data/results/runpod_pilot/` and *
 To download **only one run folder** (recommended when iterating):
 
 ```bash
-./scripts/download_runpod_results.sh --tcp root YOUR_IP YOUR_PORT ~/.ssh/id_ed25519 \
+./scripts/cloud/shell/download_runpod_results.sh --tcp root YOUR_IP YOUR_PORT ~/.ssh/id_ed25519 \
   --run pilot_YYYYMMDD_HHMMSS
 ```
 
 If you already downloaded with an older one-liner and see `data/results/runpod_pilot/results/pilot_*`, repair locally:
 
 ```bash
-python scripts/flatten_runpod_download.py data/results/runpod_pilot
+python scripts/cloud/python/flatten_runpod_download.py data/results/runpod_pilot
 ```
 
 **Expected local layout** after download or flatten:
@@ -418,8 +391,8 @@ The gateway URL (`ssh.runpod.io`) is fine for **interactive** `ssh`; for **scp/r
 After download, validate locally:
 
 ```bash
-python scripts/validate_pilot_outputs.py data/results/runpod_pilot/pilot_YYYYMMDD_HHMMSS
-python scripts/audit_pilot_signals.py data/results/runpod_pilot/pilot_YYYYMMDD_HHMMSS
+python scripts/pilot_analysis/validate_pilot_outputs.py data/results/runpod_pilot/pilot_YYYYMMDD_HHMMSS
+python scripts/pilot_analysis/audit_pilot_signals.py data/results/runpod_pilot/pilot_YYYYMMDD_HHMMSS
 ```
 
 The pod must be **running** (not stopped) for `scp` to succeed.
@@ -456,23 +429,20 @@ Optional: `execution.server_timeout_s` in YAML (default 600s) for long C2 thinki
 
 | Level | Script | N | GO/NO-GO |
 |-------|--------|---|----------|
-| **Plumbing smoke** | `scripts/smoke_parallel.py` | Small N in `configs/dev/smoke.yaml` (e.g. 3) | `SMOKE_PARALLEL: GO/NO-GO` — scheduler, checkpoints, concurrency |
-| **TLE invariance validation** | `scripts/run_tle_invariance_validation.py` + `verify_backend_parity.py` | Production `max_concurrent_episodes` from `experiment_core.yaml` | Temperature + batch invariance at committed-action TLE window |
+| **Plumbing smoke** | `scripts/instrument_validation/smoke_parallel.py` | Small N in `configs/dev/smoke.yaml` (e.g. 3) | `SMOKE_PARALLEL: GO/NO-GO` — scheduler, checkpoints, concurrency |
+| **TLE invariance validation** | `scripts/instrument_validation/verify_backend_parity.py --backend server` | Production `max_concurrent_episodes` from `experiment_core.yaml` | Temperature + batch invariance at committed-action TLE window |
 
 **Green plumbing smoke ≠ TLE invariance evidence.** Smoke does not replace batch-invariance or eps derivation under load.
 
 ```bash
 # Plumbing (mock locally, or --real on pod with server running):
-python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --output-dir data/results/smoke_parallel
-python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --real --output-dir data/results/smoke_parallel
+python scripts/instrument_validation/smoke_parallel.py --config configs/dev/smoke.yaml --output-dir data/results/smoke_parallel
+python scripts/instrument_validation/smoke_parallel.py --config configs/dev/smoke.yaml --real --output-dir data/results/smoke_parallel
 
 # TLE invariance validation (production N, saturated pool):
-python scripts/verify_backend_parity.py --backend server \
+python scripts/instrument_validation/verify_backend_parity.py --backend server \
   --config configs/experiment_core.yaml \
   --output-dir data/results/instrument_validation
-# Legacy wrapper (delegates to verify_backend_parity):
-python scripts/run_tle_invariance_validation.py --config configs/experiment_core.yaml \
-  --output data/results/instrument_validation/tle_invariance_report.json
 ```
 
 ### Instrument validation session (5090 pod)
@@ -482,42 +452,42 @@ After connecting Cursor via SSH Remote to `/workspace/metacog-llm-compute`:
 **Order matters:** pick production `max_concurrent_episodes` from measured throughput *before* backend parity (batch invariance must use the N you will run in Phase 1).
 
 ```bash
-bash scripts/instrument_validation_preflight.sh
+bash scripts/cloud/shell/instrument_validation_preflight.sh
 # Terminal A: vllm serve … (see above; pin --revision to match experiment_core.yaml)
 # Terminal B — results under data/results/instrument_validation/
 
 # 1) Plumbing + thinking check
-python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --real \
+python scripts/instrument_validation/smoke_parallel.py --config configs/dev/smoke.yaml --real \
   --output-dir data/results/instrument_validation/smoke_parallel
 
 # 2) Throughput sweep — choose N (try 8,16,24,32 after server concurrency fix; extend if headroom)
-python scripts/measure_concurrent_throughput.py --real \
+python scripts/instrument_validation/measure_concurrent_throughput.py --real \
   --candidates 8,16,24,32 \
   --output data/results/instrument_validation/throughput_sweep.json
 # Set execution.max_concurrent_episodes in experiment_core.yaml + dev configs to chosen N
 
 # 3) Backend parity at production N (hard stop if FAIL)
-python scripts/verify_backend_parity.py --backend server \
+python scripts/instrument_validation/verify_backend_parity.py --backend server \
   --config configs/experiment_core.yaml \
   --output-dir data/results/instrument_validation
 
 # 4) Format/VC probe — check vc_rate + traces; preanalysis AUROC is smoke-only here
-python scripts/run_phase1.py --config configs/dev/format_vc_probe.yaml --real \
+python scripts/experiment/run_phase1.py --config configs/dev/format_vc_probe.yaml --real \
   --checkpoint-dir data/results/instrument_validation
 PROBE=$(ls -td data/results/instrument_validation/phase1_* | head -1)
-python scripts/audit_pilot_signals.py "$PROBE" --json
+python scripts/pilot_analysis/audit_pilot_signals.py "$PROBE" --json
 python -m src.analysis.preanalysis_screen "$PROBE"   # AUROC marked (smoke) if n<50
 
 # 5) ToH parse probe
-python scripts/run_phase1.py --config configs/dev/toh_parse_probe.yaml --real \
+python scripts/experiment/run_phase1.py --config configs/dev/toh_parse_probe.yaml --real \
   --checkpoint-dir data/results/instrument_validation
 
 # 6) Signal smoke — extrapolate wall time from probe ep/h before starting
-python scripts/run_phase1.py --config configs/dev/signal_smoke.yaml --real \
+python scripts/experiment/run_phase1.py --config configs/dev/signal_smoke.yaml --real \
   --checkpoint-dir data/results/instrument_validation
 RUN=$(ls -td data/results/instrument_validation/phase1_* | head -1)
 python -m src.analysis.preanalysis_screen "$RUN"
-python scripts/sweep_topk_sensitivity.py "$RUN" --output "$RUN/topk_sensitivity.json"
+python scripts/instrument_validation/sweep_topk_sensitivity.py "$RUN" --output "$RUN/topk_sensitivity.json"
 ```
 
 Dev configs: `format_vc_probe.yaml`, `toh_parse_probe.yaml`, `signal_smoke.yaml` (72 episodes, 1 run/condition).
@@ -527,7 +497,7 @@ Gate checklist: `blueprints/gate_p1_readiness.md` (Gate C), `docs/consistency_lo
 **One-shot after `perf/vllm-server-concurrency` merge on pod:**
 
 ```bash
-bash scripts/run_instrument_validation_after_perf.sh
+bash scripts/cloud/shell/run_instrument_validation_after_perf.sh
 ```
 
 This runs re-sweep → `apply_production_n.py` → parity → format_vc_probe → toh_parse_probe → (optional) signal_smoke.
@@ -544,7 +514,7 @@ Block before Smoke `--real` GO: `enable_thinking` must produce thinking blocks o
 
 Der `verify_backend_parity`-Kontrolllauf zur eps-Ableitung läuft **unter Last** (gesättigter Pool bei Produktions-N), nicht solo. Begründung: der Same-T-Kontrollterm in `resolve_tle_invariance_eps()` muss Batch-Rauschen des Erhebungsregimes enthalten; solo-abgeleitetes eps wäre zu eng.
 
-Nach erfolgreicher TLE-Invarianz-Validierung: `(N, eps)` in `run_metadata.frozen_execution_params` einfrieren (`execution.frozen_*` in YAML oder `--freeze-metadata-dir` on `run_tle_invariance_validation.py`).
+Nach erfolgreicher TLE-Invarianz-Validierung: `(N, eps)` in `run_metadata.frozen_execution_params` einfrieren (`execution.frozen_*` in YAML oder `--freeze-metadata-dir` on `verify_backend_parity.py --backend server`).
 
 ### Fallback escalation (document only — not automated)
 
@@ -559,14 +529,14 @@ Batch jitter within eps is bounded measurement noise, not a confound (content-ag
 Run this sequence when validating infrastructure before committing GPU budget to Gate 1 (20 episodes/domain at C0):
 
 1. **Pod:** Start stopped pod (or create new one). Confirm `/workspace/metacog-llm-compute` exists; `git pull` on `feat/runpod-gate1-readiness` or `main` after merge.
-2. **Env:** `bash scripts/setup_cloud.sh` (if deps changed).
+2. **Env:** `bash scripts/cloud/shell/setup_cloud.sh` (if deps changed).
 3. **TextWorld:** Step 6b — generate games if `data/tasks/textworld/textworld_0.z8` is missing.
 4. **Unit tests:** `python -m pytest tests/ -v`
-5. **L0.1 probe:** `python scripts/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode cuda --real`
+5. **L0.1 probe:** `python scripts/instrument_validation/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode cuda --real`
 6. **C1 handoff gate (thinking ON):** `run_c1_handoff_gate.py` with `configs/experiment_core.yaml` on TextWorld and ToH (see Step 9 inference contract).
-7. **Pilot:** `python scripts/run_pilot.py --config configs/pilot.yaml --output-dir "${RESULTS_DIR}" --pilot-mode cuda --real` (mirror `vc.*` from `experiment_core.yaml` if auditing VC against thesis defaults).
-8. **Download** (local machine, pod running): `./scripts/download_runpod_results.sh --tcp … [--run pilot_…]`
-9. **Audit** (local): `python scripts/audit_pilot_signals.py data/results/runpod_pilot/pilot_…`
+7. **Pilot:** `python scripts/experiment/run_pilot.py --config configs/pilot.yaml --output-dir "${RESULTS_DIR}" --pilot-mode cuda --real` (mirror `vc.*` from `experiment_core.yaml` if auditing VC against thesis defaults).
+8. **Download** (local machine, pod running): `./scripts/cloud/shell/download_runpod_results.sh --tcp … [--run pilot_…]`
+9. **Audit** (local): `python scripts/pilot_analysis/audit_pilot_signals.py data/results/runpod_pilot/pilot_…`
 
 **Pass criteria for this smoke:** `pilot_sanity.json` has `has_logprobs: true`; `audit_pilot_signals` shows C0 `tle_rate >= 0.95`; VC rate `>= 0.80` under the **`experiment_core.yaml` VC contract** (`followup_max_tokens: 4`); C1 handoff gate shows low unparsed rate with thinking ON; C2 traces use `self_consistency_majority_vote` when `compute_stages` includes C2. Gate 1 itself still requires a dedicated 20-episode C0 parseability run per domain (see `blueprints/thesis_dependency_map.html`).
 

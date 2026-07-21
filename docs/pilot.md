@@ -17,7 +17,7 @@ The pilot runs Tests 1–6 in sequence and writes benchmark and calibration outp
 No real model, stub environments. Confirms the script and output format:
 
 ```bash
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results
+python scripts/experiment/run_pilot.py --config configs/pilot.yaml --output-dir data/results
 ```
 
 You get per-step JSON under `--output-dir` (e.g. `pilot_test1_inference.json`, `pilot_test2_tle.json`, …) plus `ep_textworld_*.json` / `ep_tower_of_hanoi_*.json` for episodes and `pilot_feasibility.json`. In **mock** mode, metrics are synthetic (e.g. unrealistic `tokens_per_sec`).
@@ -27,7 +27,7 @@ You get per-step JSON under `--output-dir` (e.g. `pilot_test1_inference.json`, `
 Run individual steps without the full pipeline:
 
 ```bash
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --only test2
+python scripts/experiment/run_pilot.py --config configs/pilot.yaml --output-dir data/results --only test2
 ```
 
 `--only` accepts one or more of: `sanity`, `test1`, `test2`, `test3`, `test4`, `test5`, `feasibility` (executed in that order). For `feasibility`, missing inputs are filled from JSON already present in `output_dir` when available.
@@ -35,13 +35,13 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/result
 After a run, aggregate TextWorld / ToH episode JSONs (success rate by stage, mean TLE, VC spread, optional ECE proxy):
 
 ```bash
-PYTHONPATH=. python scripts/summarize_pilot_calibration.py data/results/pilot_<UTC>/
+PYTHONPATH=. python scripts/pilot_analysis/summarize_pilot_calibration.py data/results/pilot_<UTC>/
 ```
 
 Optional validation:
 
 ```bash
-python scripts/validate_pilot_outputs.py --pilot-dir data/results/pilot_<UTC>/
+python scripts/pilot_analysis/validate_pilot_outputs.py --pilot-dir data/results/pilot_<UTC>/
 ```
 
 ## Pilot 1 — LM Studio (lmstudio)
@@ -52,7 +52,7 @@ On a Mac or LAN host with LM Studio running, use the responses API path (require
 
 ```bash
 pip install lmstudio httpx
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode lmstudio
+python scripts/experiment/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode lmstudio
 ```
 
 `--pilot-mode hf` / `m1` were removed; use **lmstudio** locally. Step traces and `debug_views/` include per-call `lmstudio` diagnostics (`route`, `status`, logprobs presence).
@@ -62,7 +62,7 @@ python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/result
 On a machine with CUDA (e.g. RunPod RTX 3090), use vLLM for real inference and measured throughput:
 
 ```bash
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode cuda
+python scripts/experiment/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode cuda
 ```
 
 Or use `--real` to auto-detect: if CUDA is available → cuda; else if MPS (Mac) → hf; else mock.
@@ -75,7 +75,7 @@ LM Studio exposes an OpenAI-compatible API (often `http://localhost:1234/v1` or 
 
 ```bash
 export LM_STUDIO_BASE_URL="http://192.168.178.173:1234/v1"
-python scripts/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode lmstudio
+python scripts/experiment/run_pilot.py --config configs/pilot.yaml --output-dir data/results --pilot-mode lmstudio
 ```
 
 Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; default API key is `lm-studio` if unset (`LM_STUDIO_API_KEY`). Requires the `openai` package.
@@ -91,13 +91,13 @@ Or use `inference.lmstudio_base_url` / `inference.lmstudio_api_key` in YAML; def
    - `reasoning: { "effort": "none" }` on the wire (Open Responses; LM Studio maps to model reasoning **off**)
    - `enable_thinking: false` and `chat_template_kwargs: { "enable_thinking": false }`
    For C1/C2 reasoning (`enable_thinking=true`): `reasoning.effort: "low"` (not `"medium"` — Qwen3 dev log warns that only model **on**/**off** exist and coerces `medium` → `on`). Do not send `"on"`/`"off"` in JSON; the HTTP API rejects them.
-   Probe: `python scripts/probe_lmstudio_thinking_toggle.py --model qwen/qwen3-4b`
+   Probe: `python scripts/instrument_validation/probe_lmstudio_thinking_toggle.py --model qwen/qwen3-4b`
 5. **GUI fallback** — **Developer → Inference → Custom Fields → Enable Thinking** off, or `defaultValue: false` in `model.yaml` for `enableThinking`.
 6. **Smoke test** — To check single-call C1 action parsing on your endpoint:
 
 
 ```bash
-python scripts/run_c1_handoff_gate.py --config configs/pilot.yaml --pilot-mode lmstudio --real --domain textworld --n-episodes 3 --max-steps 5
+python scripts/pilot_analysis/run_c1_handoff_gate.py --config configs/pilot.yaml --pilot-mode lmstudio --real --domain textworld --n-episodes 3 --max-steps 5
 ```
 
 ### Output handling contract (C1)
@@ -173,7 +173,7 @@ Truncation uses `logging.debug_view_head_chars` and `debug_view_tail_chars` (def
 Regenerate for an existing run folder:
 
 ```bash
-python scripts/build_debug_views.py --run-dir data/results/pilot_<UTC>/
+python scripts/pilot_analysis/build_debug_views.py --run-dir data/results/pilot_<UTC>/
 ```
 
 If `write_debug_views` is true but `save_step_traces` is false, runners enable step traces automatically (debug views require trace JSONL as input).
@@ -186,23 +186,12 @@ If `write_debug_views` is true but `save_step_traces` is false, runners enable s
 
 After a non-mock pilot, `pilot_test1_inference.json` includes realistic `tokens_per_sec` for that device/endpoint.
 
-## Multi-model batch (`run_pilot_models.py`)
-
-Run the full pilot once per model id with one command. Each run writes under `data/results/pilot_batch_<UTC>/pilot_<UTC>_<slug>/` and optional `pilot_batch_manifest.json` lists `model_id`, output path, exit code, and wall time. For **L0.3** (local LM Studio spot-checks of several GGUF/MLX candidates), use `--pilot-mode lmstudio --real` and load each model in LM Studio (or point `LM_STUDIO_BASE_URL` at the right server) before the corresponding subprocess. For **L0.4** (RunPod vLLM model-selection benchmark), use `--pilot-mode cuda --real` — this repo loads **one HF repo id per subprocess** (no separate vLLM server swap required). Example:
-
-```bash
-python scripts/run_pilot_models.py --config configs/pilot.yaml --pilot-mode lmstudio --real \
-  --models "id1,id2"
-# or: --models-file path/to/models.yaml  (list of strings or models: [ ... ])
-# Default list: edit configs/models.yaml and omit --models / --models-file to use it
-```
-
 ## Tower of Hanoi (manual play)
 
-Interactive sanity check without a model: [`scripts/play_tower_of_hanoi.py`](../scripts/play_tower_of_hanoi.py). See [`docs/scripts.md`](scripts.md).
+Interactive sanity check without a model: [`scripts/datasets/play_tower_of_hanoi.py`](../scripts/datasets/play_tower_of_hanoi.py). See [`docs/scripts.md`](scripts.md).
 
 ```bash
-python scripts/play_tower_of_hanoi.py
+python scripts/datasets/play_tower_of_hanoi.py
 ```
 
 Defaults: 3 disks, seed 42. Flags: `--num-disks`, `--seed`, `--partial-moves`, `--max-steps`.
@@ -212,7 +201,7 @@ Defaults: 3 disks, seed 42. Flags: `--num-disks`, `--seed`, `--partial-moves`, `
 Before confirmatory Phase 1 runs on vLLM, run:
 
 ```bash
-python scripts/verify_backend_parity.py --backend vllm --config configs/experiment_core.yaml
+python scripts/instrument_validation/verify_backend_parity.py --backend vllm --config configs/experiment_core.yaml
 ```
 
 Production TLE uses vLLM **engine** `logprobs_mode="raw_logprobs"` (temperature-invariant:
