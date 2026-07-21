@@ -183,6 +183,8 @@ def derive_stage_thresholds(
 
     if signal == "tle_mean_entropy":
         t1 = _quantile(xs, high_quantile)  # escalate to C1 above t1
+        # C2 threshold sits halfway between t1's quantile and 1.0, but capped at the 95th
+        # percentile so C2 stays reachable (an uncapped t2 near 1.0 would almost never trigger).
         t2 = _quantile(
             xs, min(0.95, high_quantile + (1 - high_quantile) / 2)
         )  # more extreme for C2
@@ -416,6 +418,8 @@ def _match_proxy(
     if candidates:
         nearest = min(
             candidates,
+            # Secondary key (raw step_index) breaks distance ties deterministically toward the
+            # smaller position, so proxy-matching is reproducible regardless of pool dict order.
             key=lambda x: (abs(int(x[0][2]) - step_index), int(x[0][2])),
         )
         rec = nearest[1]

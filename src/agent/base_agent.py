@@ -606,6 +606,9 @@ def run_adaptive_episode(
     signal: dict[str, Any] | None = None
     signal_source_stage: str | None = None
     episode_fixed_stage: str | None = None
+    # Cache one step-fn per stage for the whole episode: this is correctness-critical, not just
+    # a speedup -- a fresh step-fn per step would reset the C2 tie-break call_index and reuse the
+    # same RNG seed every step (the fixed adaptive-episode bug; see _seeded_rng / ADR-005).
     step_fn_cache: dict[str, StepFn] = {}
 
     trace_path: Path | None = None

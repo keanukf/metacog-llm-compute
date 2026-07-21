@@ -348,6 +348,9 @@ def _seeded_rng(seed_base: str | int | None, *, call_index: int) -> random.Rando
     We use a stable hash to avoid Python's randomized hash() across processes.
     """
     base = "" if seed_base is None else str(seed_base)
+    # call_index is mixed into the seed so each C2 step in an episode draws an *independent*
+    # tie-break: guards the fixed bug where rebuilding the step-fn per step reset it to 0 and
+    # every step reused the same seed (see consistency_log / ADR-005).
     h = hashlib.md5(f"{base}::{int(call_index)}".encode("utf-8")).hexdigest()
     seed_int = int(h[:16], 16)
     return random.Random(seed_int)
