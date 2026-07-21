@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-Phase 2 — Adaptive Allocation: run domains x instances x strategies x runs.
+Phase 2 — Adaptive Allocation: the production entry point for RQ2/RQ4.
+
+Runs domains x instances x strategies x runs, where each strategy is the frozen adaptive allocator
+(adaptive_tle / adaptive_vc, using the Phase-1 policy artifact) or one of the four baselines
+(always_c0, always_c2, random, eager_style). This is where H2 (adaptive Pareto-superiority vs
+Always-C2) and RQ4 (cross-domain stability) are tested; the per-step compute stage is chosen at
+runtime by ``src.agent.allocator``, unlike Phase 1's fixed-stage cells.
+
 Supports --resume via checkpoint_dir.
 Progress: timestamped batch lines (elapsed, ep/h, ETA); optional --verbose-episodes / --verbose-steps.
-Usage: python scripts/run_phase2.py --config configs/experiment_core.yaml [--resume] [--real]
+Usage: python scripts/experiment/run_phase2.py --config configs/experiment_core.yaml [--resume] [--real]
 """
 
 from __future__ import annotations

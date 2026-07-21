@@ -9,7 +9,7 @@ Outputs (under --out-dir, default: <run_dir>/analysis):
 - report.md
 
 Usage:
-  python scripts/analyze_run.py --run-dir data/results/phase2/phase2_..._UTC
+  python scripts/pilot_analysis/analyze_run.py --run-dir data/results/phase2/phase2_..._UTC
 """
 
 from __future__ import annotations

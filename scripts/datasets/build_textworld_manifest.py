@@ -88,7 +88,7 @@ def main() -> None:
                 raise FileNotFoundError(
                     f"Missing {meta_path.name} for {game_file.name}. "
                     "If you only have TextWorld's Game .json, regenerate with "
-                    "`scripts/generate_textworld_games.py` so .meta.json is written."
+                    "`scripts/datasets/generate_textworld_games.py` so .meta.json is written."
                 )
             sidecar_file = legacy
         sidecar = _load_sidecar(sidecar_file)

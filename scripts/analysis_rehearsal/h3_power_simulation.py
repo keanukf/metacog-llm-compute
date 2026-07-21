@@ -43,7 +43,7 @@ What this does, concretely:
     pilot data.
 
 Usage:
-    python scripts/h3_power_simulation.py \
+    python scripts/analysis_rehearsal/h3_power_simulation.py \
         --run-dir data/results/instrument_validation/phase1_20260714_105004 \
         --out data/results/gate_e_h3_power/h3_power_simulation.json \
         --n-reps 200 --workers 7

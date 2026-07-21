@@ -5,7 +5,7 @@ Run on Pod after vLLM server is up. Use the result to set production N in
 ``experiment_core.yaml`` *before* ``verify_backend_parity.py --backend server``.
 
 Example:
-  python scripts/measure_concurrent_throughput.py --real \
+  python scripts/instrument_validation/measure_concurrent_throughput.py --real \
     --candidates 1,3,6,8 \
     --output data/results/instrument_validation/throughput_sweep.json
 """

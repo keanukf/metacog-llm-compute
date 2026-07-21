@@ -3,7 +3,7 @@
 
 Two parts:
 
-1. Batch smoke: repeatedly SIGKILL a real ``scripts/run_phase1.py`` subprocess (mock backend,
+1. Batch smoke: repeatedly SIGKILL a real ``scripts/experiment/run_phase1.py`` subprocess (mock backend,
    small config) mid-run and resume with ``--resume`` until it completes on its own. Verifies
    the final checkpoint directory has exactly the expected episode ids, each a valid JSON file
    (no missing work item, no leftover corrupt file silently accepted as "done").

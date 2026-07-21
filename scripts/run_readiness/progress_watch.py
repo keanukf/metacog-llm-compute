@@ -8,9 +8,9 @@ directory and reports counts, grouped by (domain, stage/strategy) parsed from fi
 rough steps/min throughput. Safe to point at a live directory on the pod (over SSH) or locally.
 
 Usage:
-    python scripts/progress_watch.py --dir data/results/phase1/phase1_20260721_120000
-    python scripts/progress_watch.py --dir <dir> --expected 1500 --interval 10
-    python scripts/progress_watch.py --dir <dir> --once   # single snapshot, no loop
+    python scripts/run_readiness/progress_watch.py --dir data/results/phase1/phase1_20260721_120000
+    python scripts/run_readiness/progress_watch.py --dir <dir> --expected 1500 --interval 10
+    python scripts/run_readiness/progress_watch.py --dir <dir> --once   # single snapshot, no loop
 """
 
 from __future__ import annotations

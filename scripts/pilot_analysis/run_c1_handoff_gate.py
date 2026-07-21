@@ -72,7 +72,7 @@ def wilson_ci(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 
 def _create_real_model(config: dict, pilot_mode: str) -> Any:
-    """Create model wrapper; mirrors scripts/run_pilot.py behaviour (minimal subset)."""
+    """Create model wrapper; mirrors scripts/experiment/run_pilot.py behaviour (minimal subset)."""
     model_cfg = config.get("model", {})
     model_name = model_cfg.get("name")
     if not model_name:

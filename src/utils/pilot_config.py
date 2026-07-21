@@ -64,7 +64,7 @@ def load_yaml_with_extends(path: Path, repo_root: Path | None = None) -> dict[st
     drops every key not restated in the overlay (``model``, ``episode``,
     ``domain_prompts``, ``paths``, ...) — this only surfaces later as a confusing
     ``KeyError``/behavior change, not a load error. This is the same recursive merge
-    ``scripts/sweep_textworld_difficulty.py::_load_merged_config`` implements (that
+    ``scripts/difficulty_calibration/sweep_textworld_difficulty.py::_load_merged_config`` implements (that
     function now delegates here); kept in one place so the two don't drift apart.
 
     ``extends`` is resolved relative to the file that declares it, falling back to

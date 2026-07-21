@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-Phase 1 — Calibration: run domains x instances x compute_stages x runs.
+Phase 1 — Calibration Mapping: the primary production data-collection entry point for RQ1/RQ3.
+
+Runs every calibration cell (domains x instances x compute_stages x runs = 2 x 50 x {C0,C1,C2} x 5)
+so that each step logs its TLE and VC alongside a correctness label; the resulting step table is what
+the RQ1 signal-quality and RQ3 temporal-degradation analyses consume. This does not choose a compute
+stage adaptively -- that is Phase 2 (``run_phase2.py``); here every stage is run on every instance.
+
 Supports --resume via checkpoint_dir; skips already completed episodes.
 Progress: timestamped batch lines (elapsed, ep/h, ETA); optional --verbose-episodes / --verbose-steps.
-Usage: python scripts/run_phase1.py --config configs/experiment_core.yaml [--resume] [--real]
+Usage: python scripts/experiment/run_phase1.py --config configs/experiment_core.yaml [--resume] [--real]
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ _DOTENV_INFO = load_dotenv_if_present(REPO_ROOT)
 def load_config(config_path: str | Path) -> dict:
     """Load a run config, merging ``extends: <relative-or-repo-relative path>`` if present.
 
-    See ``scripts/run_phase2.py::load_config`` for rationale — same fix, same bug (overlay
+    See ``scripts/experiment/run_phase2.py::load_config`` for rationale — same fix, same bug (overlay
     configs like ``configs/dev/gate_d_calibration.yaml`` silently lost their base-config keys
     under a plain ``yaml.safe_load``).
     """

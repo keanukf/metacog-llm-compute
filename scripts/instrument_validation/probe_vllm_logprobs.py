@@ -6,7 +6,7 @@ Runs one short ``generate(logprobs=True)`` call and prints token coverage stats.
 Use on RunPod after ``setup_cloud.sh`` or locally with ``--pilot-mode cuda --real``.
 
 Example:
-  python scripts/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode cuda --real
+  python scripts/instrument_validation/probe_vllm_logprobs.py --config configs/pilot.yaml --pilot-mode cuda --real
 """
 
 from __future__ import annotations

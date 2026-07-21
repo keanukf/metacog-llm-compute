@@ -7,9 +7,9 @@ By default creates a timestamped subfolder under --output-dir (``pilot_YYYYMMDD_
 ``run_info.json``; use ``--no-timestamp-run`` to write directly to ``--output-dir``.
 
 Usage:
-  python scripts/run_pilot.py --config configs/pilot.yaml [--output-dir data/results] [--real]
-  python scripts/run_pilot.py --only test2 --config configs/pilot.yaml ...   # TLE only
-  python scripts/run_pilot.py --no-timestamp-run ...  # flat layout (e.g. merge feasibility inputs)
+  python scripts/experiment/run_pilot.py --config configs/pilot.yaml [--output-dir data/results] [--real]
+  python scripts/experiment/run_pilot.py --only test2 --config configs/pilot.yaml ...   # TLE only
+  python scripts/experiment/run_pilot.py --no-timestamp-run ...  # flat layout (e.g. merge feasibility inputs)
 """
 
 from __future__ import annotations

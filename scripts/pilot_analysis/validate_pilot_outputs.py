@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""Signal-integrity gate for a pilot output folder.
+
+Checks a ``pilot_YYYYMMDD_HHMMSS`` directory against the pilot signal-quality thresholds before its
+data is trusted: logprobs present, per-step VC coverage >= 0.80 and TLE coverage >= 0.95 (C0-only
+TLE >= 0.95, the L0.1 gate), ToH parse/legal rates >= 0.95, and non-empty trace ``response_full``.
+Exits non-zero with a reason list on any failure. Development/gating tool, not part of the Phase 1/2
+collection path itself.
+"""
+
 from __future__ import annotations
 
 import argparse

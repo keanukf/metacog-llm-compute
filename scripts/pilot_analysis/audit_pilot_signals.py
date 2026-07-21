@@ -6,7 +6,7 @@ Reports VC/TLE rates overall and per compute stage, sanity logprob fields,
 feasibility summary, and C2 majority-vote trace checks.
 
 Example:
-  python scripts/audit_pilot_signals.py data/results/runpod_pilot/pilot_20250604_120000
+  python scripts/pilot_analysis/audit_pilot_signals.py data/results/runpod_pilot/pilot_20250604_120000
 """
 
 from __future__ import annotations

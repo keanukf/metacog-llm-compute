@@ -9,8 +9,8 @@ LM Studio maps to model on/off internally (``on``/``off`` are not valid wire val
 Requires a running LM Studio local server and a loaded Qwen3 (or similar) model.
 
 Example:
-  python scripts/probe_lmstudio_thinking_toggle.py --model qwen/qwen3-4b
-  python scripts/probe_lmstudio_thinking_toggle.py --config configs/lmstudio_config.yaml
+  python scripts/instrument_validation/probe_lmstudio_thinking_toggle.py --model qwen/qwen3-4b
+  python scripts/instrument_validation/probe_lmstudio_thinking_toggle.py --config configs/lmstudio_config.yaml
 """
 
 from __future__ import annotations

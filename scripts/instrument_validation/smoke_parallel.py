@@ -5,8 +5,8 @@ Parallel execution smoke test (plumbing GO/NO-GO only — not TLE invariance val
 Runs Phase-1 worklist via EpisodeScheduler against mock or ServerBackend.
 
 Example:
-  python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --output-dir data/results/smoke_parallel
-  python scripts/smoke_parallel.py --config configs/dev/smoke.yaml --real --output-dir data/results/smoke_parallel
+  python scripts/instrument_validation/smoke_parallel.py --config configs/dev/smoke.yaml --output-dir data/results/smoke_parallel
+  python scripts/instrument_validation/smoke_parallel.py --config configs/dev/smoke.yaml --real --output-dir data/results/smoke_parallel
 """
 
 from __future__ import annotations
