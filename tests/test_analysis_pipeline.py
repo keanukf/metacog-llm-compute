@@ -1,3 +1,11 @@
+"""End-to-end analysis-pipeline tests: run folder -> step table -> thresholds/comparison.
+
+Guards the post-collection path that turns ``ep_*.json`` into the analyzable step table
+(``load_run_dataset``), including the Phase-2-episodes-without-compute_stage case that once
+silently dropped every adaptive episode, plus a smoke run of the analyze_run script and the
+threshold-fit / bootstrap-comparison entry points.
+"""
+
 from __future__ import annotations
 
 import json

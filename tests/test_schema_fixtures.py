@@ -1,3 +1,10 @@
+"""Pins the persisted episode artifact schema (episode.v1; ADR-003).
+
+Asserts the checked-in fixture carries the required top-level keys and the ``episode.v1`` version
+marker, so an accidental change to the on-disk episode schema -- which every downstream analysis
+reads -- fails fast here.
+"""
+
 from __future__ import annotations
 
 import json

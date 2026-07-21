@@ -1,3 +1,10 @@
+"""Tests the --real guard that stops a real run from silently using the mock model.
+
+``_assert_real_model_or_raise`` must permit mock mode with no model but hard-fail (BackendError) when
+``--real`` is set without a loaded model, so a production data-collection run can never quietly emit
+mock outputs.
+"""
+
 from __future__ import annotations
 
 import pytest

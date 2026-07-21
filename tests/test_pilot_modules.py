@@ -1,3 +1,10 @@
+"""Unit tests for the pilot-harness helpers (artifact IO, feasibility inputs, signal-rate counts).
+
+Covers the pilot support modules used by the feasibility/pilot runner: JSON save/load roundtrip,
+disk-fallback resolution when preparing feasibility inputs, the non-null VC/TLE rate counters, and
+the mock benchmark's output shape.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

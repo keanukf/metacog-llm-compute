@@ -1,3 +1,10 @@
+"""Unit tests for the RQ1 calibration/discrimination metrics and dataset loading.
+
+Covers the metric primitives the signal-quality analysis depends on (AUROC at perfect/no
+separation, per-step-position calibration for H3, signal discrimination, strategy efficiency) and
+the backward-compatible loader that synthesizes ``steps_detail`` from older compact episode JSONs.
+"""
+
 from __future__ import annotations
 
 import json

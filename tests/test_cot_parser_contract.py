@@ -1,3 +1,11 @@
+"""Contract tests pinning each ``parse_cot_action`` parse_method in the trust cascade.
+
+The action parser is DV-load-bearing (it decides what span counts as the committed action, hence the
+TLE window), so these lock in the expected ``parse_method`` label for each recovery path -- post_think,
+legacy_action_prefix, lmstudio_command_tag, embedded_action_fallback -- and the unparsed case, so a
+future change to the cascade cannot silently reclassify an action without a test failing.
+"""
+
 from __future__ import annotations
 
 from src.agent.cot_parser import parse_cot_action

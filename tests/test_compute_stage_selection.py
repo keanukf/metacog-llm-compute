@@ -1,3 +1,11 @@
+"""Tests for resolving which compute stages a Phase-1 domain runs.
+
+Ensures the config-to-stages resolution accepts the several YAML spellings (int count, string, list),
+lets a per-domain override beat the global default, and rejects malformed values -- including the
+YAML bareword-bool trap (``on``/``off`` parsing to True/False) that could silently corrupt the C0/
+C1/C2 worklist.
+"""
+
 from __future__ import annotations
 
 import pytest
