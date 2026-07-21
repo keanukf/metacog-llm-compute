@@ -1360,7 +1360,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--model-name",
         default=None,
         metavar="ID",
-        help="Override model.name after config (and LM Studio YAML merge). Used by run_pilot_models.py.",
+        help="Override model.name after config (and LM Studio YAML merge).",
     )
     return parser
 

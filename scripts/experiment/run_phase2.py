@@ -36,7 +36,7 @@ def load_config(config_path: str | Path) -> dict:
     A plain ``yaml.safe_load`` silently drops every key not restated in the overlay (model,
     episode, domain_prompts, paths, ...), which only surfaces as a downstream KeyError/behavior
     change, not a load error. Reuse the same recursive merge Gate D's diagnostic scripts already
-    rely on (``scripts.sweep_textworld_difficulty._load_merged_config``) so overlay configs behave
+    rely on (``scripts.difficulty_calibration.sweep_textworld_difficulty._load_merged_config``) so overlay configs behave
     identically here.
     """
     from scripts.difficulty_calibration.sweep_textworld_difficulty import _load_merged_config

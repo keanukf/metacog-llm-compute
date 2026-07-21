@@ -7,7 +7,7 @@ all without running any episodes or touching the GPU:
 1. Model pre-staged on the *ephemeral* container disk, not the persistent network volume.
    ``HF_HOME`` must live outside ``/workspace`` (RunPod's template default points it *at*
    ``/workspace/.cache``, which is exactly backwards -- see docs/runpod.md and
-   scripts/pod_runtime_env.sh) -- keeping weights off the network volume is deliberate, not an
+   scripts/cloud/shell/pod_runtime_env.sh) -- keeping weights off the network volume is deliberate, not an
    oversight; re-download on a fresh container disk is expected and budgeted for. Also verifies
    the frozen model+revision's snapshot is actually present in that cache, so the first real
    inference call doesn't stall on a cold download mid-batch.
@@ -59,7 +59,7 @@ def check_model_on_ephemeral_disk(config: dict[str, Any]) -> dict[str, Any]:
         return _check(
             "model_on_ephemeral_disk",
             False,
-            "HF_HOME is not set (source scripts/pod_runtime_env.sh).",
+            "HF_HOME is not set (source scripts/cloud/shell/pod_runtime_env.sh).",
         )
     if hf_home.rstrip("/").startswith("/workspace"):
         return _check(
@@ -67,7 +67,7 @@ def check_model_on_ephemeral_disk(config: dict[str, Any]) -> dict[str, Any]:
             False,
             f"HF_HOME={hf_home} is under /workspace (persistent network volume) -- model weights "
             "must stay on the ephemeral container disk (network volume should hold code+results "
-            "only, docs/runpod.md). Source scripts/pod_runtime_env.sh before setup/inference.",
+            "only, docs/runpod.md). Source scripts/cloud/shell/pod_runtime_env.sh before setup/inference.",
         )
     model_cfg = config.get("model") or {}
     name = str(model_cfg.get("name", ""))

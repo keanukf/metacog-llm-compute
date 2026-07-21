@@ -11,9 +11,14 @@ RunPod pod before installing the full experiment stack.
 
 Examples::
 
-  python scripts/hf_model_card_gate.py --repo-id Qwen/Qwen3-8B
-  python scripts/hf_model_card_gate.py --repo-id Qwen/Qwen3-8B meta-llama/Llama-3.1-8B-Instruct
-  python scripts/hf_model_card_gate.py --models-file configs/models_runpod.yaml
+  python scripts/pilot_analysis/hf_model_card_gate.py --repo-id Qwen/Qwen3-8B
+  python scripts/pilot_analysis/hf_model_card_gate.py --repo-id Qwen/Qwen3-8B meta-llama/Llama-3.1-8B-Instruct
+  python scripts/pilot_analysis/hf_model_card_gate.py --models-file my_candidates.yaml
+
+``--models-file`` expects an ad-hoc, user-supplied YAML file (a bare list of repo-id strings, or a
+``{models: [...]}`` mapping). The shipped shortlist files it used to default to
+(``configs/models_runpod.yaml`` / ``configs/models.yaml``) were removed in the 2026-07-21 refactor,
+so pass ``--repo-id`` for the single production model or point ``--models-file`` at your own list.
 
 Auth::
 
@@ -278,7 +283,7 @@ def main() -> None:
         "--models-file",
         type=Path,
         default=None,
-        help="YAML list or {models: [...]} (same shape as configs/models.yaml)",
+        help="Ad-hoc user-supplied YAML: a bare list of repo ids, or {models: [...]}",
     )
     p.add_argument("--json", action="store_true", help="Print one JSON object per line (NDJSON)")
     args = p.parse_args()

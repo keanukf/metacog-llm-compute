@@ -6,9 +6,9 @@ Measures output tokens/s and latency using the configured model wrapper.
 Reads model and inference settings from the given YAML (e.g. configs/experiment_core.yaml).
 
 Usage (from repo root):
-  python scripts/benchmark_inference.py --config configs/experiment_core.yaml --pilot-mode hf
-  python scripts/benchmark_inference.py --config configs/pilot.yaml --pilot-mode lmstudio
-  python scripts/benchmark_inference.py --config configs/pilot.yaml --real --output-dir data/results
+  python scripts/pilot_analysis/benchmark_inference.py --config configs/experiment_core.yaml --pilot-mode cuda
+  python scripts/pilot_analysis/benchmark_inference.py --config configs/pilot.yaml --pilot-mode lmstudio
+  python scripts/pilot_analysis/benchmark_inference.py --config configs/pilot.yaml --real --output-dir data/results
 """
 
 from __future__ import annotations
@@ -22,10 +22,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# Import pilot helpers from the same directory as this script
-_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
-if _SCRIPTS_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPTS_DIR)
 from scripts.experiment import run_pilot  # noqa: E402
 from src.utils.pilot_config import load_pilot_config_with_lmstudio_override  # noqa: E402
 

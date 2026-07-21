@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """
-Empirical pre-check gate for C1 CoT→Verify handoff parsing quality.
+Empirical pre-check gate for C1 action-parsing quality on the target deployment.
 
-Runs short C1 episodes on the target deployment and summarizes the structured parser outcomes
-via fields emitted into C1 call_detail:
-  - draft_status: parsed|unparsed
-  - parse_method: post_think|legacy_action_prefix|first_line_fallback|none
+C1 is a single reasoning call (post-ADR-005: C1 and C2 share ``src/agent/stages/shared.py``, C1
+running it with ``n_samples=1`` and no vote). This is *not* the old two-call CoT→Verify handoff —
+there is no draft action, no separate verify subcall. The gate runs short C1 episodes and
+summarizes the structured parser outcomes recorded in each C1 ``call_detail``:
+  - ``draft_status``: parsed | unparsed  (whether an action was extracted at all)
+  - ``parse_method``: post_think | legacy_action_prefix | first_line_fallback | none
+    (how it was extracted: the committed action taken from after a closed ``</think>`` block, a
+    legacy ``ACTION:`` prefix, a first-line fallback, or nothing)
+
+Each C1 step is bucketed as clean (``post_think``), recoverable_fallback (any other parsed method),
+or unparsed, and the report gives the unparsed rate with a Wilson confidence interval.
 
 Usage (example):
-  python scripts/run_c1_handoff_gate.py --config configs/pilot.yaml --pilot-mode cuda --real --output-dir data/results
+  python scripts/pilot_analysis/run_c1_handoff_gate.py --config configs/pilot.yaml --pilot-mode cuda --real --output-dir data/results
 
 This script is designed to be executed on the RunPod target model; local runs in mock mode are supported
 for plumbing checks but do not represent the real failure rates.
