@@ -1,4 +1,11 @@
-"""Tests for Gate D cap derivation and success@Cap metrics."""
+"""Gate D difficulty metrics: production move-cap derivation and success@Cap.
+
+Verifies success@Cap from observed runs, the production cap as the observed p90 plus a margin, and
+that an episode's win-step is read from task success. The move cap is the Gate D difficulty
+calibration that freezes how hard each task instance is; deriving it from the observed p90 keeps
+the task sets neither trivially easy nor unsolvable, which is what makes correctness a discriminating
+DV across domains (RQ4).
+"""
 
 from __future__ import annotations
 

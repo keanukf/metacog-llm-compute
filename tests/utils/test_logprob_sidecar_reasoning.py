@@ -1,4 +1,11 @@
-"""Sidecar schema: full vs action_window scopes."""
+"""Logprob-sidecar reasoning scope: ``full`` vs ``action_window``.
+
+Verifies a C1 ``full`` sidecar retains the reasoning block while ``action_window`` excludes it, and
+that C2 writes one action-window sidecar per sample. The scope decides whether entropy is measured
+over the chain-of-thought or only the committed action tokens -- a substantive RQ1 definitional
+choice, since including reasoning tokens would measure a different quantity than the action-line
+TLE the study reports.
+"""
 
 from __future__ import annotations
 

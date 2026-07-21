@@ -1,4 +1,10 @@
-"""Tests for vLLM-style logprob normalization."""
+"""Normalization of vLLM logprob payloads into the common per-step schema.
+
+Verifies token-id maps per step, skipping of null positions, multi-candidate top-logprob handling,
+and the case where the sampled token is not the highest-logprob one. This normalized shape is what
+token-level entropy is computed from, so a normalization bug would corrupt the RQ1 signal at the
+source while leaving the downstream math looking correct.
+"""
 
 from __future__ import annotations
 

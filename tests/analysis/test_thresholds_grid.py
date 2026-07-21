@@ -1,4 +1,11 @@
-"""Tests for threshold gridsearch and compact episode persistence."""
+"""Allocation-threshold grid search and compact-episode persistence.
+
+Verifies the ECDF reference is built per stage from the holdout, the grid yields its full 36
+candidates, proxy matching resolves exact/mean-run/nearest-position (breaking position ties toward
+the smaller step index), and compact episodes keep the minimal step detail. This grid is how the
+frozen RQ2 allocation policy is derived from pilot data, so a wrong candidate count or an unstable
+tie-break would search a different policy space than the one preregistered.
+"""
 
 from __future__ import annotations
 

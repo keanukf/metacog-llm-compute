@@ -1,4 +1,11 @@
-"""Tests for pilot YAML merge (LM Studio override)."""
+"""Pilot YAML config merge: deep-merge, ``extends``, and the LM Studio override.
+
+Verifies deep-merge of nested keys (skipping ``None`` and stripping the ``enabled`` marker),
+``extends`` base resolution including the repo-root fallback, and that the LM Studio override
+merges only in LM-Studio mode. The override lets the same frozen experiment config run against the
+local dev backend without editing it, so scoping the merge strictly to that mode keeps a
+production config from being accidentally mutated by dev-only keys.
+"""
 
 from __future__ import annotations
 

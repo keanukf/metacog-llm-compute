@@ -1,4 +1,11 @@
-"""Tests for logprob temperature-invariance diagnostics (§5.7)."""
+"""Token-level-entropy temperature-invariance diagnostics (thesis §5.7).
+
+Verifies the first-token TLE matches the entropy helper, the probe passes for identical
+distributions, and the invariance epsilon resolves to the preregistered floor and scales with
+same-temperature noise. TLE must reflect the model's uncertainty, not the sampling temperature, or
+it would be a temperature artefact rather than the metacognitive signal RQ1 studies; this probe is
+the guard that keeps that assumption honest.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Timestamped run directories."""
+"""Timestamped run-output directory layout.
+
+Verifies a named, timestamped run subdirectory is created and a short ``run_info`` record is
+written into it. The stable on-disk layout is the contract every downstream analysis and resume
+path relies on to locate a run's episodes, so a change to the folder shape would strand prior
+outputs.
+"""
 
 from __future__ import annotations
 

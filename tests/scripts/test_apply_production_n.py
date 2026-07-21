@@ -1,4 +1,10 @@
-"""Tests for apply_production_n.py."""
+"""Production concurrency selection (``apply_production_n.py``).
+
+Verifies the recommended episode-concurrency N is read from a throughput report and falls back to
+the best still-viable candidate when no explicit recommendation is present. This N is the
+concurrency the Gate C batch-invariance probe signed off on, so picking the wrong value would run
+production outside the validated invariance envelope.
+"""
 
 from __future__ import annotations
 

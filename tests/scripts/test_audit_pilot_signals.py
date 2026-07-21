@@ -1,4 +1,10 @@
-"""Tests for audit_pilot_signals.py."""
+"""Pilot signal-availability audit (``audit_pilot_signals.py``).
+
+Verifies the audit reports metacognitive-signal presence (TLE, VC) broken out by compute stage
+across pilot episodes. This is a pre-analysis gate: RQ1 calibration needs both signals populated
+at the expected stages, so the audit surfaces missing-signal gaps before they silently shrink the
+usable sample.
+"""
 
 from __future__ import annotations
 

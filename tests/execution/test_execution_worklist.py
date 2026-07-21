@@ -1,4 +1,10 @@
-"""Tests for execution worklist enumeration."""
+"""Phase 1/2 worklist enumeration and resume semantics.
+
+Verifies the job list expands correctly over instances x compute-stages and, on resume, skips
+episodes already completed or quarantined. Correct enumeration is what makes a run idempotent:
+a re-launched run must reproduce exactly the outstanding set, never re-run or double-count an
+episode already contributing to the DV.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Tests for EpisodeScheduler."""
+"""Bounded-concurrency episode scheduler (``EpisodeScheduler``).
+
+Confirms the scheduler runs sequentially at N=1 and never exceeds ``max_concurrent_episodes``
+in-flight above that. The concurrency bound is correctness-relevant, not just a throughput knob:
+it is what the Gate C batch-invariance probe and Gate F resume-correctness checks were validated
+against, so an off-by-one here would invalidate those guarantees.
+"""
 
 from __future__ import annotations
 

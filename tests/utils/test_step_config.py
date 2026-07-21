@@ -1,4 +1,11 @@
-"""resolve_step_fn_kwargs from YAML."""
+"""YAML -> step-function kwargs resolution (``resolve_step_fn_kwargs``).
+
+Verifies per-domain prompt prefixes, action caps, action-stop toggles, VC follow-up wiring, and
+the cot_max_tokens override precedence (domain over global, C2 section over C1) are read from the
+run config rather than in-code defaults. These knobs fix the exact prompt and budget each episode
+runs under, so making them explicit-from-YAML is what keeps a frozen run configuration
+authoritative and reproducible.
+"""
 
 from __future__ import annotations
 

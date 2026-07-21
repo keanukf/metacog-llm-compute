@@ -1,4 +1,10 @@
-"""Tests for execution config."""
+"""Execution config defaults and the frozen-parameter guard.
+
+Verifies defaults, the frozen-execution-params metadata write, and that a later mismatch against
+those frozen values either warns or hard-fails as configured. Freezing execution parameters is a
+reproducibility guarantee: Phase 2 must run under the same sampling/concurrency settings the
+pilot and Gate checks were calibrated on, so a silent drift here would break comparability.
+"""
 
 from __future__ import annotations
 

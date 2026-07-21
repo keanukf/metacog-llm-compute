@@ -1,4 +1,10 @@
-"""Tests for resolve_top_logprobs config helper."""
+"""Resolution of the ``top_logprobs`` request count (``resolve_top_logprobs``).
+
+Verifies default, config-derived and kwarg values, the deprecated LM Studio alias, their
+precedence order, and the clamp to at least one. This count sets how many per-token candidates the
+backend returns, which is the raw material for token-level-entropy (RQ1); resolving it
+consistently across the deprecated and current config keys keeps the signal comparable across runs.
+"""
 
 from __future__ import annotations
 

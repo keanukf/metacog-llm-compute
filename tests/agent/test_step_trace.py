@@ -1,4 +1,12 @@
-"""Step trace JSONL and extended step result normalization."""
+"""Per-step trace emission (JSONL) and step-result normalization.
+
+Verifies the nine-tuple step result normalizes correctly, a trace line is written per step, prior
+actions and the pinned recipe enter history in order, history compaction keeps whole
+action/observation pairs, and the Langfuse hook prefers ``update_trace`` when available (degrading
+gracefully without the SDK). Correct, whole-pair history is a signal-fidelity concern: a truncated
+or reordered history changes the prompt the model reasons over, which would shift the TLE/VC
+signals away from what RQ1/RQ3 intend to measure.
+"""
 
 from __future__ import annotations
 

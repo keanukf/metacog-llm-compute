@@ -1,4 +1,11 @@
-"""TextWorld quest-distance optimal labeling (policy_commands criterion)."""
+"""TextWorld step labeling by quest-distance reduction (the DV).
+
+Verifies a step is optimal only on a strict quest-distance reduction, legal when distance holds or
+increases, winning steps count as optimal, and that an empty policy or missing distance stays
+explicitly unlabeled rather than silently defaulting to legal. This label IS the dependent
+variable for TextWorld, so the conservative unlabeled fallback is a DV-protection measure: a
+spuriously-labeled step would inject noise straight into every RQ1/RQ2 result.
+"""
 
 from __future__ import annotations
 

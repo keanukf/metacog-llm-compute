@@ -1,4 +1,10 @@
-"""Tests for scheduler error isolation."""
+"""Scheduler fault isolation: one failing episode must not take down the pool.
+
+Verifies an HTTP error on a single episode is appended to that episode's ``errors.jsonl`` (so it
+can later be classified and quarantined) while the thread pool keeps draining the remaining
+worklist. This is what lets a long Phase 1/2 production run survive transient backend faults
+without discarding otherwise-good episodes.
+"""
 
 from __future__ import annotations
 

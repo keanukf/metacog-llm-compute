@@ -1,4 +1,11 @@
-"""LM Studio wrapper: responses-only path, no completions fallback."""
+"""LM Studio wrapper: responses-only path with no silent completions fallback.
+
+Verifies the wrapper uses only the ``/v1/responses`` API, raises on HTTP failure instead of
+falling back to ``/v1/completions``, rejects an HF backend, and emits reasoning-only call
+diagnostics. The no-fallback rule is deliberate: a silent switch to the completions endpoint would
+change the thinking/logprob behaviour mid-run and quietly alter the signals, so failing loud keeps
+the local-dev backend faithful to the production one.
+"""
 
 from __future__ import annotations
 

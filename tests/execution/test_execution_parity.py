@@ -1,4 +1,11 @@
-"""Tests for batch-invariance probe logic (mock backend, no GPU)."""
+"""Batch-invariance (parity) probe logic on a mock backend (Gate C, no GPU).
+
+Verifies action-window TLE on mock records, that the probe passes when TLE is stable and fails when
+the batched-vs-unbatched delta exceeds epsilon, and that a non-gating probe's drift does not fail
+the gate. Batch invariance is a correctness precondition for running episodes concurrently: if a
+token's logprobs shift with batch composition, TLE would depend on scheduling rather than the
+model, so this probe is what licenses the production concurrency setting.
+"""
 
 from __future__ import annotations
 

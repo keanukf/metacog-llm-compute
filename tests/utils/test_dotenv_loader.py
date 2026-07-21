@@ -1,4 +1,10 @@
-"""Repo-root .env loading (LM Studio, Langfuse)."""
+"""Repo-root ``.env`` loading for LM Studio / Langfuse credentials.
+
+Verifies ``override=True`` replaces an empty-string env var (not just an unset one) and that a
+UTF-8-BOM-prefixed file has its BOM stripped from the first key. Both are real footguns observed on
+Windows-authored ``.env`` files: an un-stripped BOM or an empty-but-set var would silently leave
+the backend/tracing endpoint misconfigured at run start.
+"""
 
 from __future__ import annotations
 

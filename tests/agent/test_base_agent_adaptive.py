@@ -1,4 +1,10 @@
-"""Tests for run_adaptive_episode."""
+"""Adaptive-allocation episode loop (``run_adaptive_episode``), the Phase 2 (RQ2/RQ4) path.
+
+Verifies the loop honours the frozen allocation policy: always-C0 when the policy says so, a
+per-episode fixed stage under eager-style policies, and a C2 call-index that increments across
+steps so token accounting and traces stay attributable. The detached-copy check guards against
+step-correctness aliasing that would silently corrupt the DV recorded per step.
+"""
 
 from __future__ import annotations
 

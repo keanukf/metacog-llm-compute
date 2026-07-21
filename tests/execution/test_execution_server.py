@@ -1,4 +1,12 @@
-"""Tests for ServerBackend logprob normalization and thinking verification."""
+"""ServerBackend: logprob normalization, thinking verification, and batched generation.
+
+Verifies chat-completion logprobs normalize to the common structure, responses carry a thinking
+block, ``enable_thinking`` is verified against a mock, concurrent posts run in parallel, and
+``generate_many`` issues a single n-request but falls back to sequential on backend error. The
+thinking-enabled verification is a signal-validity precondition: C1/C2 reasoning and their TLE/VC
+signals only mean what RQ1 assumes if the server actually ran with thinking on, so an unverified
+backend could silently produce no-think outputs.
+"""
 
 from __future__ import annotations
 

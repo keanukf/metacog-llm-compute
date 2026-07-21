@@ -1,4 +1,10 @@
-"""Token accounting consistency (thesis §5.3)."""
+"""Token-accounting consistency across compute stages (thesis §5.3).
+
+Verifies the per-episode token total equals the sum of its sub-call tokens for C0, C1 and C2,
+that the VC follow-up call's tokens are counted, and that a VC retry doubles the follow-up calls.
+Token count is the compute cost that denominates every RQ2 performance/compute trade-off, so any
+under- or double-counting here would bias the central adaptive-vs-fixed comparison.
+"""
 
 from __future__ import annotations
 

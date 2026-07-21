@@ -1,4 +1,12 @@
-"""Tests for allocator and frozen allocation policy."""
+"""Adaptive allocator against the frozen allocation policy (RQ2).
+
+Verifies percentile->stage mapping, stage-wise (not pooled) ECDF lookup, that the loader rejects a
+legacy pooled-ECDF artifact unless explicitly opted into (with a warning), roundtrips a policy, and
+that allocation reads the frozen policy thresholds rather than live pilot values. The stage-wise
+ECDF and frozen thresholds are the core RQ2 design commitment: allocation decisions must come from
+the preregistered policy, so the legacy-pooled rejection guards against silently regressing to a
+different, un-preregistered signal mapping.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,10 @@
-"""Episode checkpoint listing ignores non-episode JSON."""
+"""Episode checkpoint listing and crash-safe writes.
+
+Verifies checkpoint discovery counts only ``ep_``-prefixed JSON (ignoring sidecars and metadata)
+and that a write failure leaves no partial file behind. Both protect resume correctness: a
+half-written episode or a miscounted sidecar would let a re-launched run treat an incomplete
+episode as done and drop it from the DV.
+"""
 
 from __future__ import annotations
 

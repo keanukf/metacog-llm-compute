@@ -1,4 +1,11 @@
-"""Inference factory after module split."""
+"""Model-wrapper factory after the inference module split.
+
+Verifies the factory builds the stub/vLLM wrappers, threads ``top_logprobs`` through to vLLM with
+the right default, and keeps ``parse`` re-exported from the old ``model_wrapper`` path. The
+top_logprobs count directly bounds how many candidates TLE can be computed over, so its passthrough
+is an RQ1-signal-fidelity concern, not just plumbing; the re-export guards call sites the module
+split would otherwise have broken.
+"""
 
 from __future__ import annotations
 

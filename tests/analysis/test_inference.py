@@ -1,4 +1,10 @@
-"""Smoke tests for inference layer."""
+"""Statistical inference primitives for the RQ2 analysis (``src.analysis.inference``).
+
+Exercises the cluster bootstrap (including its drop of non-finite replicates), the H2 paired-delta
+estimator, and Holm/BH multiple-comparison correction with enforced monotonicity. These are the
+tools that turn per-episode outcomes into the confidence-interval and family-wise-corrected claims
+the thesis reports, so a bug here would misstate significance rather than merely a value.
+"""
 
 from __future__ import annotations
 

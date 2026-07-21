@@ -1,4 +1,11 @@
-"""progress_watch.py: directory-based progress snapshot, no run-script coupling."""
+"""Live run monitor (``progress_watch.py``): directory-based snapshot, no run-script coupling.
+
+Verifies domain/stage classification from production and QC-probe run-directory naming (with an
+``unknown`` fallback), completed-vs-non-episode-JSON counting, in-flight trace-line counting that
+excludes finished episodes, and the rendered expected-ratio breakdown. It reads only the output
+directory, never the running process, so monitoring a long RunPod run cannot perturb or slow the
+run it is watching -- the decoupling is the point.
+"""
 
 from __future__ import annotations
 

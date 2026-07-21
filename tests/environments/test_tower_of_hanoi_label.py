@@ -1,4 +1,10 @@
-"""Tower of Hanoi optimal labeling (distance criterion)."""
+"""Tower-of-Hanoi step labeling by distance-to-solution (the DV).
+
+Verifies a move is labeled optimal exactly when it reduces the distance to the solved state by one.
+ToH is the planning-error counterpart to TextWorld's exploration errors (RQ4 cross-domain), and
+this distance-based label is its dependent variable, so the optimality criterion has to be exact
+for the cross-domain comparison to mean anything.
+"""
 
 from __future__ import annotations
 

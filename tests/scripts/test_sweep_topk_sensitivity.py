@@ -1,4 +1,12 @@
-"""Tests for top-K sensitivity sidecar parsing and H1a alignment."""
+"""Top-K sensitivity of TLE across sidecar schema versions (H1a).
+
+Verifies parsing of legacy-list, v1-dict and v2-multi-sample logprob sidecars, that the action
+slice skips the thinking prefix, that the TLE-at-k score matches the episode mean at k=20, and that
+reference-token matching and the two-candidate minimum hold. This checks that the token-level
+entropy signal is robust to how many top-K candidates are retained (H1a), so the RQ1 result is not
+an artefact of a particular logging depth; supporting all three schema versions keeps older pilot
+runs analyzable under the same code.
+"""
 
 from __future__ import annotations
 

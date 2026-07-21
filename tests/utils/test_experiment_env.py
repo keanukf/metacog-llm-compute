@@ -1,4 +1,11 @@
-"""Tests for shared experiment environment helpers."""
+"""Shared experiment-environment construction helpers.
+
+Verifies TextWorld game-path resolution across flat ``.z8`` and nested ``.ulx`` layouts (and a
+missing-file error), that a ToH env uses its per-instance move cap rather than a flat config value,
+and that the vLLM env passes through memory kwargs. The per-instance cap matters most: it is part
+of the frozen Gate D difficulty calibration, so falling back to a flat value would run episodes at
+the wrong difficulty and break DV comparability.
+"""
 
 from __future__ import annotations
 

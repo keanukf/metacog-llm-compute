@@ -1,4 +1,11 @@
-"""Tests for minimal episode quarantine and autostop wrapper."""
+"""Episode quarantine classification and the pod autostop wrapper.
+
+Verifies exclusion reasons map to the preregistered codes, that writing an unknown reason is
+rejected, the quarantine/resume-skip roundtrip, and that the autostop shell wrapper carries the
+RunPod pod-id hook. Restricting quarantine to preregistered codes is a DV-protection rule: only
+prespecified infrastructure faults may exclude an episode, so an ad-hoc reason can't be used to
+drop an inconvenient-but-valid result post hoc.
+"""
 
 from __future__ import annotations
 

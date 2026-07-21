@@ -1,4 +1,12 @@
-"""Tests for logprob sidecar mode resolution and action-window filtering."""
+"""Logprob-sidecar mode resolution and action-window filtering.
+
+Verifies mode parsing (explicit/default-off), per-domain full-instance overrides, rejection of the
+legacy ``save_logprob_distributions`` key, and that action-window filtering strips the reasoning
+block while recording scope metadata. Two cases pin the YAML bareword-boolean trap: an unquoted
+``on``/``off`` must not be silently coerced to a truthy/falsy bool, since that would flip whether
+reasoning tokens enter the TLE window -- a substantive RQ1 signal-definition change hiding behind a
+YAML gotcha.
+"""
 
 from __future__ import annotations
 

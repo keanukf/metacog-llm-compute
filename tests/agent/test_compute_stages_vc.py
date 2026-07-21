@@ -1,4 +1,14 @@
-"""Compute stages: VC follow-up and prompt prefix."""
+"""Compute-stage (C0/C1/C2) behaviour: TLE slicing, VC follow-up, and CoT parsing.
+
+Verifies that token-level entropy is sliced to the action line only (not the thinking prefix),
+thinking flags are forced per stage (off for C0, reason-only for C1, on in C2 samples), the VC
+follow-up fires as a separate call carrying task context, C2 majority-vote normalizes surface
+forms, and the CoT parser commits the post-``</think>`` action. These are the mechanics that define
+what the TLE and VC signals actually measure per stage, so they are load-bearing for every RQ1
+calibration claim. The two "single-definition-in-src" guards pin the shared output-instruction
+literals: C1 and C2 previously drifted independent copies, and a re-forked copy would reintroduce
+prompt drift across stages.
+"""
 
 from __future__ import annotations
 
