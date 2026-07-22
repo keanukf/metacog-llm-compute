@@ -135,7 +135,7 @@ def main() -> None:
     t0 = time.time()  # wall-clock, comparable to file mtimes below
     while True:
         if not out_dir.exists():
-            print(f"[{time.strftime('%H:%M:%S')}] waiting for {out_dir} to exist...")
+            print(f"[{time.strftime('%H:%M:%S')}] waiting for {out_dir} to exist...", flush=True)
         else:
             snap = snapshot(out_dir)
             # Watcher-uptime elapsed grows accurately once we've been polling a while; for a
@@ -144,13 +144,16 @@ def main() -> None:
             now = time.time()
             since_files = (now - snap["earliest_mtime"]) if snap["earliest_mtime"] else 0.0
             elapsed_s = max(now - t0, since_files)
-            print(render(snap, expected=args.expected, elapsed_s=elapsed_s))
+            print(render(snap, expected=args.expected, elapsed_s=elapsed_s), flush=True)
             if (
                 args.expected is not None
                 and snap["done_total"] >= args.expected
                 and not snap["inflight"]
             ):
-                print("All expected episodes done, no in-flight traces remaining -- stopping.")
+                print(
+                    "All expected episodes done, no in-flight traces remaining -- stopping.",
+                    flush=True,
+                )
                 break
         if args.once:
             break
