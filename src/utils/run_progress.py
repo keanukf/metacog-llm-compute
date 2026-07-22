@@ -14,8 +14,14 @@ def utc_ts() -> str:
 
 
 def log(message: str) -> None:
-    """Print one timestamped line."""
-    print(f"[{utc_ts()}] {message}")
+    """Print one timestamped line, flushed immediately.
+
+    Without flush=True, stdout is fully (not line-) buffered once it's a pipe rather than
+    a tty -- exactly what `nohup ... > logfile 2>&1 &` gives it. On a multi-hour run that
+    can mean the log file stays empty until process exit, making it useless for
+    mid-run troubleshooting.
+    """
+    print(f"[{utc_ts()}] {message}", flush=True)
 
 
 def log_episode_line(
@@ -107,7 +113,7 @@ def print_batch_progress(
             msg += f" | TLE {avg_tle:.2f}"
         if avg_vc is not None:
             msg += f" | VC {avg_vc:.1f}"
-        print(msg)
+        print(msg, flush=True)
     insts = [
         r.get("instance")
         for r in rolling
@@ -116,7 +122,8 @@ def print_batch_progress(
     inst_nums = [int(x) for x in insts if isinstance(x, (int, float, str)) and str(x).strip() != ""]
     if inst_nums:
         print(
-            f"  cursor: domain={domain} | {label_key}={stage_or_strategy} | inst {min(inst_nums)}–{max(inst_nums)}"
+            f"  cursor: domain={domain} | {label_key}={stage_or_strategy} | inst {min(inst_nums)}–{max(inst_nums)}",
+            flush=True,
         )
     else:
-        print(f"  cursor: domain={domain} | {label_key}={stage_or_strategy}")
+        print(f"  cursor: domain={domain} | {label_key}={stage_or_strategy}", flush=True)
