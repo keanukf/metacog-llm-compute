@@ -152,7 +152,15 @@ def delta_brier_after_mapping(
 
 
 def h4_diff_in_diff(df: Any, *, label: str = "y_optimal") -> float:
-    """(AUROC_TLE_TW - AUROC_TLE_TOH) - (AUROC_VC_TW - AUROC_VC_TOH)."""
+    """
+    [AUROC_TLE - AUROC_VC]_ToH - [AUROC_TLE - AUROC_VC]_TextWorld.
+
+    Sign matches the preregistered confirmatory contrast (thesis H_{1,4}, ch.4 §4.2.2):
+    the TLE-over-VC discrimination advantage is predicted to be larger under full
+    observability (ToH) than partial observability (TextWorld), so H4 is supported
+    when this returns a value > 0 (a domain order swap here silently flips the
+    confirmatory decision rule -- do not "simplify" this back to textworld-minus-toh).
+    """
     rows = _as_rows(df)
     by_dom: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in rows:
@@ -164,7 +172,7 @@ def h4_diff_in_diff(df: Any, *, label: str = "y_optimal") -> float:
 
     if "textworld" not in by_dom or "tower_of_hanoi" not in by_dom:
         return float("nan")
-    return float(_delta("textworld") - _delta("tower_of_hanoi"))
+    return float(_delta("tower_of_hanoi") - _delta("textworld"))
 
 
 def h2_paired(

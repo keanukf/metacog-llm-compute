@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 
-from src.analysis.inference import bh, cluster_bootstrap, h2_paired, holm
+from src.analysis.inference import bh, cluster_bootstrap, h2_paired, h4_diff_in_diff, holm
 
 
 def test_cluster_bootstrap_smoke():
@@ -79,6 +79,39 @@ def test_h2_paired_delta_default():
     r = h2_paired(eps)
     assert r["delta"] == 0.05
     assert r["n_pairs"] == 1
+
+
+def test_h4_diff_in_diff_sign_matches_preregistered_direction():
+    """Regression: h4_diff_in_diff must return
+    [AUROC_TLE - AUROC_VC]_ToH - [AUROC_TLE - AUROC_VC]_TextWorld, matching thesis H_{1,4}
+    (ch.4 4.2.2), not the reversed textworld-minus-toh order a prior version silently
+    computed. Construction: ToH has a perfectly TLE-discriminating, VC-uninformative
+    signal pair (delta = 1.0 - 0.5 = 0.5); TextWorld has neither signal discriminating
+    (delta = 0.5 - 0.5 = 0.0). A correct implementation returns 0.5 - 0.0 = 0.5 (positive,
+    the H4-supporting direction); the reversed order would instead return -0.5.
+    """
+    toh_rows = [
+        {
+            "domain": "tower_of_hanoi",
+            "y_optimal": i % 2,
+            # negated inside delta_auroc -> low entropy on the correct (y=1) steps
+            # gives a perfectly TLE-discriminating pair (AUROC_TLE = 1.0).
+            "tle_mean_entropy": 0.1 if i % 2 == 1 else 0.9,
+            "vc": 50,  # constant -> uninformative, AUROC_VC = 0.5
+        }
+        for i in range(10)
+    ]
+    tw_rows = [
+        {
+            "domain": "textworld",
+            "y_optimal": i % 2,
+            "tle_mean_entropy": 50,  # constant -> AUROC_TLE = 0.5
+            "vc": 50,  # constant -> AUROC_VC = 0.5
+        }
+        for i in range(10)
+    ]
+    result = h4_diff_in_diff(toh_rows + tw_rows)
+    assert math.isclose(result, 0.5, abs_tol=1e-9)
 
 
 def test_holm_bh():
