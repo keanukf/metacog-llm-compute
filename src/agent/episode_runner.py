@@ -1,3 +1,10 @@
+"""Seeds the per-episode history list with the reset observation.
+
+Split out because getting this right is subtle: many environments (TextWorld especially) print the
+full scene only once at reset and then emit just deltas, so if the opening text is not retained the
+step >=1 prompts silently lose it.
+"""
+
 from __future__ import annotations
 
 from src.agent.history_utils import truncate_for_history

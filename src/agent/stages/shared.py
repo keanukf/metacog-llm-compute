@@ -1,5 +1,13 @@
 """
-Compute stages: C0 (direct + logprobs), C1 (single reasoning call), C2 (self-consistency / majority vote).
+Shared machinery for the three compute stages (the study's Factor 2 / deliberation axis):
+C0 (direct + logprobs), C1 (single native-thinking call), C2 (self-consistency / majority vote).
+
+The heart of this module is ``reasoning_step_core`` -- the single engine C1 and C2 both call (C1
+with ``n_samples=1``, C2 with ``n_samples>1`` + vote). They were unified on 2026-07-21 after the
+Gate F QC probe found C1 and C2 had independently diverged; see the block comment above
+``reasoning_step_core`` and docs/adrs.md ADR-005 for the bug and the fix. C0 lives in ``c0.py``
+because it has no thinking block. Also here: VC follow-up construction (``_build_vc_followup_prompt``
+etc.), the candidate-admissibility contract, and majority voting.
 """
 
 from __future__ import annotations
@@ -340,6 +348,9 @@ def _seeded_rng(seed_base: str | int | None, *, call_index: int) -> random.Rando
     We use a stable hash to avoid Python's randomized hash() across processes.
     """
     base = "" if seed_base is None else str(seed_base)
+    # call_index is mixed into the seed so each C2 step in an episode draws an *independent*
+    # tie-break: guards the fixed bug where rebuilding the step-fn per step reset it to 0 and
+    # every step reused the same seed (see consistency_log / ADR-005).
     h = hashlib.md5(f"{base}::{int(call_index)}".encode("utf-8")).hexdigest()
     seed_int = int(h[:16], 16)
     return random.Random(seed_int)

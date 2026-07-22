@@ -23,10 +23,23 @@ Thesis codebase for **metacognitive effort allocation in sequential language-mod
 |----------|------|
 | `src/` | Package: `agent/`, `signals/`, `environments/`, `analysis/`, `utils/`, `pilot/` |
 | `configs/` | YAML experiment and pilot configs |
-| `scripts/` | CLI entry points (see [`docs/scripts.md`](docs/scripts.md)) |
+| `scripts/` | CLI entry points, grouped into purpose subfolders (see [`docs/scripts.md`](docs/scripts.md)) |
 | `tests/` | `pytest` with mocks (no GPU) |
 | `data/` | Task assets (`data/tasks/`) and run outputs (`data/results/`) |
 | `blueprints/` | Thesis design and infrastructure planning |
+
+`scripts/` subfolders (full catalog in [`docs/scripts.md`](docs/scripts.md)):
+
+| Subfolder | Contents |
+|-----------|----------|
+| `scripts/experiment/` | Production entry points: `run_pilot.py`, `run_phase1.py`, `run_phase2.py` |
+| `scripts/datasets/` | Task-instance generation, manifests, interactive play |
+| `scripts/difficulty_calibration/` | Difficulty tuning/sweeps/freezing probes |
+| `scripts/instrument_validation/` | Backend parity, throughput, logprob-invariance checks |
+| `scripts/analysis_rehearsal/` | Full-pipeline dry run + H3 power simulation |
+| `scripts/run_readiness/` | Budget, run-hygiene, resume, output-QC, progress watcher |
+| `scripts/pilot_analysis/` | Post-run pilot analysis, validation, summaries |
+| `scripts/cloud/shell/`, `scripts/cloud/python/` | Pod setup/transfer (shell) + one download-repair helper (python) |
 
 Run scripts from the **repository root**.
 
@@ -55,7 +68,7 @@ Do **not** expect `vllm` to install on macOS — use `--pilot-mode lmstudio` or 
 pip install -r requirements.txt
 ```
 
-`pyproject.toml` holds package metadata and tooling; `requirements.txt` is what [`scripts/setup_cloud.sh`](scripts/setup_cloud.sh) installs on pods.
+`pyproject.toml` holds package metadata and tooling; `requirements.txt` is what [`scripts/cloud/shell/setup_cloud.sh`](scripts/cloud/shell/setup_cloud.sh) installs on pods.
 
 ## Quickstart
 
@@ -68,7 +81,7 @@ python -m pytest tests/ -v
 **2. Mock pilot (sanity, no model):**
 
 ```bash
-python scripts/run_pilot.py --config configs/pilot.yaml --pilot-mode mock --output-dir data/results
+python scripts/experiment/run_pilot.py --config configs/pilot.yaml --pilot-mode mock --output-dir data/results
 ```
 
 **3. Next steps:**
@@ -79,7 +92,7 @@ python scripts/run_pilot.py --config configs/pilot.yaml --pilot-mode mock --outp
 
 ## Unit tests vs pilot
 
-| | **Unit tests (pytest)** | **Pilot (`run_pilot.py`)** |
+| | **Unit tests (pytest)** | **Pilot (`scripts/experiment/run_pilot.py`)** |
 |---|-------------------------|----------------------------|
 | **Purpose** | Code and interfaces (signals, agent loop, logging) | Setup and hardware in a small end-to-end run |
 | **Runs** | Mocks, no GPU | Tests 1–6; `--pilot-mode` mock / cuda / lmstudio |
@@ -90,21 +103,29 @@ python scripts/run_pilot.py --config configs/pilot.yaml --pilot-mode mock --outp
 
 | Test file | Focus |
 |-----------|--------|
-| `test_01_inference_speed.py` | Benchmark structure / tok/s |
-| `test_02_token_entropy.py` | TLE from logprobs |
-| `test_03_verbalized_confidence.py` | VC parsing |
-| `test_04_textworld_env.py` | TextWorld env API |
-| `test_05_e2e_mini_experiment.py` | Mini episode loop + JSON keys |
-| `test_06_logging_and_analysis.py` | Episode round-trip, ECE |
+| `test_inference_speed.py` | Benchmark structure / tok/s |
+| `test_token_entropy.py` | TLE from logprobs |
+| `test_verbalized_confidence.py` | VC parsing |
+| `test_textworld_env.py` | TextWorld env API |
+| `test_e2e_mini_experiment.py` | Mini episode loop + JSON keys |
+| `test_logging_and_analysis.py` | Episode round-trip, ECE |
+| `test_tower_of_hanoi_env.py` | Tower of Hanoi env API |
+| `test_analysis_utils.py` | Analysis helper utilities |
+| `test_analysis_pipeline.py` | End-to-end analysis pipeline |
+
+The former `test_01`…`test_09` numeric prefixes were dropped in the 2026-07-21 refactor;
+gate-jargon test names were renamed too (`test_gate_d_metrics.py` → `test_difficulty_metrics.py`,
+`test_gate_d_manifest_smoke.py` → `test_manifest_success_smoke.py`,
+`test_gate_d_abort_actions.py` → `test_inspect_abort_last_actions.py`).
 
 Fixtures: `tests/conftest.py`. Pilot counterparts: [`docs/pilot.md`](docs/pilot.md).
 
 ## Implementation snapshot
 
 - **Model:** `src/utils/inference/` — `VLLMWrapper`, `LMStudioWrapper` (responses-only); `model_wrapper.py` re-exports
-- **Pilot:** `scripts/run_pilot.py` → orchestration in `src/pilot/`; config in `configs/pilot.yaml`
+- **Pilot:** `scripts/experiment/run_pilot.py` → orchestration in `src/pilot/`; config in `configs/pilot.yaml`
 - **Agent:** `src/agent/base_agent.py` facade; compute stages in `src/agent/stages/` (`c0`, `c1`, `c2`; `compute_stages.py` facade)
-- **Phase 1/2:** `scripts/run_phase1.py`, `scripts/run_phase2.py` (checkpointing; use after pilot)
+- **Phase 1/2:** `scripts/experiment/run_phase1.py`, `scripts/experiment/run_phase2.py` (checkpointing; use after pilot)
 
 ## References
 

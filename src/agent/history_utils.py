@@ -1,3 +1,10 @@
+"""Episode-history compaction helpers used when building each step's prompt.
+
+Sequential episodes grow the prompt every step (an action/observation pair is appended each turn),
+so these functions keep the context bounded -- head/tail truncation of individual observations and an
+optional last-N-pairs window -- while always preserving the opening observation (task framing).
+"""
+
 from __future__ import annotations
 
 

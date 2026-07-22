@@ -1,6 +1,15 @@
 """
-Minimal agent loop: observation -> LM call -> action -> next observation.
-No framework (no LangChain/LlamaIndex). Each compute stage is a clear function.
+Core sequential-agent episode loop: observation -> LM call -> action -> next observation.
+
+This is the experimental machinery that produces both study phases. ``run_episode`` drives a
+single fixed-compute-stage episode (Phase 1 calibration mapping: every cell runs one of C0/C1/C2
+and logs TLE/VC per step). ``run_adaptive_episode`` drives an episode whose per-step compute stage
+is chosen at runtime by the allocator (Phase 2: adaptive strategies vs. baselines). Both share the
+same trace/logging surface so Phase 1 and Phase 2 records are directly comparable.
+
+Deliberately framework-free (no LangChain/LlamaIndex): each compute stage is a plain step function
+so the measured surface (prompt structure, action-token TLE window) stays fully under our control
+and identical across stages -- a preregistration requirement, not a style choice.
 """
 
 from __future__ import annotations
@@ -597,6 +606,9 @@ def run_adaptive_episode(
     signal: dict[str, Any] | None = None
     signal_source_stage: str | None = None
     episode_fixed_stage: str | None = None
+    # Cache one step-fn per stage for the whole episode: this is correctness-critical, not just
+    # a speedup -- a fresh step-fn per step would reset the C2 tie-break call_index and reuse the
+    # same RNG seed every step (the fixed adaptive-episode bug; see _seeded_rng / ADR-005).
     step_fn_cache: dict[str, StepFn] = {}
 
     trace_path: Path | None = None

@@ -25,11 +25,11 @@ def c2_step_core(
     observation: str,
     history: list[str],
     model: Any,
-    n_samples: int = 3,
+    n_samples: int = 3,  # frozen: C2 self-consistency draws N=3 samples (preregistered 2x3x2 design)
     *,
     tie_break_seed: str | int | None = None,
     call_index: int = 0,
-    sample_temperature: float = 0.7,
+    sample_temperature: float = 0.7,  # frozen C2 sampling temperature (per-stage 0.3/0.5/0.7)
     save_action_logprobs: bool,
     vc_mode: str,
     prompt_prefix: str,

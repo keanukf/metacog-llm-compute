@@ -1,4 +1,11 @@
-"""C0: direct action + logprobs (TLE); optional VC."""
+"""C0 compute stage: direct System-1 action (no reasoning), the deliberation-axis floor.
+
+One LM call with thinking forced OFF; TLE is read from the action-token logprobs and VC is an
+optional follow-up. C0 is the reference the other two stages are measured against -- the
+single-line output instruction and the action-token TLE window here must stay identical to C1/C2
+so any TLE/VC difference reflects the amount of preceding reasoning, not a format change
+(thesis §5.3 measurement symmetry).
+"""
 
 from __future__ import annotations
 
@@ -38,6 +45,11 @@ def c0_step_core(
     vc_judged_context: str = "action_only",
     vc_retry_on_parse_failure: bool = True,
 ) -> StepReturn:
+    """Full-configurability C0 step used in production; returns the 10-tuple ``StepReturn``.
+
+    ``c0_step`` below is the zero-config legacy wrapper used by tests. TLE is computed only when the
+    backend returned logprobs; otherwise it is None (no silent zero-fill).
+    """
     prompt = (
         f"{_build_prompt(observation, history, prompt_prefix)}\n\n{_SINGLE_LINE_OUTPUT_INSTRUCTION}"
     )

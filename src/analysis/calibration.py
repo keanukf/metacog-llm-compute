@@ -1,5 +1,12 @@
 """
-Calibration metrics: ECE (Expected Calibration Error), Brier score, reliability diagrams.
+Calibration and discrimination metrics for RQ1 (how well the metacognitive signals track step
+correctness): ECE, MCE, Brier, reliability-diagram data, AUROC/AUPRC, and the per-step-position
+breakdown feeding the H3 temporal-degradation analysis.
+
+Dependency-free by design (pure-Python, no numpy/scipy) so the metrics are auditable and stable.
+``compute_auroc`` is the discrimination workhorse for H1 (TLE score = negated mean entropy, since
+lower entropy should mean more confident/correct). The ``correctness_policy`` switch
+(optimal_only vs legal_or_optimal) is the confirmatory-vs-sensitivity label definition from §5.8.
 """
 
 from __future__ import annotations

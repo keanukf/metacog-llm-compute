@@ -13,7 +13,7 @@
 
 ## Runtime Flow
 
-1. A runner script (`scripts/run_pilot.py`, `scripts/run_phase1.py`, `scripts/run_phase2.py`) loads YAML config.
+1. A runner script (`scripts/experiment/run_pilot.py`, `scripts/experiment/run_phase1.py`, `scripts/experiment/run_phase2.py`) loads YAML config.
 2. Environment instances are created via `src/utils/experiment_env.py`.
 3. Agent loop (`src/agent/base_agent.py`) executes step-by-step with compute stage selection.
 4. Stage execution (`src/agent/stages/` — `c0`, `c1`, `c2`; facade `compute_stages.py`) produces action + optional TLE/VC signals.

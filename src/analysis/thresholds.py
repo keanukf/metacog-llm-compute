@@ -1,12 +1,16 @@
 """
-Phase-1 calibration and threshold learning utilities.
+Phase-1 calibration and allocator-threshold learning (thesis §5.4).
 
-Goals:
-- Fit a simple monotonic calibrator mapping a raw signal to p(optimal).
-- Derive two thresholds to map signals into stages (C0/C1/C2) for allocators.
+This is where the frozen adaptive allocator is *fitted*: ``grid_search_thresholds`` /
+``build_policy_artifact`` search the (theta1 < theta2) pair on the Phase-1 holdout (5 instances per
+domain) against the ``step_level_proxy_v1`` objective -- per-stage ECDF normalization of the signal,
+stage-matched against Phase-1 cell outcomes with an exact->mean-over-runs->nearest-position fallback
+cascade, then the token-cheapest point on the success/token Pareto front. It also fits an optional
+Platt calibrator (p(optimal) = sigmoid(a*x+b)) for RQ1 reporting.
 
-This module is intentionally light: uses scipy if available, otherwise falls back to
-non-fitted heuristics.
+Two paths coexist: the production ``grid_search`` path (used when holdout flags are present) and a
+legacy quantile fallback (``derive_stage_thresholds``) for artifacts with no holdout metadata.
+Intentionally light -- uses scipy for the Platt fit if available, else degrades to heuristics.
 """
 
 from __future__ import annotations
@@ -179,6 +183,8 @@ def derive_stage_thresholds(
 
     if signal == "tle_mean_entropy":
         t1 = _quantile(xs, high_quantile)  # escalate to C1 above t1
+        # C2 threshold sits halfway between t1's quantile and 1.0, but capped at the 95th
+        # percentile so C2 stays reachable (an uncapped t2 near 1.0 would almost never trigger).
         t2 = _quantile(
             xs, min(0.95, high_quantile + (1 - high_quantile) / 2)
         )  # more extreme for C2
@@ -193,12 +199,10 @@ def derive_stage_thresholds(
             "n_samples": len(xs),
         }
 
-    # VC: lower = harder; thresholds are "below" cutoffs
-    t2 = _quantile(xs, low_quantile)  # escalate to C2 below t2
-    t1 = _quantile(
-        xs, max(0.05, low_quantile / 2)
-    )  # very low for C2? keep t1 <= t2? We want C2 below t2 and C1 below t1? Better:
-    # For VC we define: if vc < t_c1_c2 -> C2; elif vc < t_c0_c1 -> C1; else C0, so t_c1_c2 < t_c0_c1.
+    # VC: lower confidence = harder, so both cutoffs are lower-bounds and the allocator escalates as
+    # VC drops: if vc < t_c1_c2 -> C2; elif vc < t_c0_c1 -> C1; else C0 (hence t_c1_c2 < t_c0_c1).
+    t2 = _quantile(xs, low_quantile)
+    t1 = _quantile(xs, max(0.05, low_quantile / 2))
     t_c1_c2 = _quantile(xs, low_quantile)
     t_c0_c1 = _quantile(xs, high_quantile)
     if t_c1_c2 > t_c0_c1:
@@ -414,6 +418,8 @@ def _match_proxy(
     if candidates:
         nearest = min(
             candidates,
+            # Secondary key (raw step_index) breaks distance ties deterministically toward the
+            # smaller position, so proxy-matching is reproducible regardless of pool dict order.
             key=lambda x: (abs(int(x[0][2]) - step_index), int(x[0][2])),
         )
         rec = nearest[1]

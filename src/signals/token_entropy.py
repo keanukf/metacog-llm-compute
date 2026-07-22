@@ -1,5 +1,12 @@
 """
-Token-Level Entropy (TLE) from model logprobs.
+Token-Level Entropy (TLE) from model logprobs -- the study's first metacognitive signal (Factor 1),
+the "processing-fluency" proxy H1 predicts is the *better*-calibrated of the two.
+
+TLE is measured at the *committed-action* tokens only (never over C1/C2 reasoning), and this window
+is identical across C0/C1/C2 -- a frozen, load-bearing invariant (see CLAUDE.md): the action-window
+slicing in ``extract_action_tle_from_response`` / ``slice_action_logprob_tokens`` is what enforces
+it. Top-k is frozen at K=20 (Gate C-6 sensitivity sweep); ``mean_entropy_at_top_k`` supports the
+variable-K re-analysis that sweep used.
 
 - **Top-k distributions** (vLLM ``SamplingParams(logprobs=K)``, LM Studio
   ``/v1/responses``): Shannon entropy H = -sum_i p_i log2(p_i) over the

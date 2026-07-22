@@ -45,6 +45,8 @@ def c1_step_core(
     """
     reason_temp = c1_cot_temperature
     if reason_temp is None:
+        # 0.5 is the frozen C1 native-thinking temperature (per-stage: C0 0.3 / C1 0.5 / C2 0.7);
+        # TLE stays comparable across stages because raw_logprobs makes it temperature-invariant.
         reason_temp = float(action_temperature) if action_temperature is not None else 0.5
 
     (

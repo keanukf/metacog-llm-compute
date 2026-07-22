@@ -1,0 +1,47 @@
+"""Contract tests pinning each ``parse_cot_action`` parse_method in the trust cascade.
+
+The action parser is DV-load-bearing (it decides what span counts as the committed action, hence the
+TLE window), so these lock in the expected ``parse_method`` label for each recovery path -- post_think,
+legacy_action_prefix, lmstudio_command_tag, embedded_action_fallback -- and the unparsed case, so a
+future change to the cascade cannot silently reclassify an action without a test failing.
+"""
+
+from __future__ import annotations
+
+from src.agent.cot_parser import parse_cot_action
+
+
+def test_parse_cot_action_post_think_contract() -> None:
+    out = parse_cot_action("<think>reasoning</think>\nA->C")
+    assert out["status"] == "parsed"
+    assert out["parse_method"] == "post_think"
+    assert out["action"] == "A->C"
+    assert out["reasoning_internal"] == "reasoning"
+
+
+def test_parse_cot_action_legacy_action_prefix_contract() -> None:
+    out = parse_cot_action("ACTION: go north")
+    assert out["status"] == "parsed"
+    assert out["parse_method"] == "legacy_action_prefix"
+    assert out["action"] == "go north"
+
+
+def test_parse_cot_action_lmstudio_command_tag_contract() -> None:
+    out = parse_cot_action("<think>plan</think>\n<reason>ok</reason>\n<command>go north</command>")
+    assert out["action"] == "go north"
+    assert out["parse_method"] == "lmstudio_command_tag"
+
+
+def test_parse_cot_action_embedded_action_fallback_contract() -> None:
+    out = parse_cot_action(
+        '<think>analysis... the correct command should be "go east" for this state.</think>'
+    )
+    assert out["action"] == "go east"
+    assert out["parse_method"] == "embedded_action_fallback"
+
+
+def test_parse_cot_action_unparsed_contract() -> None:
+    out = parse_cot_action("<think>only reasoning</think>")
+    assert out["status"] == "unparsed"
+    assert out["parse_method"] == "none"
+    assert out["action"] == ""

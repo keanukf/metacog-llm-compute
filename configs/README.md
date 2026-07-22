@@ -8,17 +8,19 @@ YAML configs live here. **Do not commit secrets** — use environment variables 
 |------|---------|
 | [`pilot.yaml`](pilot.yaml) | Pilot study (Tests 1–6, feasibility); primary file during pilot phase |
 | [`experiment_core.yaml`](experiment_core.yaml) | Phase 1/2 core experiment (instances, domains, paths) |
-| [`experiment_ext.yaml`](experiment_ext.yaml) | Extended experiment settings |
-| [`models.yaml`](models.yaml) | Default model list for `run_pilot_models.py` |
-| [`models_runpod.yaml`](models_runpod.yaml) | RunPod model shortlist + `hf_model_card_gate.py` |
 | [`lmstudio_config.yaml`](lmstudio_config.yaml) | Optional deep-merge overlay when LM Studio enabled |
-| [`prompt_variants/`](prompt_variants/) | A/B prompt configs for `run_prompt_ab.py` |
+| [`dev/`](dev/) | Gate C/D diagnostic + smoke-run configs (parity, throughput, resume, format/VC probes) |
+
+The single production model is `Qwen/Qwen3-8B`, hardcoded in `experiment_core.yaml`. The former
+multi-model shortlist files (`models.yaml`, `models_runpod.yaml`), the `experiment_ext.yaml`
+extension config, and the `prompt_variants/` A/B configs were removed in the 2026-07-21 refactor
+along with the tooling that consumed them.
 
 ## `pilot.yaml` — keys you touch most
 
 | Section | Keys | Notes |
 |---------|------|-------|
-| `model` | `name`, `dtype` | HF repo id; must match LM Studio API id in lmstudio mode. **Primary models:** RunPod/Phase 1/2 → `Qwen/Qwen3-8B` ([`experiment_core.yaml`](experiment_core.yaml), [`models_runpod.yaml`](models_runpod.yaml)); local pilot → `Qwen/Qwen3-4B` ([`pilot.yaml`](pilot.yaml)) |
+| `model` | `name`, `dtype` | HF repo id; must match LM Studio API id in lmstudio mode. **Primary models:** RunPod/Phase 1/2 → `Qwen/Qwen3-8B` ([`experiment_core.yaml`](experiment_core.yaml)); local pilot → `Qwen/Qwen3-4B` ([`pilot.yaml`](pilot.yaml)) |
 | `inference` | `backend`, `temperature`, `max_tokens`, `max_model_len`, `chat_template`, `enable_thinking` | `chat_template: true` required for instruct models; `max_model_len` lowers VRAM on 24GB GPUs |
 | `inference` | `top_logprobs` | Top-k width for TLE (vLLM + LM Studio; default 20, EAGER-aligned) |
 | `inference` | `lmstudio_base_url`, `lmstudio_api_key` | LM Studio: `reasoning.effort: none` (off) / `low` (on) on `/v1/responses`; `lmstudio_top_logprobs` is a deprecated alias for `top_logprobs` |
@@ -53,4 +55,4 @@ See [`docs/runpod.md`](../docs/runpod.md) for plumbing smoke vs TLE invariance v
 | `model` | `name`, `revision`, `dtype` | Primary confirmatory model (`Qwen/Qwen3-8B`). Use `dtype: float16` — vLLM 0.19+ rejects `fp16`. |
 | `inference` | `max_model_len`, `top_logprobs` | Cap context on 24 GB GPUs (default in file: `16384`). Required for `verify_backend_parity.py` and phase runners. |
 
-Phase scripts and `scripts/verify_backend_parity.py` load this file via `create_experiment_model()`; vLLM memory kwargs match `run_pilot.py` behaviour.
+Phase scripts and `scripts/instrument_validation/verify_backend_parity.py` load this file via `create_experiment_model()`; vLLM memory kwargs match `scripts/experiment/run_pilot.py` behaviour.

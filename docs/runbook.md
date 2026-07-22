@@ -19,7 +19,7 @@ Requires **Python 3.11+** (see `pyproject.toml`; CI uses 3.11).
 After merging doc or config changes, confirm the pilot path still runs:
 
 ```bash
-python scripts/run_pilot.py --config configs/pilot.yaml --pilot-mode mock --output-dir data/results
+python scripts/experiment/run_pilot.py --config configs/pilot.yaml --pilot-mode mock --output-dir data/results
 ```
 
 Expected: a timestamped folder `data/results/pilot_YYYYMMDD_HHMMSS/` with `pilot_test*.json`, `pilot_feasibility.json`, and episode JSON files (`ep_*.json`).
@@ -27,15 +27,15 @@ Expected: a timestamped folder `data/results/pilot_YYYYMMDD_HHMMSS/` with `pilot
 Optional integrity check:
 
 ```bash
-python scripts/validate_pilot_outputs.py --pilot-dir data/results/pilot_YYYYMMDD_HHMMSS
+python scripts/pilot_analysis/validate_pilot_outputs.py --pilot-dir data/results/pilot_YYYYMMDD_HHMMSS
 ```
 
 ## RunPod path (pinned)
 
 1. Use pinned environment setup:
-   - `bash scripts/setup_cloud.sh`
+   - `bash scripts/cloud/shell/setup_cloud.sh`
 2. Run real CUDA pilot:
-   - `python scripts/run_pilot.py --config configs/pilot.yaml --pilot-mode cuda --real`
+   - `python scripts/experiment/run_pilot.py --config configs/pilot.yaml --pilot-mode cuda --real`
 
 Use `requirements.txt` as the pinned cloud install source. Full steps: [`docs/runpod.md`](runpod.md).
 
@@ -50,10 +50,8 @@ Pilot runs default to timestamped subfolders under `--output-dir` (e.g. `data/re
 
 ## Local notes (Cursor plans)
 
-`.cursor/` is **gitignored** (IDE/agent plans stay local). If historical plan files were removed from your working tree after a merge, restore them from git history:
-
-```bash
-bash scripts/restore_cursor_plans.sh
-```
+`.cursor/` is **gitignored** (IDE/agent plans stay local). If historical plan files were removed
+from your working tree after a merge, restore them from git history with `git checkout <old-ref> --
+.cursor/plans/` (the one-off `restore_cursor_plans.sh` helper was removed in the 2026-07-21 refactor).
 
 Plans are not pushed to remote; `git pull` will not delete restored files while they remain untracked and ignored.

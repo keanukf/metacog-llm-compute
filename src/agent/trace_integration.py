@@ -1,3 +1,10 @@
+"""Observability shim between the episode loop and an optional trace hook (e.g. Langfuse).
+
+Tracing is entirely optional and non-load-bearing (no experimental value depends on it), so this
+helper degrades gracefully: it prefers the richer ``log_step`` API and silently falls back to the
+older ``log_action_generation`` when a hook does not implement it or raises.
+"""
+
 from __future__ import annotations
 
 from typing import Any

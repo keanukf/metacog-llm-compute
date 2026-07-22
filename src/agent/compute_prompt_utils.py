@@ -1,3 +1,17 @@
+"""Prompt assembly and action-string normalization shared by all compute stages.
+
+This module owns the frozen XML-tag prompt schema (``<task>``, ``<history>`` with nested
+``<step index="...">``/``<action>``/``<observation>``, ``<state>``). The schema is a preregistered
+operationalization choice, not cosmetic: explicit section markers keep the growing episode history
+unambiguous over long prompts and give the TLE action window a stable boundary (thesis §5.2.B). The
+schema is never mixed with other separators and never varied per domain/cell.
+
+It also owns the three action-normalization functions, which intentionally differ:
+``normalize_vote_key`` (casefolded, for self-consistency agreement stats), ``normalize_action_for_
+execution`` (NOT casefolded, so surface forms like Tower-of-Hanoi "A->C" reach the env intact), and
+``normalize_action_line`` (extraction + instruction-echo guard + verbose-output fallbacks).
+"""
+
 from __future__ import annotations
 
 import re
@@ -107,6 +121,14 @@ def strip_think_blocks(text: str) -> str:
 
 
 def build_prompt(observation: str, history: list[str], prompt_prefix: str) -> str:
+    """Assemble the action-generation prompt: domain ``<task>`` + ``<history>`` + current ``<state>``.
+
+    Do NOT lstrip observations: TextWorld observations carry fixed-width/ASCII-art structure in
+    leading spaces, so only trailing newlines are normalized (rstrip). If the caller already stored
+    the current observation as the last history entry (true for the step-0 reset text, which can be
+    very large), it is not appended again as ``<state>``.
+    """
+
     def _rstrip(s: str) -> str:
         return (s or "").rstrip()
 
@@ -139,6 +161,14 @@ def extract_first_line(text: str) -> str:
 
 
 def normalize_action_line(text: str) -> str:
+    """Extract a single executable action line from raw model text.
+
+    Strips any <think> block, takes the first non-empty line, drops an "ACTION:" prefix, and blanks
+    it if it is merely an echo of the output instruction. Only if nothing usable remains does it fall
+    back to mining an embedded command out of verbose output (quoted, cue-phrase, or decision-phrase
+    patterns) -- these fallbacks recover an intended action from chatty completions without ever
+    supplying one the model did not produce. Returns "" when no action can be recovered.
+    """
     stripped = strip_think_blocks(text or "")
     line = extract_first_line(stripped)
     if line.upper().startswith("ACTION:"):
@@ -171,6 +201,12 @@ def normalize_action_line(text: str) -> str:
 
 
 def normalize_vote_key(action_line: str) -> str:
+    """Canonical key for C2 self-consistency voting/agreement (casefolded).
+
+    Collapses only surface-form variation (trailing punctuation, whitespace, case) so equivalent
+    commands are not counted as disagreement; internal punctuation is deliberately preserved so
+    genuinely different actions stay distinct. Casefolds because vote agreement is case-insensitive.
+    """
     s = strip_think_blocks(action_line or "").strip()
     if not s:
         return ""
@@ -182,6 +218,9 @@ def normalize_vote_key(action_line: str) -> str:
 
 
 def normalize_action_for_execution(action_line: str) -> str:
+    """Canonical action string passed to ``env.step`` -- same cleanup as the vote key but NOT
+    casefolded, so case-sensitive domains (e.g. Tower of Hanoi "A->C") keep their expected form.
+    """
     s = strip_think_blocks(action_line or "").strip()
     if not s:
         return ""
