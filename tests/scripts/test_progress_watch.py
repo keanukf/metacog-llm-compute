@@ -2,9 +2,10 @@
 
 Verifies domain/stage classification from production and QC-probe run-directory naming (with an
 ``unknown`` fallback), completed-vs-non-episode-JSON counting, in-flight trace-line counting that
-excludes finished episodes, and the rendered expected-ratio breakdown. It reads only the output
-directory, never the running process, so monitoring a long RunPod run cannot perturb or slow the
-run it is watching -- the decoupling is the point.
+excludes finished episodes, per-cell/overall success-rate counting, and the rendered
+expected-ratio breakdown. It reads only the output directory, never the running process, so
+monitoring a long RunPod run cannot perturb or slow the run it is watching -- the decoupling is
+the point.
 """
 
 from __future__ import annotations
@@ -42,6 +43,9 @@ def test_snapshot_counts_completed_and_skips_non_episode_json(tmp_path):
     assert snap["done"][("textworld", "C0")] == 1
     assert snap["done"][("textworld", "C1")] == 1
     assert snap["total_steps_observed"] == 20
+    assert snap["success_total"] == 1
+    assert snap["success"][("textworld", "C0")] == 1
+    assert ("textworld", "C1") not in snap["success"]
 
 
 def test_snapshot_counts_inflight_trace_lines_but_not_for_finished_episodes(tmp_path):
@@ -68,6 +72,8 @@ def test_render_shows_expected_ratio_and_per_cell_breakdown():
     snap = {
         "done": {("textworld", "C1"): 2, ("tower_of_hanoi", "C2"): 1},
         "done_total": 3,
+        "success": {("textworld", "C1"): 1},
+        "success_total": 1,
         "inflight": {("tower_of_hanoi", "C2"): 1},
         "inflight_steps_total": 5,
         "total_steps_observed": 50,
@@ -75,5 +81,21 @@ def test_render_shows_expected_ratio_and_per_cell_breakdown():
     }
     out = render(snap, expected=8, elapsed_s=60.0)
     assert "3/8" in out
-    assert "textworld/C1: 2 done" in out
-    assert "tower_of_hanoi/C2: 1 done (+1 in flight)" in out
+    assert "textworld/C1: 2 done, success 1/2 (50%)" in out
+    assert "tower_of_hanoi/C2: 1 done (+1 in flight), success 0/1 (0%)" in out
+    assert "success 1/3 (33%)" in out  # overall
+
+
+def test_render_omits_success_suffix_when_no_episodes_done():
+    snap = {
+        "done": {},
+        "done_total": 0,
+        "success": {},
+        "success_total": 0,
+        "inflight": {("textworld", "C0"): 1},
+        "inflight_steps_total": 2,
+        "total_steps_observed": 2,
+        "earliest_mtime": time.time() - 10,
+    }
+    out = render(snap, expected=8, elapsed_s=10.0)
+    assert "success" not in out.split("\n")[0]  # header line has no dangling "success 0/0"

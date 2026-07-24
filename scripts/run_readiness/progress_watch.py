@@ -51,6 +51,8 @@ def snapshot(out_dir: Path) -> dict:
     """One poll: completed episodes (ep_*.json / qc_*.json) + in-flight step counts (trace_*.jsonl)."""
     done: dict[tuple[str, str], int] = defaultdict(int)
     done_total = 0
+    success: dict[tuple[str, str], int] = defaultdict(int)
+    success_total = 0
     inflight: dict[tuple[str, str], int] = defaultdict(int)
     inflight_steps_total = 0
     total_steps_observed = 0  # done episodes' own step count + in-flight trace line counts
@@ -68,6 +70,9 @@ def snapshot(out_dir: Path) -> dict:
             earliest_mtime = mtime if earliest_mtime is None else min(earliest_mtime, mtime)
             data = json.loads(p.read_text())
             total_steps_observed += int(data.get("episode_length_steps") or data.get("steps") or 0)
+            if bool(data.get("task_success")):
+                success[(domain, stage)] += 1
+                success_total += 1
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -90,6 +95,8 @@ def snapshot(out_dir: Path) -> dict:
     return {
         "done": dict(done),
         "done_total": done_total,
+        "success": dict(success),
+        "success_total": success_total,
         "inflight": dict(inflight),
         "inflight_steps_total": inflight_steps_total,
         "total_steps_observed": total_steps_observed,
@@ -104,15 +111,24 @@ def render(snap: dict, *, expected: int | None, elapsed_s: float) -> str:
         d, s = cell
         n_done = snap["done"].get(cell, 0)
         n_inflight = snap["inflight"].get(cell, 0)
+        n_success = snap["success"].get(cell, 0)
         suffix = f" (+{n_inflight} in flight)" if n_inflight else ""
-        lines.append(f"  {d}/{s}: {n_done} done{suffix}")
+        succ_str = f", success {n_success}/{n_done} ({100 * n_success / n_done:.0f}%)" if n_done else ""
+        lines.append(f"  {d}/{s}: {n_done} done{suffix}{succ_str}")
 
     total_str = (
         f"{snap['done_total']}/{expected}" if expected is not None else str(snap["done_total"])
     )
+    done_total = snap["done_total"]
+    success_total = snap["success_total"]
+    overall_succ_str = (
+        f" | success {success_total}/{done_total} ({100 * success_total / done_total:.0f}%)"
+        if done_total
+        else ""
+    )
     rate = (snap["total_steps_observed"] / elapsed_s * 60) if elapsed_s > 0 else 0.0
     header = (
-        f"[{time.strftime('%H:%M:%S')}] episodes done: {total_str} | "
+        f"[{time.strftime('%H:%M:%S')}] episodes done: {total_str}{overall_succ_str} | "
         f"in-flight episodes: {sum(snap['inflight'].values())} | "
         f"~{rate:.1f} steps/min (elapsed {elapsed_s / 60:.1f}m)"
     )
