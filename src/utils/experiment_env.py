@@ -32,6 +32,31 @@ def resolve_textworld_game_path(instance: int, config: dict, repo_root: Path) ->
     return None
 
 
+def assert_textworld_games_present(instances: int, config: dict, repo_root: Path) -> None:
+    """
+    Fail loudly before a real run starts if any TextWorld instance in ``range(instances)``
+    has no resolvable compiled game file.
+
+    Without this, ``TextWorldEnv`` silently falls back to an unwinnable stub environment per
+    missing instance (see ``_use_real`` in ``src/environments/textworld_env.py``) instead of
+    erroring — which let 45/50 frozen instances run as unwinnable stubs, undetected, for the
+    full 2026-07-22 Phase 1 collection (see docs/consistency_log.md).
+    """
+    missing = [i for i in range(instances) if resolve_textworld_game_path(i, config, repo_root) is None]
+    if missing:
+        preview = missing[:10]
+        more = "..." if len(missing) > 10 else ""
+        raise RuntimeError(
+            f"TextWorld game files missing for {len(missing)}/{instances} instances "
+            f"(instance ids: {preview}{more}). Generate the frozen manifest set first, e.g.:\n"
+            "  python scripts/datasets/generate_textworld_games.py --num-rooms 5 --num-ingredients 1 "
+            "--cook --seed 20260718 --num-instances 50 --output-dir data/tasks/textworld\n"
+            "(the exact frozen seed/params are in docs/consistency_log.md's TextWorld freeze entry — "
+            "do not use the docs/runpod.md Step 6b example command as-is, it generates only 5 "
+            "smoke-test instances with a different seed)."
+        )
+
+
 class MockExperimentModel:
     """Lightweight stand-in when ``--real`` is off or model creation fails."""
 

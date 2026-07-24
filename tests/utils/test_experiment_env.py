@@ -13,8 +13,11 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from src.environments.tower_of_hanoi import generate_instances
 from src.utils.experiment_env import (
+    assert_textworld_games_present,
     create_experiment_model,
     make_experiment_env,
     resolve_textworld_game_path,
@@ -95,6 +98,32 @@ def test_make_experiment_env_toh_uses_per_instance_cap_not_flat_config_value(
     assert env.max_steps == expected_instance["max_steps"]
     assert env.max_steps != flat_config_max_steps
     assert env.max_steps == 3 * len(expected_instance["optimal_solution"])
+
+
+def test_assert_textworld_games_present_raises_on_partial_set(tmp_path: Path) -> None:
+    """Regression: a real Phase 1 run must fail loudly, not fall back to TextWorldEnv's
+    unwinnable stub, when only some frozen instances have a compiled game file -- this is
+    exactly what let 45/50 instances run as silent stubs, undetected, in the 2026-07-22 run."""
+    repo = tmp_path
+    tasks = repo / "data" / "tasks"
+    tasks.mkdir(parents=True)
+    for i in range(5):
+        (tasks / f"textworld_{i}.z8").write_bytes(b"fake")
+    cfg = {"paths": {"tasks_dir": "data/tasks"}}
+
+    with pytest.raises(RuntimeError, match=r"45/50"):
+        assert_textworld_games_present(50, cfg, repo)
+
+
+def test_assert_textworld_games_present_passes_on_full_set(tmp_path: Path) -> None:
+    repo = tmp_path
+    tasks = repo / "data" / "tasks"
+    tasks.mkdir(parents=True)
+    for i in range(5):
+        (tasks / f"textworld_{i}.z8").write_bytes(b"fake")
+    cfg = {"paths": {"tasks_dir": "data/tasks"}}
+
+    assert_textworld_games_present(5, cfg, repo)  # no raise
 
 
 def test_create_experiment_model_vllm_passes_memory_kwargs() -> None:

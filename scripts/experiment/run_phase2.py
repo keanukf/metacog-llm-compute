@@ -325,6 +325,11 @@ def main() -> None:
         f"| resume={args.resume} real={args.real} | already_done={len(completed)}"
     )
 
+    if args.real and "textworld" in domains:
+        from src.utils.experiment_env import assert_textworld_games_present
+
+        assert_textworld_games_present(instances_per_domain, config, REPO_ROOT)
+
     model = create_execution_backend(config, use_real=bool(args.real))
     pilot_mode = "cuda" if args.real else "mock"
     model_cfg = config.get("model", {})

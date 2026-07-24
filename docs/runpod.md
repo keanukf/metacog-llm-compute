@@ -223,7 +223,30 @@ Store models on the **container disk** (`HF_HOME=/root/.cache/huggingface`) so t
 
 TextWorld story files (`.z8`) are **not** bundled in the repo. Generate them on the pod once per difficulty batch (or after wiping `data/tasks/textworld/`). Each instance needs **`textworld_{i}.z8`** and the matching **`textworld_{i}.json`** game dump from TextWorld — do not delete the `.json` sidecar.
 
-From repo root on the pod (after `setup_cloud.sh`):
+**⚠️ Before any real (`--real`) Phase 1/2 run**, generate the **frozen 50-instance set**, not the smoke-test
+one below — copy-pasting the smoke-test command here (5 instances, seed 42) instead of the frozen
+command left 45/50 TextWorld instances without a game file for the entire 2026-07-22 Phase 1
+collection; `TextWorldEnv` silently falls back to an unwinnable stub per missing instance instead of
+erroring (see `docs/consistency_log.md`'s TextWorld freeze entry and `src/environments/
+textworld_env.py`'s `_use_real` check). `run_phase1.py --real` / `run_phase2.py --real` now assert
+all `instances_per_domain` game files exist before starting and abort loudly if not — but don't rely
+on that as your only check; use the correct command up front:
+
+```bash
+cd /workspace/metacog-llm-compute
+python scripts/datasets/generate_textworld_games.py \
+  --num-rooms 5 \
+  --num-ingredients 1 \
+  --cook \
+  --seed 20260718 \
+  --num-instances 50 \
+  --output-dir data/tasks/textworld
+```
+
+(exact frozen params per `docs/consistency_log.md`'s "TextWorld-Instanzen final generiert" entry —
+do not change `--seed`/`--num-rooms`/`--num-ingredients`, the manifest is content-frozen).
+
+Only for a **quick pilot smoke test** unrelated to a real collection run, a smaller throwaway batch is fine:
 
 ```bash
 cd /workspace/metacog-llm-compute
@@ -235,7 +258,7 @@ python scripts/datasets/generate_textworld_games.py \
   --num-instances 5
 ```
 
-This writes under `data/tasks/textworld/` (see [`docs/textworld.md`](textworld.md)). For a quick smoke test, `--num-instances 5` matches `pilot.instances` in `configs/pilot.yaml`. The final experiment uses 50 instances via [`scripts/datasets/build_textworld_manifest.py`](scripts/datasets/build_textworld_manifest.py) after difficulty calibration.
+This writes under `data/tasks/textworld/` (see [`docs/textworld.md`](textworld.md)). `--num-instances 5` here matches `pilot.instances` in `configs/pilot.yaml` — this batch must never be reused for a real run. The final experiment uses the frozen 50 via [`scripts/datasets/build_textworld_manifest.py`](scripts/datasets/build_textworld_manifest.py) after difficulty calibration.
 
 Optional sanity check:
 
