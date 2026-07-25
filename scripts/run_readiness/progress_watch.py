@@ -76,10 +76,26 @@ def snapshot(out_dir: Path) -> dict:
         except (json.JSONDecodeError, OSError):
             pass
 
+    errored_ids: set[str] = set()
+    errors_path = out_dir / "errors.jsonl"
+    if errors_path.exists():
+        try:
+            for line in errors_path.read_text().splitlines():
+                if line.strip():
+                    errored_ids.add(json.loads(line)["episode_id"])
+        except (json.JSONDecodeError, OSError, KeyError):
+            pass
+
     for p in out_dir.glob("trace_*.jsonl"):
         ep_id = p.stem[len("trace_") :]
         # Skip traces whose episode already finished (avoid double-counting steps).
         if (out_dir / f"{ep_id}.json").exists():
+            continue
+        # Skip traces left behind by an episode that errored out -- it never got a
+        # completed ep_*.json (task raised, e.g. a transient httpx disconnect) and
+        # nothing else cleans up its half-written trace file, so without this check
+        # every past error stays miscounted as "in flight" forever.
+        if ep_id in errored_ids:
             continue
         domain, stage = _classify(ep_id)
         try:
@@ -101,6 +117,7 @@ def snapshot(out_dir: Path) -> dict:
         "inflight_steps_total": inflight_steps_total,
         "total_steps_observed": total_steps_observed,
         "earliest_mtime": earliest_mtime,
+        "errored_total": len(errored_ids),
     }
 
 
@@ -127,9 +144,11 @@ def render(snap: dict, *, expected: int | None, elapsed_s: float) -> str:
         else ""
     )
     rate = (snap["total_steps_observed"] / elapsed_s * 60) if elapsed_s > 0 else 0.0
+    errored_total = snap.get("errored_total", 0)
+    errored_str = f" | errored: {errored_total}" if errored_total else ""
     header = (
         f"[{time.strftime('%H:%M:%S')}] episodes done: {total_str}{overall_succ_str} | "
-        f"in-flight episodes: {sum(snap['inflight'].values())} | "
+        f"in-flight episodes: {sum(snap['inflight'].values())}{errored_str} | "
         f"~{rate:.1f} steps/min (elapsed {elapsed_s / 60:.1f}m)"
     )
     return header + ("\n" + "\n".join(lines) if lines else "")

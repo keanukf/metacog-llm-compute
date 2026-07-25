@@ -68,6 +68,26 @@ def test_snapshot_counts_inflight_trace_lines_but_not_for_finished_episodes(tmp_
     assert snap["total_steps_observed"] == 3 + 3  # finished episode's own steps + in-flight lines
 
 
+def test_snapshot_excludes_errored_episodes_stale_trace_from_inflight(tmp_path):
+    """Regression: an episode that raised (e.g. a transient httpx disconnect) never gets a
+    completed ep_*.json, but its partially-written trace_*.jsonl is never cleaned up either --
+    without cross-referencing errors.jsonl, every past error stays miscounted as "in flight"
+    forever. This is exactly what made a 32-concurrency run show 45 in-flight."""
+    (tmp_path / "trace_ep_textworld_5_C0_2.jsonl").write_text('{"step_index": 0}\n')
+    (tmp_path / "trace_ep_textworld_6_C1_0.jsonl").write_text(
+        '{"step_index": 0}\n{"step_index": 1}\n'
+    )
+    (tmp_path / "errors.jsonl").write_text(
+        json.dumps({"episode_id": "ep_textworld_5_C0_2", "error": "RemoteProtocolError"}) + "\n"
+    )
+
+    snap = snapshot(tmp_path)
+    assert snap["errored_total"] == 1
+    assert ("textworld", "C0") not in snap["inflight"]  # errored trace excluded
+    assert snap["inflight"][("textworld", "C1")] == 1  # genuinely in-flight trace still counted
+    assert snap["inflight_steps_total"] == 2
+
+
 def test_render_shows_expected_ratio_and_per_cell_breakdown():
     snap = {
         "done": {("textworld", "C1"): 2, ("tower_of_hanoi", "C2"): 1},
