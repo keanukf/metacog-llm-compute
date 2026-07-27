@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 
-from src.analysis.inference import bh, cluster_bootstrap, h2_paired, h4_diff_in_diff, holm
+from src.analysis.inference import bh, cluster_bootstrap, fit_h3_model, h2_paired, h4_diff_in_diff, holm
 
 
 def test_cluster_bootstrap_smoke():
@@ -112,6 +112,64 @@ def test_h4_diff_in_diff_sign_matches_preregistered_direction():
     ]
     result = h4_diff_in_diff(toh_rows + tw_rows)
     assert math.isclose(result, 0.5, abs_tol=1e-9)
+
+
+def test_fit_h3_model_converges_with_multi_stage_data():
+    rng_vals = [0.05, 0.12, 0.3, 0.08, 0.4, 0.15, 0.2, 0.35]
+    rows = []
+    for i in range(60):
+        stage = ["C0", "C1", "C2"][i % 3]
+        rows.append(
+            {
+                "domain": "textworld",
+                "instance_key": f"tw:{i % 6}",
+                "compute_stage": stage,
+                "y_optimal": i % 2,
+                "tle_mean_entropy": rng_vals[i % len(rng_vals)] + 0.01 * i,
+                "position_norm": (i % 10) / 10.0,
+            }
+        )
+    out = fit_h3_model(rows, signal="tle", domain="textworld")
+    assert out["converged"] is True
+    assert "z_c" in out["params"] or "interaction" in out["params"]
+
+
+def test_fit_h3_model_standardizes_per_stage_not_pooled():
+    """Regression for P0-5 (ADR-006): a signal that is constant WITHIN one compute_stage but
+    varies across the pooled dataset (because a different stage varies) must be caught as
+    zero-variance -- a domain-wide-only check would miss this, since pooling stage C1's
+    variation in with C0's constant values gives nonzero variance overall. Before the fix,
+    fit_h3_model didn't group by compute_stage at all (mean-centered the pooled column, never
+    checked variance), so this exact case would have silently produced a degenerate,
+    uninterpretable coefficient instead of the explicit "insufficient data" style failure
+    stage-conditional standardization requires.
+    """
+    rows = []
+    for i in range(15):
+        rows.append(
+            {
+                "domain": "textworld",
+                "instance_key": f"c0:{i % 3}",
+                "compute_stage": "C0",
+                "y_optimal": i % 2,
+                "tle_mean_entropy": 0.5,  # constant within C0 -> zero variance in this stage
+                "position_norm": 0.1,
+            }
+        )
+    for i in range(15):
+        rows.append(
+            {
+                "domain": "textworld",
+                "instance_key": f"c1:{i % 3}",
+                "compute_stage": "C1",
+                "y_optimal": i % 2,
+                "tle_mean_entropy": 0.1 + 0.05 * i,  # varies -> pooled variance is nonzero
+                "position_norm": 0.1,
+            }
+        )
+    out = fit_h3_model(rows, signal="tle", domain="textworld")
+    assert out["converged"] is False
+    assert "variance" in out["note"]
 
 
 def test_holm_bh():

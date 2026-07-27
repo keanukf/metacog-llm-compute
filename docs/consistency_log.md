@@ -2,6 +2,31 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-27 — P0-5 (Revision-Audit): H3-Signal-Standardisierung von Mean-Centering auf
+stage-weises Z-Standardisieren korrigiert
+
+**Anlass:** `../metacog-thesis/notes/revision_audit_2026-07.md` (Cross-Check Prosa ↔ frozen Code
+vor Phase-1-Analyse), Punkt P0-5. Ch.5 §5.2.1/§5.8 behaupten, das Signal gehe "z-standardisiert" in
+die H3-Modelle ein; `fit_h3_model` hat tatsächlich nur zentriert (`z - z.mean()`), nie durch die SD
+geteilt, und dabei über alle drei Compute-Stages (C0/C1/C2) gepoolt statt stage-weise.
+
+**Vor der Änderung real geprüft (nicht nur behauptet):** ToH-Manifest, TextWorld-Manifest und
+`experiment_core.yaml` direkt gegen die Checklisten-Annahmen gegengecheckt (4 Disks alle 50
+Instanzen, `random_scramble`, C0/C1/C2-Temperaturen, K=20, Holdout mod-10 je Domain) — zusätzlich
+die ToH-4-Disk-Annahme nicht nur im Manifest, sondern in den tatsächlichen Prompt-Texten von 3
+realen Episoden aus dem echten Run verifiziert (Instanzen 0, 25, 49: "Goal state: Peg C holds all 4
+disks", keine Disk 5). Alle Checklisten-Annahmen bestätigt.
+
+**Entscheidung + volle Argumentation:** `docs/adrs.md` ADR-006. Kurzfassung: stage-weise
+z-standardisieren (nicht nur domain-weit zentrieren), weil TLE/VC über C0/C1/C2 wegen
+unterschiedlicher Decoding-Temperaturen und Reasoning-Token-Budgets nicht direkt vergleichbar sind
+— konsistent mit der stage-weisen ECDF-Normalisierung, die der Phase-2-Allocator bereits nutzt.
+
+**Umsetzung:** `src/analysis/inference.py::fit_h3_model` gruppiert jetzt per `compute_stage` vor
+der Standardisierung; ein Stage mit Varianz null/undefiniert lässt den Fit jetzt laut fehlschlagen
+statt einen degenerierten Koeffizienten still zu produzieren. Zwei neue Regressionstests in
+`tests/analysis/test_inference.py`. Volle Suite grün (374 Tests).
+
 ## 2026-07-21 — Struktureller Repo-Refactor: Skripte/Tests umsortiert, toter Code entfernt
 
 **Zweck:** Rein struktureller Housekeeping-Refactor (Gate A–F alle abgeschlossen), mit harter

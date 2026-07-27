@@ -43,3 +43,55 @@
   `"<think>"` text parsed as the action in C1 specifically (found and fixed 2026-07-20/21, see
   `docs/consistency_log.md`) — C2 already rejected this case correctly, C1 didn't share the check
   until this unification.
+
+## ADR-006: Stage-conditional z-standardization in `fit_h3_model`
+
+- **Decision:** the H3 GEE model's signal (TLE or VC) is z-standardized (mean 0, SD 1) *within
+  each `compute_stage` group* (C0/C1/C2) before fitting, not pooled across stages. Position
+  (`position_norm`) is unaffected — still domain-wide mean-centered only, per the original design.
+- **Context:** found during a pre-Phase-1-analysis audit cross-checking the thesis prose against
+  the code (`../metacog-thesis/notes/revision_audit_2026-07.md`, item P0-5). Ch.5 §5.2.1/§5.8 say
+  the signal enters the model "z-standardised"; `fit_h3_model` only mean-centered (`z - z.mean()`),
+  never divided by SD, and pooled across all three compute stages when computing that mean.
+- **Rationale:**
+  - **Non-commensurability across stages is already the thesis's own argument (§5.3):** C0/C1/C2
+    use different decoding temperatures (0.3/0.5/0.7) and reasoning-token budgets (C1/C2 add an
+    entire `<think>` block TLE never sees in C0), so raw TLE/VC scale is not comparable across
+    stages independent of the underlying construct. Pooling the standardization across stages lets
+    a stage-driven scale difference masquerade as signal.
+  - **Consistent with the allocator's own normalization.** The Phase 2 allocator normalizes TLE/VC
+    stage-wise (per-stage ECDF, not pooled) for exactly this reason (see `CLAUDE.md` terminology
+    cheat sheet — pooled-ECDF is explicitly a rejected legacy pattern there). Standardizing the H3
+    confirmatory model pooled-across-stage while the allocator itself is stage-wise would be
+    internally inconsistent between two parts of the same thesis.
+  - **GEE significance is invariant to this choice, only interpretation changes.** Rescaling a
+    covariate by a constant scales its coefficient and standard error by the same factor, so the
+    Wald statistic, p-value, and significance decision at any given stage's data are unchanged by
+    switching from centering-only to z-standardizing *within that stage*. The two things this
+    *does* change: (a) whether cross-stage-pooled variance differences leak into the fitted
+    coefficient (fixed by standardizing per stage, independent of z vs. z/SD), and (b) coefficient
+    interpretability (per-SD effect sizes, APA 7 convention) — both real gains, no downside.
+  - **Coherence with the H3 power simulation.** `docs/gate_e_h3_power_simulation.md` already
+    expresses attenuation thresholds per-SD (β_z, SD=1 synthetic signals). A production model that
+    only mean-centers yields raw-unit coefficients not on the same scale as the reported power
+    thresholds — standardizing puts the fitted model and the pre-registered power analysis on the
+    same scale.
+  - **Cross-domain / cross-signal comparability.** TLE (nats, SD≈0.11) and VC (0–100, SD≈20–30)
+    are not comparable in raw units; per-SD standardization is what makes "does TLE or VC degrade
+    faster" (H3) a well-posed question in the first place.
+  - **Domain-wide-but-not-stage-conditional was considered and rejected** (the alternative
+    surfaced during the audit: keep domain-wide standardization, add an explicit `compute_stage`
+    main effect/interaction instead). Rejected because it doesn't fix the underlying
+    non-commensurability of the *input* to the interaction term (`z_c * p_c` would still mix
+    stage-scaled units before the stage effect could linearly correct for it), and it would add a
+    coefficient to a model the thesis's own confirmatory pre-registration (Ch.5 Table 5.2) doesn't
+    include, changing what's being tested rather than just how the input is scaled.
+- **Implementation:** `src/analysis/inference.py::fit_h3_model` — `compute_stage` is required per
+  row (rows missing it are dropped, same as missing signal/`y_optimal`); z is standardized via
+  `groupby("stage")` mean/SD before the existing `z_c * p_c` GEE fit (unchanged: exchangeable
+  `instance_key` clustering, pooled across stages for the regression itself — only the input
+  scaling changed). A stage group with zero or undefined variance now fails loudly
+  (`converged: False`) instead of silently producing a degenerate coefficient. Regression tests:
+  `tests/analysis/test_inference.py::test_fit_h3_model_standardizes_per_stage_not_pooled` and
+  `::test_fit_h3_model_converges_with_multi_stage_data`.
+- **Date:** 2026-07-27.

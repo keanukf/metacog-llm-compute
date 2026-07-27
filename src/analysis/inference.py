@@ -269,6 +269,14 @@ def fit_h3_model(
     """
     GEE: y ~ z_signal * position_norm with exchangeable instance clustering.
 
+    The signal is z-standardized (mean 0, SD 1) *within each compute_stage* (C0/C1/C2), not
+    pooled across stages -- raw TLE/VC scales are not commensurable across stages (different
+    decoding temperatures and reasoning-token budgets shift each signal's scale independently
+    of the construct being measured), mirroring the allocator's stage-wise ECDF normalization.
+    See docs/adrs.md ADR-006 for the full argument (incl. why this doesn't affect H3
+    significance, only interpretability) and the P0-5 entry in
+    ../metacog-thesis/notes/revision_audit_2026-07.md.
+
     Fallback: returns error dict if statsmodels GEE fails to converge.
     """
     rows = _as_rows(df)
@@ -278,8 +286,12 @@ def fit_h3_model(
     z: list[float] = []
     pos: list[float] = []
     groups: list[str] = []
+    stages: list[str] = []
     for r in rows:
         if r.get("y_optimal") is None:
+            continue
+        stage = r.get("compute_stage")
+        if not stage:
             continue
         tle = r.get("tle_mean_entropy")
         vc = r.get("vc")
@@ -295,6 +307,7 @@ def fit_h3_model(
         z.append(zv)
         pos.append(float(r.get("position_norm") or r.get("relative_step_position") or 0))
         groups.append(str(r.get("instance_key", "unknown")))
+        stages.append(str(stage))
     if len(y) < 20 or len(set(groups)) < 3:
         return {"converged": False, "note": "insufficient data"}
     try:
@@ -303,8 +316,19 @@ def fit_h3_model(
         from statsmodels.genmod.cov_struct import Exchangeable
         from statsmodels.genmod.families import Binomial
 
-        frame = pd.DataFrame({"y": y, "z": z, "position_norm": pos, "g": groups})
-        frame["z_c"] = frame["z"] - frame["z"].mean()
+        frame = pd.DataFrame(
+            {"y": y, "z": z, "position_norm": pos, "g": groups, "stage": stages}
+        )
+        stage_mean = frame.groupby("stage")["z"].transform("mean")
+        stage_std = frame.groupby("stage")["z"].transform("std")
+        if (stage_std == 0).any() or stage_std.isna().any():
+            return {
+                "converged": False,
+                "note": "zero- or undefined-variance signal within a compute_stage group",
+                "signal": signal,
+                "domain": domain,
+            }
+        frame["z_c"] = (frame["z"] - stage_mean) / stage_std
         frame["p_c"] = frame["position_norm"] - frame["position_norm"].mean()
         model = sm.GEE(
             frame["y"],
