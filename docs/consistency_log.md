@@ -2,6 +2,25 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-28 — Kanonischer Phase-1-Datensatz erstmals im Code festgeschrieben
+
+Die realen Phase-1-Daten liegen in zwei Verzeichnissen, weil `phase1_20260722_091125`'s
+TextWorld-Hälfte durch den bereits bekannten Stub-Environment-Bug (Commit `b47e35d`) verunreinigt
+ist (45/50 Instanzen unwinnable, 5.3% Erfolgsrate) und separat in
+`textworld_regen_20260724` (750 valide Episoden, 53.7% Erfolgsrate) neu gesammelt wurde. Diese
+Auswahlregel war bisher **nirgends im Repo dokumentiert**, auch nicht hier im Log — nur in der
+Commit-Message von `b47e35d` selbst.
+
+**Jetzt erstmals im Code festgeschrieben:** `src/analysis/phase1_canonical.py` — kanonischer
+Datensatz = `tower_of_hanoi` aus `phase1_20260722_091125` + `textworld` aus
+`textworld_regen_20260724`, 1500 Episoden gesamt (750+750). `assert_canonical_invariants()` prüft
+das hart (Gesamtzahl, pro Domain, pro Domain×Stage, Holdout-Instanzen pro Domain) und bricht laut
+ab bei jeder Abweichung — direkt gegen die echten Daten verifiziert: 1500 Episoden, alle
+Invarianten grün. `scripts/phase1_analysis/stage0_build_canonical_dataset.py` schreibt daraus ein
+Manifest (`content_hash` über die sortierte Episode-ID-Liste) statt die ~36GB Rohdaten zu
+kopieren; zweimal hintereinander ausgeführt liefert denselben `content_hash` (Idempotenz direkt
+verifiziert). Erster Baustein der Phase-1-Analyse-Pipeline (`feat/phase1-real-analysis`).
+
 ## 2026-07-28 — P0-7 (H2 CI-Grenze statt Punktschätzer) und P1-stat-7 (Prompt-Token-Tracking)
 
 **P0-7:** `h2_paired()` (`src/analysis/inference.py`) entschied bisher über den rohen

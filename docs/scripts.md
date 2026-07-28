@@ -13,6 +13,7 @@ Run from the **repository root** unless noted (e.g. `python scripts/experiment/r
 | `textworld` | TextWorld dataset generation and exploration |
 | `dev` | Manual play / smoke tests / diagnostics without a full experiment |
 | `cloud` | RunPod setup or result transfer |
+| `phase1-analysis` | Real Phase 1 confirmatory/exploratory analysis (production, not a rehearsal) |
 
 ## `scripts/experiment/` — production data-collection entry points
 
@@ -76,6 +77,16 @@ Checks run before/around a real run (former Gate C tooling).
 |--------|---------|-------------|--------|
 | [`analysis_pipeline_rehearsal.py`](../scripts/analysis_rehearsal/analysis_pipeline_rehearsal.py) | Analysis dry run: step table → grid-search → policy artifact → `load_policy` → `cluster_bootstrap` on ΔAUROC | End-to-end analysis rehearsal on pilot/C-5 data before real Phase 1 data | `dev` |
 | [`h3_power_simulation.py`](../scripts/analysis_rehearsal/h3_power_simulation.py) | Monte Carlo power simulation for the H3 signal×position_norm interaction: seeds ICC/entropy from pilot data, simulates clustered binary outcomes under the planned Phase 1 design, fits `fit_h3_model` (real GEE) per replicate, reports empirical power vs. true effect size | H3 power check; see `docs/gate_e_h3_power_simulation.md` for the report | `dev` |
+
+## `scripts/phase1_analysis/` — real Phase 1 confirmatory/exploratory analysis pipeline
+
+Each stage is independently runnable and idempotent (fixed seed, deterministic `stat_fn`s); a thin
+`run_all.py` chains them for full-pipeline reproduction. See `docs/phase1_analysis_report.md` for
+the archived results once the pipeline has been run against the real data.
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`stage0_build_canonical_dataset.py`](../scripts/phase1_analysis/stage0_build_canonical_dataset.py) | Selects `tower_of_hanoi` from `phase1_20260722_091125` + `textworld` from `textworld_regen_20260724` (see `src/analysis/phase1_canonical.py`), asserts frozen-design invariants, writes a content-hashed manifest every later stage reads through | First stage; run before any of the below | `phase1-analysis` |
 
 ## `scripts/run_readiness/` — budget, run-hygiene, resume, and output-quality checks
 
