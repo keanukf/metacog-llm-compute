@@ -30,6 +30,42 @@ def _skewness(vals: list[float]) -> float | None:
     return m3 / (s**3)
 
 
+def _summarize_bootstrap_reps(
+    point: float | None,
+    reps: list[float],
+    *,
+    n_boot: int,
+    n_nonfinite: int,
+    ci: tuple[float, float],
+) -> dict[str, Any]:
+    """Shared point/CI/skewness tail logic for ``cluster_bootstrap`` and
+    ``cluster_bootstrap_stratified`` -- percentile CI + skewness from a raw replicate list, so
+    the two resampling strategies don't duplicate this bookkeeping."""
+    if not reps:
+        return {
+            "point": point,
+            "ci_low": None,
+            "ci_high": None,
+            "n_boot": n_boot,
+            "skewness": None,
+            "reps": [],
+        }
+    sorted_reps = sorted(reps)
+    n_eff = len(sorted_reps)
+    lo_i = int(ci[0] * n_eff)
+    hi_i = min(int(ci[1] * n_eff), n_eff - 1)
+    return {
+        "point": float(point) if point is not None else None,
+        "ci_low": float(sorted_reps[lo_i]),
+        "ci_high": float(sorted_reps[hi_i]),
+        "n_boot": n_boot,
+        "n_boot_effective": n_eff,
+        "n_boot_nonfinite": n_nonfinite,
+        "skewness": _skewness(sorted_reps),
+        "reps": sorted_reps,
+    }
+
+
 def cluster_bootstrap(
     df: Any,
     stat_fn: Callable[[list[dict[str, Any]]], float],
@@ -50,14 +86,7 @@ def cluster_bootstrap(
         by_cluster[str(r.get(cluster_col, "unknown"))].append(r)
     clusters = list(by_cluster.keys())
     if len(clusters) < 2:
-        return {
-            "point": None,
-            "ci_low": None,
-            "ci_high": None,
-            "n_boot": n_boot,
-            "skewness": None,
-            "reps": [],
-        }
+        return _summarize_bootstrap_reps(None, [], n_boot=n_boot, n_nonfinite=0, ci=ci)
     rng = random.Random(seed)
     point = stat_fn(rows)
     reps: list[float] = []
@@ -84,29 +113,65 @@ def cluster_bootstrap(
             n_nonfinite += 1
             continue
         reps.append(v)
-    if not reps:
-        return {
-            "point": point,
-            "ci_low": None,
-            "ci_high": None,
-            "n_boot": n_boot,
-            "skewness": None,
-            "reps": [],
-        }
-    reps.sort()
-    n_eff = len(reps)
-    lo_i = int(ci[0] * n_eff)
-    hi_i = min(int(ci[1] * n_eff), n_eff - 1)
-    return {
-        "point": float(point),
-        "ci_low": float(reps[lo_i]),
-        "ci_high": float(reps[hi_i]),
-        "n_boot": n_boot,
-        "n_boot_effective": n_eff,
-        "n_boot_nonfinite": n_nonfinite,
-        "skewness": _skewness(reps),
-        "reps": reps,
-    }
+    return _summarize_bootstrap_reps(point, reps, n_boot=n_boot, n_nonfinite=n_nonfinite, ci=ci)
+
+
+def cluster_bootstrap_stratified(
+    df: Any,
+    stat_fn: Callable[[list[dict[str, Any]]], float],
+    *,
+    strata_col: str = "domain",
+    cluster_col: str = "instance_key",
+    n_boot: int = 5000,
+    seed: int = 20260703,
+    ci: tuple[float, float] = (0.05, 0.95),
+) -> dict[str, Any]:
+    """
+    Like ``cluster_bootstrap``, but resamples instance clusters *within each stratum
+    independently* before recombining into one resample per replicate.
+
+    H4's preregistration (verified verbatim in ``chapters/05_methodology.md``, thesis Ch.5 §5.8):
+    "estimated by the cluster bootstrap with instances resampled within each domain." Plain
+    ``cluster_bootstrap`` pools all clusters from every stratum into one flat resampling pool,
+    which does not match that wording -- a single replicate could draw a domain-imbalanced mix
+    of clusters purely by chance. ``stat_fn`` (e.g. ``h4_diff_in_diff``) needs zero changes: it
+    already re-splits the combined rows by domain internally before computing its statistic.
+    """
+    rows = _as_rows(df)
+    by_stratum_cluster: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for r in rows:
+        stratum = str(r.get(strata_col, "unknown"))
+        cluster = str(r.get(cluster_col, "unknown"))
+        by_stratum_cluster[stratum][cluster].append(r)
+
+    strata = list(by_stratum_cluster.keys())
+    cluster_lists = {s: list(by_stratum_cluster[s].keys()) for s in strata}
+    if not strata or any(len(cluster_lists[s]) < 2 for s in strata):
+        return _summarize_bootstrap_reps(None, [], n_boot=n_boot, n_nonfinite=0, ci=ci)
+
+    rng = random.Random(seed)
+    point = stat_fn(rows)
+    reps: list[float] = []
+    n_nonfinite = 0
+    for _ in range(n_boot):
+        boot_rows: list[dict[str, Any]] = []
+        for s in strata:
+            clusters_s = cluster_lists[s]
+            sample_keys = [clusters_s[rng.randrange(len(clusters_s))] for _ in range(len(clusters_s))]
+            for k in sample_keys:
+                boot_rows.extend(by_stratum_cluster[s][k])
+        try:
+            v = float(stat_fn(boot_rows))
+        except Exception:
+            n_nonfinite += 1
+            continue
+        if not math.isfinite(v):
+            n_nonfinite += 1
+            continue
+        reps.append(v)
+    return _summarize_bootstrap_reps(point, reps, n_boot=n_boot, n_nonfinite=n_nonfinite, ci=ci)
 
 
 def one_sided_bootstrap_pvalue(reps: list[float], *, null_value: float = 0.0) -> float:

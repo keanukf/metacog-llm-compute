@@ -200,3 +200,125 @@ def _plot_stage_mix(
     fig.savefig(save_path, dpi=160)
     plt.close(fig)
     return {"stage_mix_overall": str(save_path)}
+
+
+def plot_auroc_comparison_bars(
+    h1a_results: dict[str, Any],
+    output_dir: str | Path,
+) -> dict[str, str]:
+    """
+    Phase 1 analysis Stage 6: grouped TLE-vs-VC AUROC bars per domain, from a Stage 2
+    (``stage2_h1a_discrimination.py``) result dict. Bar heights come from the independent
+    descriptive path (``descriptive_cross_check[domain]["optimal_only"]``, point-estimate AUROC,
+    no bootstrap CI of its own); the confirmatory ΔAUROC(TLE,VC) 90% CI and Holm-adjusted decision
+    are annotated per domain since that -- not either raw AUROC alone -- is what H1a decides on.
+    """
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except Exception:
+        return {}
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_path = output_dir / "h1a_auroc_comparison.png"
+
+    domains = sorted(h1a_results.get("by_domain", {}).keys())
+    if not domains:
+        return {}
+    tle_vals = []
+    vc_vals = []
+    annotations = []
+    for dom in domains:
+        desc = h1a_results["descriptive_cross_check"].get(dom, {}).get("optimal_only", {})
+        tle_vals.append(_safe_float(desc.get("tle", {}).get("auroc")) or 0.0)
+        vc_vals.append(_safe_float(desc.get("vc", {}).get("auroc")) or 0.0)
+        conf = h1a_results["by_domain"][dom]
+        holds = conf.get("decision_holds")
+        annotations.append(
+            f"ΔAUROC={conf['point']:.3f}\nCI=[{conf['ci_low']:.3f},{conf['ci_high']:.3f}]\nholds={holds}"
+            if conf.get("point") is not None
+            else "n/a"
+        )
+
+    x = range(len(domains))
+    width = 0.35
+    fig, ax = plt.subplots(figsize=(6.5, 4.6))
+    ax.bar([i - width / 2 for i in x], tle_vals, width, label="TLE")
+    ax.bar([i + width / 2 for i in x], vc_vals, width, label="VC")
+    for i, ann in enumerate(annotations):
+        ax.annotate(
+            ann,
+            (i, max(tle_vals[i], vc_vals[i]) + 0.02),
+            ha="center",
+            fontsize=7,
+            va="bottom",
+        )
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(domains)
+    ax.set_ylabel("AUROC (optimal-only, descriptive)")
+    ax.set_ylim(0, 1.15)
+    ax.set_title("H1a: TLE vs VC discrimination per domain")
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.legend(loc="upper left", frameon=False)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=160)
+    plt.close(fig)
+    return {"h1a_auroc_comparison": str(save_path)}
+
+
+def plot_h3_marginal_effect(
+    h3_results: dict[str, Any],
+    output_dir: str | Path,
+) -> dict[str, str]:
+    """
+    Phase 1 analysis Stage 6: signal x position marginal-effect curves from a Stage 4
+    (``stage4_h3_temporal.py``) result dict -- the temporal-degradation plot the thesis
+    methodology (Ch.5 §5.8) describes: predicted P(correct) vs. the stage-wise z-standardized
+    signal at an early (position_norm=0.1) and late (position_norm=0.9) episode position. Model
+    coefficients (const, z_c, p_c, interaction) already fully specify this curve -- no need to
+    re-touch the raw per-step table for a lower-level scatter overlay.
+    """
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+        import math as _math
+    except Exception:
+        return {}
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    written: dict[str, str] = {}
+
+    def _sigmoid(v: float) -> float:
+        return 1.0 / (1.0 + _math.exp(-v))
+
+    z_grid = [i / 20.0 for i in range(-40, 41)]  # -2.0 .. 2.0
+    for dom, sig_results in h3_results.get("results", {}).items():
+        for sig, fit in sig_results.items():
+            if not fit.get("converged"):
+                continue
+            params = fit["params"]
+            const, z_c, p_c, interaction = (
+                params["const"],
+                params["z_c"],
+                params["p_c"],
+                params["interaction"],
+            )
+            early = [_sigmoid(const + z_c * z + p_c * 0.1 + interaction * z * 0.1) for z in z_grid]
+            late = [_sigmoid(const + z_c * z + p_c * 0.9 + interaction * z * 0.9) for z in z_grid]
+
+            fig, ax = plt.subplots(figsize=(5.5, 4.0))
+            ax.plot(z_grid, early, label="early (position_norm=0.1)")
+            ax.plot(z_grid, late, label="late (position_norm=0.9)")
+            ax.set_xlabel(f"z-standardized {sig.upper()} (stage-wise)")
+            ax.set_ylabel("Predicted P(correct)")
+            ax.set_ylim(0, 1)
+            ax.set_title(f"H3 marginal effect: {dom}/{sig} (interaction={interaction:.3f})")
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc="best", frameon=False)
+            fig.tight_layout()
+            p = output_dir / f"h3_marginal_effect_{dom}_{sig}.png"
+            fig.savefig(p, dpi=160)
+            plt.close(fig)
+            written[f"h3_marginal_effect_{dom}_{sig}"] = str(p)
+
+    return written
