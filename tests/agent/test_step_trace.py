@@ -20,7 +20,7 @@ from src.utils.logging_utils import write_step_trace_line
 
 def test_normalize_step_result_nine_tuple():
     r = ("go south", {"mean_entropy": 0.1}, 50.0, 3, 2, None, None, "prompt text", "full\nresponse")
-    a, tle, vc, tok, calls, lp, vd, p, resp, cd = _normalize_step_result(r)
+    a, tle, vc, tok, calls, lp, vd, p, resp, cd, ptok = _normalize_step_result(r)
     assert a == "go south"
     assert tle == {"mean_entropy": 0.1}
     assert vc == 50.0
@@ -29,6 +29,7 @@ def test_normalize_step_result_nine_tuple():
     assert p == "prompt text"
     assert resp == "full\nresponse"
     assert cd is None
+    assert ptok == 0  # absent on a 9-length tuple -- older/mocked callers default to 0
 
 
 def test_write_step_trace_line_jsonl(tmp_path: Path) -> None:

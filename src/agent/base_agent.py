@@ -150,6 +150,7 @@ def run_episode(
     steps = 0
     total_lm_calls = 0
     total_tokens_generated = 0
+    total_prompt_tokens = 0
     tle_per_step: list[dict | None] = []
     vc_per_step: list[float | None] = []
     logprob_raw_per_step: list[list[dict[str, Any]] | None] = []
@@ -242,6 +243,7 @@ def run_episode(
                     prompt_full,
                     response_full,
                     call_detail,
+                    prompt_tokens_used,
                 ) = normalize_step_result(raw)
 
                 tle_per_step.append(tle)
@@ -250,6 +252,7 @@ def run_episode(
                     logprob_raw_per_step.append(log_raw)
                 vc_detail_per_step.append(vc_det)
                 total_tokens_generated += tokens_used
+                total_prompt_tokens += prompt_tokens_used
                 total_lm_calls += lm_calls_this_step
 
                 # Emit Langfuse children while the step span is active (keeps hierarchy stable).
@@ -295,6 +298,7 @@ def run_episode(
                     "compute_stage": compute_stage,
                     "action": action,
                     "tokens_generated": int(tokens_used),
+                    "prompt_tokens": int(prompt_tokens_used),
                     "lm_calls_this_step": int(lm_calls_this_step),
                     "step_wall_time_s": float(step_wall_time_s),
                     "tle": tle,
@@ -435,6 +439,7 @@ def run_episode(
                         "steps": int(steps),
                         "total_lm_calls": int(total_lm_calls),
                         "total_tokens_generated": int(total_tokens_generated),
+                        "total_prompt_tokens": int(total_prompt_tokens),
                     },
                     final_tags=final_tags,
                 )
@@ -476,6 +481,7 @@ def run_episode(
         "total_lm_calls": int(total_lm_calls),
         "tokens": int(total_tokens_generated),  # legacy
         "total_tokens_generated": int(total_tokens_generated),
+        "total_prompt_tokens": int(total_prompt_tokens),
         "normalized_compute_cost": float(normalized_compute_cost),
         "efficiency_score": efficiency_score,
         "wall_clock_time": wall_clock_time,
@@ -597,6 +603,7 @@ def run_adaptive_episode(
     steps = 0
     total_lm_calls = 0
     total_tokens_generated = 0
+    total_prompt_tokens = 0
     tle_per_step: list[dict | None] = []
     vc_per_step: list[float | None] = []
     logprob_raw_per_step: list[list[dict[str, Any]] | None] = []
@@ -704,6 +711,7 @@ def run_adaptive_episode(
                     prompt_full,
                     response_full,
                     call_detail,
+                    prompt_tokens_used,
                 ) = normalize_step_result(raw)
                 tle_per_step.append(tle)
                 vc_per_step.append(vc)
@@ -711,6 +719,7 @@ def run_adaptive_episode(
                     logprob_raw_per_step.append(log_raw)
                 vc_detail_per_step.append(vc_det)
                 total_tokens_generated += tokens_used
+                total_prompt_tokens += prompt_tokens_used
                 total_lm_calls += lm_calls_this_step
 
                 lf_meta_ad: dict[str, Any] = {
@@ -756,6 +765,7 @@ def run_adaptive_episode(
                     "compute_stage": stage,
                     "action": action,
                     "tokens_generated": int(tokens_used),
+                    "prompt_tokens": int(prompt_tokens_used),
                     "lm_calls_this_step": int(lm_calls_this_step),
                     "step_wall_time_s": float(step_wall_time_s),
                     "tle": tle,
@@ -904,6 +914,7 @@ def run_adaptive_episode(
                         "steps": int(steps),
                         "total_lm_calls": int(total_lm_calls),
                         "total_tokens_generated": int(total_tokens_generated),
+                        "total_prompt_tokens": int(total_prompt_tokens),
                     },
                     final_tags=final_tags,
                 )
@@ -945,6 +956,7 @@ def run_adaptive_episode(
         "total_lm_calls": int(total_lm_calls),
         "tokens": int(total_tokens_generated),  # legacy
         "total_tokens_generated": int(total_tokens_generated),
+        "total_prompt_tokens": int(total_prompt_tokens),
         "normalized_compute_cost": float(normalized_compute_cost),
         "efficiency_score": efficiency_score,
         "wall_clock_time": wall_clock_time,

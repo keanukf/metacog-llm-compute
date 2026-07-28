@@ -42,7 +42,7 @@ def test_c1_rejects_unclosed_thinking_instead_of_parsing_the_tag_as_the_action()
             return text, lp if logprobs else None
 
     step = get_step_fn("C1", vc_mode="none")
-    action, tle, _vc, _tok, _calls, *_mid, call_detail = step("obs", [], _M())
+    action, tle, _vc, _tok, _calls, *_mid, call_detail, _ptok = step("obs", [], _M())
     assert action == ""
     assert action != "<think>"
     assert tle is None
@@ -65,7 +65,7 @@ def test_c2_rejects_unclosed_sample_from_majority_vote():
             return text, lp if logprobs else None
 
     step = get_step_fn("C2", vc_mode="none", c2_n_samples=3, c2_tie_break_seed="seed")
-    action, tle, _vc, tok, calls, *_mid, call_detail = step("obs", [], _M())
+    action, tle, _vc, tok, calls, *_mid, call_detail, _ptok = step("obs", [], _M())
     assert action in {"A->C", "A->B"}
     assert tle is not None
     assert calls == 3
@@ -86,7 +86,7 @@ def test_c2_truncation_no_action_when_all_samples_inadmissible():
             return text, lp if logprobs else None
 
     step = get_step_fn("C2", vc_mode="followup", c2_n_samples=2, c2_tie_break_seed="seed")
-    action, tle, vc, tok, calls, *_mid, call_detail = step("obs", [], _M())
+    action, tle, vc, tok, calls, *_mid, call_detail, _ptok = step("obs", [], _M())
     assert action == ""
     assert tle is None
     assert vc is None

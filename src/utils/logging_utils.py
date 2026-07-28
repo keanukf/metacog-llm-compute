@@ -29,6 +29,7 @@ _MINIMAL_STEP_KEYS = frozenset(
         "tle",
         "vc",
         "tokens_generated",
+        "prompt_tokens",
         "lm_calls",
         "lm_calls_this_step",
         "correctness",

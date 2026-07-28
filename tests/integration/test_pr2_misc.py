@@ -78,7 +78,7 @@ def test_vc_retry_once_on_parse_failure():
             return "85", None
 
     model = _RetryModel()
-    vc, detail, extra_tok, extra_calls = _run_vc_followup(
+    vc, detail, extra_tok, extra_calls, extra_prompt_tok = _run_vc_followup(
         model,
         observation="obs",
         history=[],
@@ -97,6 +97,7 @@ def test_vc_retry_once_on_parse_failure():
     assert vc == 85.0
     assert detail is not None
     assert detail.get("retry_used") is True
+    assert extra_prompt_tok == 0  # mock returns a bare (text, logprobs) tuple, no prompt_tokens
     assert model.temperatures[1] == 0.0
 
 

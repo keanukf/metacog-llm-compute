@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from src.utils.errors import BackendError
+from src.utils.inference.generate_result import GenerateResult
 from src.utils.inference.logprob_config import resolve_top_logprobs
 from src.utils.inference.vllm_shared import normalize_chat_completion_logprobs
 
@@ -107,12 +108,21 @@ class ServerBackend:
         choice: dict[str, Any],
         *,
         logprobs: bool,
-    ) -> tuple[str, list[dict[str, Any]] | None]:
+        prompt_tokens: int | None = None,
+    ) -> GenerateResult:
         message = choice.get("message") or {}
         text = str(message.get("content") or "")
         raw_lp = choice.get("logprobs")
         lp_list = normalize_chat_completion_logprobs(raw_lp) if logprobs else None
-        return text, lp_list
+        return GenerateResult(text, lp_list, prompt_tokens)
+
+    @staticmethod
+    def _prompt_tokens_from_usage(data: dict[str, Any]) -> int | None:
+        usage = data.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        pt = usage.get("prompt_tokens")
+        return int(pt) if isinstance(pt, (int, float)) else None
 
     def generate(
         self,
@@ -122,7 +132,7 @@ class ServerBackend:
         max_tokens: int = 256,
         temperature: float = 0.3,
         **kwargs: Any,
-    ) -> tuple[str, list[dict[str, Any]] | None]:
+    ) -> GenerateResult:
         enable_thinking = kwargs.pop("enable_thinking", None)
         stop = kwargs.pop("stop", None)
         extra = {
@@ -141,7 +151,9 @@ class ServerBackend:
         )
         data = self._post_chat(payload)
         choice = (data.get("choices") or [{}])[0]
-        return self._parse_choice(choice, logprobs=logprobs)
+        return self._parse_choice(
+            choice, logprobs=logprobs, prompt_tokens=self._prompt_tokens_from_usage(data)
+        )
 
     def _generate_many_batched(
         self,
@@ -154,7 +166,7 @@ class ServerBackend:
         enable_thinking: bool | None,
         stop: Any,
         extra: dict[str, Any],
-    ) -> list[tuple[str, list[dict[str, Any]] | None]]:
+    ) -> list[GenerateResult]:
         payload = self._build_payload(
             prompt,
             logprobs=logprobs,
@@ -170,7 +182,14 @@ class ServerBackend:
         if not choices:
             return []
         ordered = sorted(choices, key=lambda c: int(c.get("index", 0)))
-        return [self._parse_choice(c, logprobs=logprobs) for c in ordered]
+        # One shared prompt for all n candidates in this single batched request, but booked in
+        # full per candidate (not divided) -- consistent with how completion/output tokens are
+        # already booked per candidate for C2 (see reasoning_step_core), which keeps the cost
+        # axis unbiased rather than rewarding batching with an artificially cheap prompt side.
+        prompt_tokens = self._prompt_tokens_from_usage(data)
+        return [
+            self._parse_choice(c, logprobs=logprobs, prompt_tokens=prompt_tokens) for c in ordered
+        ]
 
     def generate_many(
         self,
@@ -181,7 +200,7 @@ class ServerBackend:
         max_tokens: int = 256,
         temperature: float = 0.3,
         **kwargs: Any,
-    ) -> list[tuple[str, list[dict[str, Any]] | None]]:
+    ) -> list[GenerateResult]:
         nn = max(1, int(n))
         enable_thinking = kwargs.pop("enable_thinking", None)
         stop = kwargs.pop("stop", None)
@@ -215,7 +234,7 @@ class ServerBackend:
                 extra=extra,
             )
         except BackendError:
-            out: list[tuple[str, list[dict[str, Any]] | None]] = []
+            out: list[GenerateResult] = []
             for _ in range(nn):
                 out.append(
                     self.generate(

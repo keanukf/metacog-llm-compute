@@ -56,14 +56,16 @@ def c0_step_core(
     gen_kw = _action_generate_kwargs(action_max_tokens, action_temperature, action_stop)
     # Force thinking OFF for baseline action calls (C0). Only the C1-CoT subcall uses thinking.
     gen_kw["enable_thinking"] = False
-    text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
+    result = model.generate(prompt, logprobs=True, **gen_kw)
+    text, logprobs = result
+    prompt_tokens_used = int(getattr(result, "prompt_tokens", None) or 0)
     tle = token_entropy.extract_action_tle_from_response(text, logprobs) if logprobs else None
     tokens_used = len(logprobs) if logprobs else 0
     lm_calls = 1
 
     action = _normalize_action_line(text)
 
-    vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
+    vc, vc_detail, extra_tok, extra_calls, extra_prompt_tok = _resolve_vc(
         model,
         vc_mode=vc_mode,
         inline_text=text,
@@ -89,11 +91,24 @@ def c0_step_core(
     )
     tokens_used += extra_tok
     lm_calls += extra_calls
+    prompt_tokens_used += extra_prompt_tok
 
     lp_out: list[dict[str, Any]] | None = logprobs if save_action_logprobs else None
     diag = collect_step_inference_diagnostics(model)
     call_detail = {"stage": "C0", "inference_diagnostics": diag} if diag else None
-    return (action, tle, vc, tokens_used, lm_calls, lp_out, vc_detail, prompt, text, call_detail)
+    return (
+        action,
+        tle,
+        vc,
+        tokens_used,
+        lm_calls,
+        lp_out,
+        vc_detail,
+        prompt,
+        text,
+        call_detail,
+        prompt_tokens_used,
+    )
 
 
 def c0_step(

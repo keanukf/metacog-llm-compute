@@ -1,9 +1,9 @@
 """Backward-compatible unpacking of step-function return tuples.
 
-Step functions have grown their return arity over the project's life (from a 3-tuple to the current
-10-tuple ``StepReturn``). This adapter lets the episode loop accept any historical width -- older
-mocks and tests still return short tuples -- and always hand back the full 10-field shape with
-missing trailing fields filled in. New code should return the full ``StepReturn``.
+Step functions have grown their return arity over the project's life (from a 3-tuple to the
+current 11-tuple ``StepReturn``). This adapter lets the episode loop accept any historical width
+-- older mocks and tests still return short tuples -- and always hand back the full 11-field shape
+with missing trailing fields filled in. New code should return the full ``StepReturn``.
 """
 
 from __future__ import annotations
@@ -24,10 +24,11 @@ def normalize_step_result(
     str | None,
     str | None,
     dict[str, Any] | None,
+    int,
 ]:
     """
     Unpack step result as (action, tle, vc, tokens_used, lm_calls_this_step, logprobs_raw,
-    vc_detail, prompt_full, response_full, call_detail).
+    vc_detail, prompt_full, response_full, call_detail, prompt_tokens_used).
     """
     raw_lp: list[dict[str, Any]] | None = None
     vc_detail: dict[str, Any] | None = None
@@ -35,6 +36,10 @@ def normalize_step_result(
     response_full: str | None = None
     call_detail: dict[str, Any] | None = None
     n = len(result)
+    prompt_tokens_used = 0
+    if n >= 11:
+        p10 = result[10]
+        prompt_tokens_used = int(p10) if isinstance(p10, (int, float)) else 0
     if n >= 9:
         p7, p8 = result[7], result[8]
         prompt_full = p7 if isinstance(p7, str) else None
@@ -66,6 +71,7 @@ def normalize_step_result(
             prompt_full,
             response_full,
             call_detail,
+            prompt_tokens_used,
         )
     if len(result) >= 4:
         return (
@@ -79,6 +85,7 @@ def normalize_step_result(
             prompt_full,
             response_full,
             call_detail,
+            prompt_tokens_used,
         )
     return (
         result[0],
@@ -91,4 +98,5 @@ def normalize_step_result(
         prompt_full,
         response_full,
         call_detail,
+        prompt_tokens_used,
     )

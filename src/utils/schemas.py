@@ -25,6 +25,10 @@ class StepRecord(_StepRecordRequired, total=False):
     vc: float | None
     correctness: str | None
     observation_length_chars: int
+    # Added 2026-07-28 (revision_audit P1-stat-7): backend-reported input-token count for this
+    # step's LM call(s), booked per candidate like tokens_generated. Absent on episodes collected
+    # before this field existed (Phase 1) -- optional by design, not a missing-data bug.
+    prompt_tokens: int
 
 
 class _EpisodeRecordRequired(TypedDict):
@@ -44,3 +48,7 @@ class _EpisodeRecordRequired(TypedDict):
 class EpisodeRecord(_EpisodeRecordRequired, total=False):
     schema_version: str
     extra: dict[str, Any]
+    # Added 2026-07-28 (revision_audit P1-stat-7): "Total Tokens Processed" secondary DV
+    # (input side; total_tokens_generated already covers output). Deliberately absent on Phase 1
+    # episodes (economy decision) -- Phase 1 analyses never depend on it. Present from Phase 2 on.
+    total_prompt_tokens: int

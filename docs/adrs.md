@@ -95,3 +95,83 @@
   `tests/analysis/test_inference.py::test_fit_h3_model_standardizes_per_stage_not_pooled` and
   `::test_fit_h3_model_converges_with_multi_stage_data`.
 - **Date:** 2026-07-27.
+
+## ADR-007: `h2_paired()` decides on the bootstrap CI bound, not the point estimate
+
+- **Decision:** `h2_paired` now cluster-bootstraps `mean_success_diff` and `mean_log_token_diff`
+  over resampled instances (5000 reps, the same engine used everywhere else) and bases
+  `non_inferiority_holds`/`token_superiority_holds` on the **lower** bootstrap CI bound, not the
+  raw paired-mean point estimate.
+- **Context:** found during the pre-Phase-1-analysis cross-check against
+  `../metacog-thesis/notes/praeregistrierung_auswertungsplan.md` and the current Ch.5 prose (§5.8:
+  "H2 holds ... only when both one-sided bootstrap intervals satisfy their bounds"). The prior
+  implementation compared the point estimate directly against the threshold and was never
+  composed with `cluster_bootstrap` anywhere in the codebase — confirmed by grep, it wasn't called
+  at all outside its own definition and one unit test. A point estimate crossing a threshold is a
+  materially weaker claim than a CI bound crossing it, given the paired-cluster non-independence
+  the rest of the inference engine exists to handle.
+- **Sign convention:** both `succ_diff` (policy success − baseline success) and `log_tok_diff`
+  (log baseline tokens − log policy tokens) are oriented larger-is-better, so both decision rules
+  use the lower CI bound (`ci_low > -delta` / `ci_low > 0`), not one lower and one upper.
+- **Regression test:** `tests/analysis/test_inference.py::
+  test_h2_paired_decides_on_ci_bound_not_point_estimate` constructs a 10-instance case with
+  `mean_success_diff == 0.0` (point estimate would say "holds", since `0.0 > -0.05`) but high
+  instance-to-instance variance (arms alternate which one wins) that pushes the CI lower bound
+  well below `-0.05`, so the correct decision is "does not hold."
+- **Date:** 2026-07-28. Full suite green (376 tests at the time of this fix).
+
+## ADR-008: Prompt/input-token tracking (`total_prompt_tokens`), Phase 2 onward
+
+- **Decision:** track backend-reported prompt/input tokens per LM call, booked per candidate the
+  same way output tokens (`total_tokens_generated`) already are, surfaced as `prompt_tokens` per
+  step and `total_prompt_tokens` per episode. **Deliberately not retrofitted onto the already-
+  collected Phase 1 data** (debug-view prompts are head/tail-truncated to 800 chars, not full, so
+  it can't be reconstructed) — present from Phase 2 (Run 2) on.
+- **Context:** `notes/praeregistrierung_auswertungsplan.md` §2.2 names "Total Tokens Processed pro
+  Episode (Input + Output)" as a secondary DV; the episode schema only ever tracked the output
+  side. Ch.5 §5.3 prose now states the phase asymmetry explicitly (see revision_audit P1-stat-7).
+- **Where the number actually comes from:** the vLLM OpenAI-compatible server response already
+  carries `usage.prompt_tokens` at the top level; `ServerBackend._post_chat` was reading `data` but
+  only ever pulling `choices`, discarding `usage` entirely. Now extracted via
+  `_prompt_tokens_from_usage` and threaded through.
+- **Backward compatibility (the actual engineering problem here):** `generate()`/`generate_many()`
+  are called via a frozen `text, logprobs = model.generate(...)` 2-tuple-unpacking contract at
+  every call site, and ~45 test mocks across the suite return a bare 2-tuple. Changing the return
+  arity would have broken all of them. Solution: `src/utils/inference/generate_result.py::
+  GenerateResult` — an object whose `__iter__`/`__len__`/`__getitem__` all behave exactly like a
+  2-tuple (so `text, logprobs = result` and every existing mock are unaffected), but which also
+  carries `.prompt_tokens`, read via `getattr(result, "prompt_tokens", None) or 0` at call sites
+  that want it. A mock returning a plain tuple has no such attribute, so `getattr` gracefully
+  yields `None`/`0` — prompt-token tracking is backend-real-only by construction, never fabricated.
+- **Per-candidate booking, not shared-prefix accounting:** a batched `n>1` request (C2 draws 3
+  candidates in one HTTP call) reports one shared `usage.prompt_tokens` for the whole request, but
+  it is attached **in full to each of the n candidates**, not divided — symmetric with how
+  `reasoning_step_core` already books output tokens in full per candidate ("Compute is nevertheless
+  booked for all three generations, which keeps the cost axis unbiased," Ch.5 §5.9). Getting this
+  inconsistent between input and output would make batching look artificially cheaper on the input
+  side than the output side for no principled reason.
+- **`StepReturn` grew an 11th field** (`prompt_tokens_used`), appended at the end;
+  `normalize_step_result` defaults it to `0` for any shorter/older tuple. Appending (not inserting)
+  was deliberate: a few tests use `*_mid, call_detail = step(...)` catchall-unpacking that assumes
+  `call_detail` is the *last* element — inserting in the middle would have silently broken that
+  invariant instead of just changing arity (an explicit, loud `ValueError` at the 3 affected call
+  sites, all fixed).
+- **Compact storage gap caught and fixed in the same pass:** `src/utils/logging_utils.py::
+  _MINIMAL_STEP_KEYS` is an explicit allowlist the production (default `compact=True`) storage path
+  filters `steps_detail` through — `prompt_tokens` had to be added there too, or the field would be
+  computed correctly in memory and then silently stripped before ever reaching disk. Caught by a
+  dedicated regression test, `tests/utils/test_logging_utils_compact.py`, not by accident.
+- **Scope boundary (deliberate, not an oversight):** `VLLMWrapper` and `LMStudioWrapper` (the
+  in-process and LM-Studio backends, used for Gate C parity checks and local dev, never for
+  production Phase 1/2 `--real` collection, which is `execution.backend_mode: server` only) are
+  untouched — they still return plain tuples, so `prompt_tokens` is `0`/absent through them. Also
+  untouched: `src/execution/metrics.py`'s run-level throughput reporting (`avg_tokens_by_stage`,
+  `tokens_per_sec`) — that would need scheduler-level accumulation across a whole run, a separate
+  feature from the per-episode DV this ADR is about.
+- **Tests:** `tests/utils/test_generate_result.py` (the carrier object), 3 new cases in
+  `tests/execution/test_execution_server.py` (usage extraction, missing-usage, batched-shared
+  attribution), 3 new cases in `tests/agent/test_token_accounting.py` (C0/C2 per-episode sums,
+  zero-default for non-reporting backends), `tests/utils/test_logging_utils_compact.py` (the
+  compact-storage allowlist gap). Full suite green (387 tests) after 6 pre-existing tests were
+  updated for the new (backward-compatible) arity — see commit for the list.
+- **Date:** 2026-07-28.

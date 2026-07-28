@@ -161,7 +161,9 @@ def test_c2_winner_tle_and_vc_use_same_winner_index_on_tie():
         c2_tie_break_seed="fixed-seed",
         c2_sample_temperature=0.7,
     )
-    action, tle, vc, _tok, _calls, _lp, _vc_det, _prompt, _resp, call_detail = step("obs", [], m)
+    action, tle, vc, _tok, _calls, _lp, _vc_det, _prompt, _resp, call_detail, _ptok = step(
+        "obs", [], m
+    )
     assert action in {"go north", "go south"}
     assert tle is not None
     assert vc == 80.0

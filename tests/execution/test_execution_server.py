@@ -113,6 +113,49 @@ def test_generate_many_uses_single_n_request():
     assert outs[0][1] is not None
 
 
+def test_generate_extracts_prompt_tokens_from_usage():
+    """P1-stat-7: the vLLM OpenAI-compatible response's usage.prompt_tokens was being parsed and
+    then discarded (only choices were read); generate() must now surface it via
+    GenerateResult.prompt_tokens without changing the (text, logprobs) unpacking contract."""
+    backend = ServerBackend(server_url="http://127.0.0.1:8000/v1", model_name="test-model")
+    backend._post_chat = lambda payload: {  # type: ignore[method-assign]
+        "choices": [{"index": 0, "message": {"content": "go north"}, "logprobs": None}],
+        "usage": {"prompt_tokens": 123, "completion_tokens": 3, "total_tokens": 126},
+    }
+    result = backend.generate("obs")
+    text, logprobs = result  # unchanged 2-tuple unpacking still works
+    assert text == "go north"
+    assert logprobs is None
+    assert result.prompt_tokens == 123
+
+
+def test_generate_missing_usage_yields_none_prompt_tokens():
+    backend = ServerBackend(server_url="http://127.0.0.1:8000/v1", model_name="test-model")
+    backend._post_chat = lambda payload: {  # type: ignore[method-assign]
+        "choices": [{"index": 0, "message": {"content": "go north"}, "logprobs": None}]
+    }
+    result = backend.generate("obs")
+    assert result.prompt_tokens is None
+
+
+def test_generate_many_batched_attaches_shared_prompt_tokens_to_each_candidate():
+    """A batched n>1 request has one shared prompt for all n candidates -- usage.prompt_tokens
+    reflects that single shared cost, and (per the codebase's existing per-candidate cost-booking
+    convention for output tokens, see reasoning_step_core) it is attached in full to each
+    candidate rather than divided, keeping input/output cost-accounting symmetric."""
+    backend = ServerBackend(server_url="http://127.0.0.1:8000/v1", model_name="test-model")
+    backend._post_chat = lambda payload: {  # type: ignore[method-assign]
+        "choices": [
+            {"index": i, "message": {"content": f"go north {i}"}, "logprobs": None}
+            for i in range(3)
+        ],
+        "usage": {"prompt_tokens": 50, "completion_tokens": 30, "total_tokens": 80},
+    }
+    outs = backend.generate_many("obs", n=3)
+    assert len(outs) == 3
+    assert all(o.prompt_tokens == 50 for o in outs)
+
+
 def test_generate_many_falls_back_to_sequential_on_backend_error():
     calls = {"n": 0}
 

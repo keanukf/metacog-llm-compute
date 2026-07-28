@@ -21,8 +21,14 @@ from src.agent import compute_prompt_utils, cot_parser
 from src.signals import token_entropy, verbalized_confidence
 from src.utils.inference.lmstudio.wrapper import attach_lmstudio_diagnostics_to_subcalls
 
-# (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None, prompt_full, response_full, call_detail|None)
-StepReturn = tuple[str, dict[str, float] | None, float | None, int, int, Any, Any, str, str, Any]
+# (action, tle, vc, tokens_used, lm_calls, action_logprobs_raw|None, vc_detail|None, prompt_full,
+#  response_full, call_detail|None, prompt_tokens_used)
+# prompt_tokens_used (added 2026-07-28, revision_audit P1-stat-7): backend-reported input-token
+# count, booked per candidate the same way tokens_used (output) already is -- 0 when the backend
+# can't report it (e.g. a test mock's bare (text, logprobs) tuple; see GenerateResult).
+StepReturn = tuple[
+    str, dict[str, float] | None, float | None, int, int, Any, Any, str, str, Any, int
+]
 
 # Present in every VC follow-up prompt — tests and mocks can detect the second call without coupling to wording details.
 VC_FOLLOWUP_PROMPT_MARKER = "<output_to_judge>"
@@ -523,8 +529,11 @@ def _run_vc_followup(
     followup_max_context_chars: int | None = None,
     followup_cot_max_chars: int = 12000,
     raw_completion_max_chars: int = 8000,
-) -> tuple[float | None, dict[str, Any] | None, int, int]:
-    """Second LM call for verbalized confidence. Returns (vc, detail, extra_tokens, extra_calls)."""
+) -> tuple[float | None, dict[str, Any] | None, int, int, int]:
+    """Second LM call for verbalized confidence.
+
+    Returns ``(vc, detail, extra_tokens, extra_calls, extra_prompt_tokens)``.
+    """
     prompt = _build_vc_followup_prompt(
         observation,
         history,
@@ -550,27 +559,28 @@ def _run_vc_followup(
         "stop": ["\n"],
     }
 
-    def _one_call(temp: float) -> tuple[str, Any, dict[str, Any]]:
+    def _one_call(temp: float) -> tuple[str, Any, dict[str, Any], int]:
         kw = dict(gen_kw)
         kw["temperature"] = float(temp)
-        if request_logprobs:
-            text, logprobs = model.generate(prompt, logprobs=True, **kw)
-        else:
-            text, logprobs = model.generate(prompt, logprobs=False, **kw)
+        result = model.generate(prompt, logprobs=request_logprobs, **kw)
+        text, logprobs = result
+        prompt_tok = int(getattr(result, "prompt_tokens", None) or 0)
         detail = verbalized_confidence.extract_vc_from_followup(prompt, text, logprobs)
-        return text, logprobs, detail
+        return text, logprobs, detail, prompt_tok
 
-    text, _logprobs, detail = _one_call(followup_temperature)
+    text, _logprobs, detail, prompt_tok = _one_call(followup_temperature)
     vc_val = detail.get("vc_value")
     retry_used = False
     extra_calls = 1
     extra_tokens = int(detail.get("vc_tokens_used") or 0)
+    extra_prompt_tokens = prompt_tok
     if vc_val is None and retry_on_parse_failure:
-        _text2, _logprobs2, detail_retry = _one_call(0.0)
+        _text2, _logprobs2, detail_retry, prompt_tok2 = _one_call(0.0)
         detail = dict(detail_retry)
         retry_used = True
         extra_calls = 2
         extra_tokens += int(detail_retry.get("vc_tokens_used") or 0)
+        extra_prompt_tokens += prompt_tok2
         vc_val = detail.get("vc_value")
     detail["retry_used"] = retry_used
     vc_f: float | None
@@ -578,7 +588,7 @@ def _run_vc_followup(
         vc_f = float(vc_val)
     else:
         vc_f = None
-    return vc_f, detail, extra_tokens, extra_calls
+    return vc_f, detail, extra_tokens, extra_calls, extra_prompt_tokens
 
 
 def _resolve_vc(
@@ -606,11 +616,11 @@ def _resolve_vc(
     followup_max_context_chars: int | None = None,
     followup_cot_max_chars: int = 12000,
     raw_completion_max_chars: int = 8000,
-) -> tuple[float | None, dict[str, Any] | None, int, int]:
-    """Returns (vc, vc_detail, extra_tokens, extra_lm_calls)."""
+) -> tuple[float | None, dict[str, Any] | None, int, int, int]:
+    """Returns (vc, vc_detail, extra_tokens, extra_lm_calls, extra_prompt_tokens)."""
     mode = (vc_mode or "inline").strip().lower()
     if mode == "none":
-        return None, None, 0, 0
+        return None, None, 0, 0, 0
     if mode == "followup":
         return _run_vc_followup(
             model,
@@ -636,7 +646,7 @@ def _resolve_vc(
             raw_completion_max_chars=raw_completion_max_chars,
         )
     vc = verbalized_confidence.parse_confidence(inline_text)
-    return vc, None, 0, 0
+    return vc, None, 0, 0, 0
 
 
 # --------------------------------------------------------------------------------------------
@@ -808,25 +818,30 @@ def reasoning_step_core(
 
     samples: list[dict[str, Any]] = []
     total_tokens = 0
+    total_prompt_tokens = 0
     n = max(1, int(n_samples))
     if hasattr(model, "generate_many") and callable(getattr(model, "generate_many")):
         outs = model.generate_many(prompt, n=n, logprobs=True, **gen_kw)
-        for i, (text, logprobs) in enumerate(outs):
+        for i, out_item in enumerate(outs):
+            text, logprobs = out_item
             samples.append(
                 _build_reasoning_candidate(
                     sample_index=i, prompt=prompt, text=text, logprobs=logprobs
                 )
             )
             total_tokens += len(logprobs) if logprobs else 0
+            total_prompt_tokens += int(getattr(out_item, "prompt_tokens", None) or 0)
     else:
         for i in range(n):
-            text, logprobs = model.generate(prompt, logprobs=True, **gen_kw)
+            result = model.generate(prompt, logprobs=True, **gen_kw)
+            text, logprobs = result
             samples.append(
                 _build_reasoning_candidate(
                     sample_index=i, prompt=prompt, text=text, logprobs=logprobs
                 )
             )
             total_tokens += len(logprobs) if logprobs else 0
+            total_prompt_tokens += int(getattr(result, "prompt_tokens", None) or 0)
 
     admissible_samples = [s for s in samples if s.get("admissible")]
     n_admissible = len(admissible_samples)
@@ -868,10 +883,10 @@ def reasoning_step_core(
         winner_mean_logprob = float(mlp) if isinstance(mlp, (int, float)) else None
     winner_completion = str(winner_sample.get("response") or "")
 
-    vc, vc_detail, extra_tok, extra_calls = None, None, 0, 0
+    vc, vc_detail, extra_tok, extra_calls, extra_prompt_tok = None, None, 0, 0, 0
     if step_outcome == "vote" and winner_action_exec:
         admissible_first_lines = [str(s.get("raw_first_line") or "") for s in admissible_samples]
-        vc, vc_detail, extra_tok, extra_calls = _resolve_vc(
+        vc, vc_detail, extra_tok, extra_calls, extra_prompt_tok = _resolve_vc(
             model,
             vc_mode=vc_mode,
             inline_text=winner_completion,
@@ -899,6 +914,7 @@ def reasoning_step_core(
         )
 
     total_tokens += extra_tok
+    total_prompt_tokens += extra_prompt_tok
     lm_calls = int(n) + extra_calls
     if save_action_logprobs:
         lp_saved: list[Any] | None = [
@@ -971,4 +987,5 @@ def reasoning_step_core(
         prompt,
         response_full,
         call_detail,
+        int(total_prompt_tokens),
     )

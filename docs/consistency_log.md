@@ -2,6 +2,29 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-07-28 — P0-7 (H2 CI-Grenze statt Punktschätzer) und P1-stat-7 (Prompt-Token-Tracking)
+
+**P0-7:** `h2_paired()` (`src/analysis/inference.py`) entschied bisher über den rohen
+Punktschätzer der gepaarten Mittelwerte, nie über eine Bootstrap-CI-Grenze — obwohl sowohl
+`notes/praeregistrierung_auswertungsplan.md` als auch die aktuelle Ch.5-Prosa explizit die
+CI-Grenze verlangen. Per Grep bestätigt: die Funktion wurde nirgends im Code mit
+`cluster_bootstrap` komponiert. Jetzt gefixt — beide Statistiken werden über Instanzen
+bootstrap-resampled, Entscheidung läuft über die untere CI-Grenze. Volle Argumentation:
+`docs/adrs.md` ADR-007. Regressionstest konstruiert einen Fall mit Mittelwert 0.0 (Punktschätzer
+hätte "hält" gesagt) aber hoher Varianz, wo die CI-Grenze korrekt "hält nicht" sagt.
+
+**P1-stat-7:** Prompt-/Input-Token-Tracking eingebaut (`total_prompt_tokens` pro Episode,
+`prompt_tokens` pro Step), gemäß Nutzer-Entscheidung vom 2026-07-28 (Option a) — vor Run 2, nicht
+rückwirkend für Phase 1 (Ökonomie-Entscheidung, keine Phase-1-Analyse braucht das Feld). Kommt aus
+`usage.prompt_tokens` in der vLLM-Serverantwort, die bisher gelesen und dann verworfen wurde.
+Rückwärtskompatibel über `GenerateResult` (verhält sich exakt wie ein 2-Tupel für die ~45
+bestehenden Test-Mocks und alle Call-Sites, trägt zusätzlich `.prompt_tokens`). Ein subtiler
+Fund unterwegs: `src/utils/logging_utils.py::_MINIMAL_STEP_KEYS` hätte das neue Feld beim
+Compact-Storage-Schritt (Produktions-Default) still wieder rausgefiltert — gefangen durch einen
+dedizierten Regressionstest, nicht zufällig entdeckt. Volle Argumentation: `docs/adrs.md` ADR-008.
+Volle Suite grün (387 Tests, davon 6 vorbestehende an die neue, rückwärtskompatible Arity
+angepasst).
+
 ## 2026-07-27 — P0-5 (Revision-Audit): H3-Signal-Standardisierung von Mean-Centering auf
 stage-weises Z-Standardisieren korrigiert
 

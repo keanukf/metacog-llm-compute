@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from src.agent.base_agent import run_episode
 from src.agent.compute_stages import VC_FOLLOWUP_PROMPT_MARKER, get_step_fn
+from src.utils.inference.generate_result import GenerateResult
 
 
 class _OneStepEnv:
@@ -68,9 +69,33 @@ class _VcRetryEpisodeModel:
         return "go north", [{"logprob": -0.5}] * 4 if logprobs else None
 
 
+class _PromptTokenModel:
+    """Backend that reports a real prompt-token count via GenerateResult, matching what
+    ServerBackend now does against a real vLLM usage block (P1-stat-7)."""
+
+    def __init__(self, prompt_tokens: int = 100):
+        self.prompt_tokens = prompt_tokens
+
+    def generate(self, prompt, logprobs=False, **kwargs):
+        lp = [{"logprob": -0.5}] * 3 if logprobs else None
+        text = "<think>\nthink\n</think>\ngo north" if kwargs.get("enable_thinking") else "go north"
+        return GenerateResult(text, lp, prompt_tokens=self.prompt_tokens)
+
+    def generate_many(self, prompt, n=3, logprobs=False, **kwargs):
+        return [
+            GenerateResult("go north", [{"logprob": -0.5}] * 4, prompt_tokens=self.prompt_tokens)
+            for _ in range(n)
+        ]
+
+
 def _assert_episode_token_sum(r: dict) -> None:
     step_sum = sum(int(sd.get("tokens_generated") or 0) for sd in r["steps_detail"])
     assert r["total_tokens_generated"] == step_sum
+
+
+def _assert_episode_prompt_token_sum(r: dict) -> None:
+    step_sum = sum(int(sd.get("prompt_tokens") or 0) for sd in r["steps_detail"])
+    assert r["total_prompt_tokens"] == step_sum
 
 
 def test_c0_episode_tokens_match_subcall_sum():
@@ -122,3 +147,40 @@ def test_vc_retry_doubles_followup_calls():
     )
     assert lm_calls == 3
     assert model.followup_calls == 2
+
+
+def test_c0_episode_prompt_tokens_match_subcall_sum():
+    """P1-stat-7 regression: total_prompt_tokens must equal the sum of per-step prompt_tokens,
+    the same invariant already enforced for output tokens above."""
+    env = _OneStepEnv()
+    model = _PromptTokenModel(prompt_tokens=100)
+    step_fn = get_step_fn("C0", vc_mode="none")
+    r = run_episode(env, model, "C0", step_fn=step_fn, max_steps=5)
+    _assert_episode_prompt_token_sum(r)
+    assert r["total_prompt_tokens"] > 0
+
+
+def test_c2_episode_prompt_tokens_booked_per_candidate_not_shared():
+    """C2 draws 3 candidates per step; a real batched vLLM request reports one shared
+    prompt_tokens value, attached to each candidate (test_generate_many_batched_attaches_shared_
+    prompt_tokens_to_each_candidate in test_execution_server.py) -- reasoning_step_core must then
+    sum it per-candidate, symmetric with how it already sums output tokens per-candidate."""
+    env = _OneStepEnv()
+    model = _PromptTokenModel(prompt_tokens=50)
+    step_fn = get_step_fn("C2", vc_mode="none", c2_n_samples=3)
+    r = run_episode(env, model, "C2", step_fn=step_fn, max_steps=5)
+    _assert_episode_prompt_token_sum(r)
+    # One step, 3 candidates, 50 prompt tokens booked per candidate -> 150 for that step.
+    assert r["steps_detail"][0]["prompt_tokens"] == 150
+
+
+def test_prompt_tokens_default_to_zero_when_backend_cannot_report_them():
+    """Every other test in this file uses a plain-tuple-returning mock (no GenerateResult) --
+    confirms that path (still the overwhelming majority of the test suite) yields exactly 0, not
+    an error, keeping the whole feature purely additive."""
+    env = _OneStepEnv()
+    model = _TokenModel(n_tokens=4)
+    step_fn = get_step_fn("C0", vc_mode="none")
+    r = run_episode(env, model, "C0", step_fn=step_fn, max_steps=5)
+    assert r["total_prompt_tokens"] == 0
+    assert all(int(sd.get("prompt_tokens") or 0) == 0 for sd in r["steps_detail"])

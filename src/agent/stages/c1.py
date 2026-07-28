@@ -60,6 +60,7 @@ def c1_step_core(
         prompt,
         response_full,
         call_detail,
+        prompt_tokens_used,
     ) = reasoning_step_core(
         observation,
         history,
@@ -99,6 +100,7 @@ def c1_step_core(
         prompt,
         response_full,
         call_detail,
+        prompt_tokens_used,
     )
 
 
