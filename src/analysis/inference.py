@@ -324,6 +324,20 @@ def bh(pvals_or_bounds: list[float]) -> list[dict[str, Any]]:
     return [{"index": i, "raw": pvals_or_bounds[i], "adjusted": adj[i]} for i in range(m)]
 
 
+def one_sided_wald_pvalue(coef: float, p_two_sided: float, *, direction: int = -1) -> float:
+    """One-sided p-value for a directional GEE/Wald coefficient test (H3's interaction term).
+
+    A two-sided Wald p-value splits evenly across both tails under the standard symmetric-
+    statistic assumption; halving it gives the one-sided p-value when the estimate points the
+    hypothesized way (``direction=-1`` for "coefficient < 0", the H3 degradation direction), and
+    the complement (``1 - p_two_sided/2``) when it points the wrong way -- a coefficient in the
+    wrong direction can never support a directional hypothesis, however small its two-sided p.
+    """
+    half = p_two_sided / 2.0
+    points_right_way = coef < 0 if direction < 0 else coef > 0
+    return half if points_right_way else (1.0 - half)
+
+
 def fit_h3_model(
     df: Any,
     *,

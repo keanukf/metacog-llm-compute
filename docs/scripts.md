@@ -90,6 +90,7 @@ the archived results once the pipeline has been run against the real data.
 | [`stage1_preanalysis_screen.py`](../scripts/phase1_analysis/stage1_preanalysis_screen.py) | Signal variance/VC degeneration, cluster counts, class balance by domain and position (with empty-cell flag), episode-length quartiles, real ICC (`src/analysis/icc.py`) -- diagnostic, doesn't block later stages | Before trusting any Stage 2+ confirmatory number | `phase1-analysis` |
 | [`stage2_h1a_discrimination.py`](../scripts/phase1_analysis/stage2_h1a_discrimination.py) | H1a per domain: ΔAUROC(TLE,VC) via `cluster_bootstrap`/`delta_auroc`, Holm family A; cross-checked per domain against the independent descriptive `compare_signal_calibration` path | H1a confirmatory result | `phase1-analysis` |
 | [`stage3_h1b_calibration.py`](../scripts/phase1_analysis/stage3_h1b_calibration.py) | H1b per domain: fits `fit_tle_calibrator` on holdout steps, evaluates ΔBrier(TLE-mapped, VC/100) on non-holdout steps via `cluster_bootstrap`, Holm family D | H1b confirmatory result | `phase1-analysis` |
+| [`stage4_h3_temporal.py`](../scripts/phase1_analysis/stage4_h3_temporal.py) | H3 per domain per signal via `fit_h3_model`; textworld TLE+VC Holm family E (confirmatory), tower_of_hanoi exploratory only | H3 confirmatory + exploratory result | `phase1-analysis` |
 
 ## `scripts/run_readiness/` — budget, run-hygiene, resume, and output-quality checks
 

@@ -18,6 +18,7 @@ from src.analysis.inference import (
     h4_diff_in_diff,
     holm,
     one_sided_bootstrap_pvalue,
+    one_sided_wald_pvalue,
 )
 
 
@@ -281,6 +282,16 @@ def test_one_sided_bootstrap_pvalue_never_exactly_zero():
 
 def test_one_sided_bootstrap_pvalue_empty_reps_is_maximally_uncertain():
     assert one_sided_bootstrap_pvalue([]) == 1.0
+
+
+def test_one_sided_wald_pvalue_halves_when_coefficient_points_the_hypothesized_way():
+    p = one_sided_wald_pvalue(-0.5, 0.04, direction=-1)
+    assert math.isclose(p, 0.02)
+
+
+def test_one_sided_wald_pvalue_takes_complement_when_coefficient_points_wrong_way():
+    p = one_sided_wald_pvalue(0.5, 0.04, direction=-1)
+    assert math.isclose(p, 0.98)
 
 
 def test_holm_bh():
