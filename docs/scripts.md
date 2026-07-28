@@ -92,6 +92,9 @@ the archived results once the pipeline has been run against the real data.
 | [`stage3_h1b_calibration.py`](../scripts/phase1_analysis/stage3_h1b_calibration.py) | H1b per domain: fits `fit_tle_calibrator` on holdout steps, evaluates ΔBrier(TLE-mapped, VC/100) on non-holdout steps via `cluster_bootstrap`, Holm family D | H1b confirmatory result | `phase1-analysis` |
 | [`stage4_h3_temporal.py`](../scripts/phase1_analysis/stage4_h3_temporal.py) | H3 per domain per signal via `fit_h3_model`; textworld TLE+VC Holm family E (confirmatory), tower_of_hanoi exploratory only | H3 confirmatory + exploratory result | `phase1-analysis` |
 | [`stage5_h4_domain_modulation.py`](../scripts/phase1_analysis/stage5_h4_domain_modulation.py) | H4 single test: diff-in-diff of ΔAUROC(ToH)-ΔAUROC(TextWorld) via `cluster_bootstrap_stratified` (instances resampled within each domain, not pooled), Holm family C | H4 confirmatory result | `phase1-analysis` |
+| [`stage6_visualizations.py`](../scripts/phase1_analysis/stage6_visualizations.py) | Renders `plot_auroc_comparison_bars`/`plot_h3_marginal_effect` (`src/analysis/visualization.py`) from the Stage 2/4 JSON output | Before Stage 7 | `phase1-analysis` |
+| [`stage7_generate_report.py`](../scripts/phase1_analysis/stage7_generate_report.py) | Renders `docs/phase1_analysis_report.md` from every prior stage's JSON output, copies Stage 6 figures into the committed `docs/figures/phase1_analysis/` | Last stage; produces the archived deliverable | `phase1-analysis` |
+| [`run_all.py`](../scripts/phase1_analysis/run_all.py) | Thin sequential orchestrator chaining Stages 0-7, stops on first non-zero exit | One-shot full-pipeline reproduction | `phase1-analysis` |
 
 ## `scripts/run_readiness/` — budget, run-hygiene, resume, and output-quality checks
 
