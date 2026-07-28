@@ -277,6 +277,11 @@ def plot_h3_marginal_effect(
     signal at an early (position_norm=0.1) and late (position_norm=0.9) episode position. Model
     coefficients (const, z_c, p_c, interaction) already fully specify this curve -- no need to
     re-touch the raw per-step table for a lower-level scatter overlay.
+
+    NOTE on the TLE sign flip: ``fit_h3_model`` builds its ``z`` column as ``-tle_mean_entropy``
+    for the tle signal (higher z = lower entropy = more certain), not raw entropy, so the x-axis
+    for tle plots is labeled "-TLE (certainty)" -- labeling it as plain "TLE" would make the curve
+    read backwards to anyone comparing it against the raw entropy definition in the thesis text.
     """
     try:
         import matplotlib.pyplot as plt  # type: ignore
@@ -306,10 +311,11 @@ def plot_h3_marginal_effect(
             early = [_sigmoid(const + z_c * z + p_c * 0.1 + interaction * z * 0.1) for z in z_grid]
             late = [_sigmoid(const + z_c * z + p_c * 0.9 + interaction * z * 0.9) for z in z_grid]
 
+            axis_label = "-TLE (certainty, stage-wise z)" if sig == "tle" else "VC (stage-wise z)"
             fig, ax = plt.subplots(figsize=(5.5, 4.0))
             ax.plot(z_grid, early, label="early (position_norm=0.1)")
             ax.plot(z_grid, late, label="late (position_norm=0.9)")
-            ax.set_xlabel(f"z-standardized {sig.upper()} (stage-wise)")
+            ax.set_xlabel(f"z-standardized {axis_label}")
             ax.set_ylabel("Predicted P(correct)")
             ax.set_ylim(0, 1)
             ax.set_title(f"H3 marginal effect: {dom}/{sig} (interaction={interaction:.3f})")
