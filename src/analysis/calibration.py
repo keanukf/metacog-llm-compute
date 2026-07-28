@@ -11,6 +11,8 @@ lower entropy should mean more confident/correct). The ``correctness_policy`` sw
 
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
 from typing import Any, Literal, Sequence
 
 CorrectnessPolicy = Literal["optimal_only", "legal_or_optimal"]
@@ -235,6 +237,70 @@ def tle_entropy_to_prob(mean_entropy: float) -> float:
     For thesis-grade calibration, prefer a fitted calibrator trained on Phase-1 validation.
     """
     return max(0.0, min(1.0, 1.0 - float(mean_entropy)))
+
+
+@dataclass(frozen=True)
+class FittedTLECalibrator:
+    """Logistic mapping from raw TLE (mean entropy) to a correctness probability.
+
+    The "fitted calibrator" ``tle_entropy_to_prob``'s own docstring points to -- see
+    ``fit_tle_calibrator`` below for how this gets fit. Breaks this module's own
+    dependency-free-by-design norm (uses ``statsmodels``), same precedent as
+    ``src.analysis.inference.fit_h3_model``.
+    """
+
+    intercept: float
+    slope: float
+
+    def predict_proba(self, mean_entropy: float) -> float:
+        z = self.intercept + self.slope * float(mean_entropy)
+        # Numerically stable logistic: split on the sign of z to avoid overflow in exp() for
+        # extreme entropy values.
+        if z >= 0:
+            ez = math.exp(-z)
+            return 1.0 / (1.0 + ez)
+        ez = math.exp(z)
+        return ez / (1.0 + ez)
+
+
+def fit_tle_calibrator(
+    holdout_steps: list[dict[str, Any]],
+    *,
+    label: str = "y_optimal",
+) -> FittedTLECalibrator | dict[str, Any]:
+    """
+    Logistic regression y ~ tle_mean_entropy, fit on holdout steps.
+
+    Deliberately pooled across runs AND compute stages -- verified verbatim in
+    ``chapters/05_methodology.md`` (thesis Ch.5 §5.9): "pooling all holdout steps across runs
+    and stages [mitigates variance from the small holdout]". This is a different, simpler,
+    separately-preregistered design decision from H3's stage-conditional standardization
+    (ADR-006) -- do not carry that pattern over here by analogy.
+
+    Returns an error dict (``{"converged": False, "note": ...}``) on insufficient data,
+    single-class label, or non-convergence, mirroring ``fit_h3_model``'s fallback contract so
+    callers can branch the same way.
+    """
+    y: list[int] = []
+    x: list[float] = []
+    for r in holdout_steps:
+        lv = r.get(label)
+        tle = r.get("tle_mean_entropy")
+        if lv is None or tle is None:
+            continue
+        y.append(int(lv))
+        x.append(float(tle))
+    if len(y) < 20 or len(set(y)) < 2:
+        return {"converged": False, "note": "insufficient data or single-class label"}
+    try:
+        import statsmodels.api as sm
+
+        design = sm.add_constant(x)
+        model = sm.Logit(y, design)
+        res = model.fit(disp=0)
+        return FittedTLECalibrator(intercept=float(res.params[0]), slope=float(res.params[1]))
+    except Exception as e:
+        return {"converged": False, "note": str(e)}
 
 
 def _label_from_correctness(corr: Any, policy: CorrectnessPolicy) -> float | None:
