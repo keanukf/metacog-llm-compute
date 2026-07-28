@@ -10,7 +10,15 @@ from __future__ import annotations
 
 import math
 
-from src.analysis.inference import bh, cluster_bootstrap, fit_h3_model, h2_paired, h4_diff_in_diff, holm
+from src.analysis.inference import (
+    bh,
+    cluster_bootstrap,
+    fit_h3_model,
+    h2_paired,
+    h4_diff_in_diff,
+    holm,
+    one_sided_bootstrap_pvalue,
+)
 
 
 def test_cluster_bootstrap_smoke():
@@ -240,6 +248,39 @@ def test_fit_h3_model_standardizes_per_stage_not_pooled():
     out = fit_h3_model(rows, signal="tle", domain="textworld")
     assert out["converged"] is False
     assert "variance" in out["note"]
+
+
+def test_cluster_bootstrap_exposes_reps_for_pvalue_derivation():
+    rows = [
+        {"instance_key": f"t:{i // 3}", "y_optimal": i % 2, "tle_mean_entropy": 0.1 * i}
+        for i in range(30)
+    ]
+    out = cluster_bootstrap(rows, lambda rs: sum(int(r["y_optimal"]) for r in rs) / len(rs), n_boot=200, seed=1)
+    assert isinstance(out["reps"], list)
+    assert len(out["reps"]) == out["n_boot_effective"]
+
+
+def test_one_sided_bootstrap_pvalue_small_when_all_replicates_exceed_null():
+    reps = [0.1, 0.2, 0.3, 0.15, 0.25]
+    p = one_sided_bootstrap_pvalue(reps, null_value=0.0)
+    assert p == 1 / 6  # (0 exceed-or-equal + 1) / (5 + 1), continuity-corrected
+
+
+def test_one_sided_bootstrap_pvalue_large_when_all_replicates_below_null():
+    reps = [-0.1, -0.2, -0.3, -0.15, -0.25]
+    p = one_sided_bootstrap_pvalue(reps, null_value=0.0)
+    assert p == 1.0  # all 5 at-or-below null + 1 continuity => 6/6
+
+
+def test_one_sided_bootstrap_pvalue_never_exactly_zero():
+    reps = [1.0] * 1000  # every replicate strictly exceeds null
+    p = one_sided_bootstrap_pvalue(reps, null_value=0.0)
+    assert p > 0.0
+    assert math.isclose(p, 1 / 1001)
+
+
+def test_one_sided_bootstrap_pvalue_empty_reps_is_maximally_uncertain():
+    assert one_sided_bootstrap_pvalue([]) == 1.0
 
 
 def test_holm_bh():

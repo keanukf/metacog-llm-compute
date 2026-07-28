@@ -88,6 +88,7 @@ the archived results once the pipeline has been run against the real data.
 |--------|---------|-------------|--------|
 | [`stage0_build_canonical_dataset.py`](../scripts/phase1_analysis/stage0_build_canonical_dataset.py) | Selects `tower_of_hanoi` from `phase1_20260722_091125` + `textworld` from `textworld_regen_20260724` (see `src/analysis/phase1_canonical.py`), asserts frozen-design invariants, writes a content-hashed manifest every later stage reads through | First stage; run before any of the below | `phase1-analysis` |
 | [`stage1_preanalysis_screen.py`](../scripts/phase1_analysis/stage1_preanalysis_screen.py) | Signal variance/VC degeneration, cluster counts, class balance by domain and position (with empty-cell flag), episode-length quartiles, real ICC (`src/analysis/icc.py`) -- diagnostic, doesn't block later stages | Before trusting any Stage 2+ confirmatory number | `phase1-analysis` |
+| [`stage2_h1a_discrimination.py`](../scripts/phase1_analysis/stage2_h1a_discrimination.py) | H1a per domain: ΔAUROC(TLE,VC) via `cluster_bootstrap`/`delta_auroc`, Holm family A; cross-checked per domain against the independent descriptive `compare_signal_calibration` path | H1a confirmatory result | `phase1-analysis` |
 
 ## `scripts/run_readiness/` — budget, run-hygiene, resume, and output-quality checks
 

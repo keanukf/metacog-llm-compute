@@ -50,7 +50,14 @@ def cluster_bootstrap(
         by_cluster[str(r.get(cluster_col, "unknown"))].append(r)
     clusters = list(by_cluster.keys())
     if len(clusters) < 2:
-        return {"point": None, "ci_low": None, "ci_high": None, "n_boot": n_boot, "skewness": None}
+        return {
+            "point": None,
+            "ci_low": None,
+            "ci_high": None,
+            "n_boot": n_boot,
+            "skewness": None,
+            "reps": [],
+        }
     rng = random.Random(seed)
     point = stat_fn(rows)
     reps: list[float] = []
@@ -78,7 +85,14 @@ def cluster_bootstrap(
             continue
         reps.append(v)
     if not reps:
-        return {"point": point, "ci_low": None, "ci_high": None, "n_boot": n_boot, "skewness": None}
+        return {
+            "point": point,
+            "ci_low": None,
+            "ci_high": None,
+            "n_boot": n_boot,
+            "skewness": None,
+            "reps": [],
+        }
     reps.sort()
     n_eff = len(reps)
     lo_i = int(ci[0] * n_eff)
@@ -91,7 +105,26 @@ def cluster_bootstrap(
         "n_boot_effective": n_eff,
         "n_boot_nonfinite": n_nonfinite,
         "skewness": _skewness(reps),
+        "reps": reps,
     }
+
+
+def one_sided_bootstrap_pvalue(reps: list[float], *, null_value: float = 0.0) -> float:
+    """One-sided bootstrap p-value for testing "statistic > null_value": the fraction of
+    replicates at or below ``null_value``, with the standard ``(n_exceed + 1) / (n + 1)``
+    continuity correction (Davison & Hinkley 1997) so a p-value is never exactly 0 -- that would
+    misrepresent a finite-resample estimate as an exact certainty and would break Holm's
+    downstream arithmetic (``raw * (m - rank)``, which is degenerate at exactly 0).
+
+    Feeds ``holm()``/``bh()`` a real, monotonic-in-significance quantity from a cluster-bootstrap
+    replicate list -- the CI bound itself is not a p-value and must not be passed to Holm
+    directly.
+    """
+    n = len(reps)
+    if n == 0:
+        return 1.0
+    n_le = sum(1 for r in reps if r <= null_value)
+    return (n_le + 1) / (n + 1)
 
 
 def delta_auroc(
