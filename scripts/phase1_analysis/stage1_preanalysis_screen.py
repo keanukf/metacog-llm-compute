@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""
+Phase 1 real-data analysis -- Stage 1: preanalysis screen.
+
+Reads the Stage 0 canonical manifest, loads the underlying episode/step rows, and runs the full
+preanalysis screen (src/analysis/preanalysis_screen.py::run_preanalysis_screen) -- signal
+variance/VC degeneration, cluster counts, class balance by domain AND by position_norm bin (with
+an explicit empty-cell flag), episode-length distribution (full quartile spread, not just mean),
+and real ICC estimation (src/analysis/icc.py, lifted out of the H3 power simulation so it can
+finally be run against actual data) -- before any confirmatory hypothesis test runs.
+
+This stage does not hard-fail on a bad screen result (the preregistered plan frames these checks
+as diagnostic, not selective -- see thesis §5.8/§5.9); it prints a clear warning banner for any
+empty position x correctness cells or near-degenerate signal variance so a human reads it before
+trusting Stage 2+ numbers.
+
+Usage:
+  python scripts/phase1_analysis/stage1_preanalysis_screen.py \
+      --manifest data/results/phase1_analysis/stage0/canonical_manifest.json \
+      --output data/results/phase1_analysis/stage1/preanalysis_screen.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.analysis.datasets import load_run_dataset  # noqa: E402
+from src.analysis.preanalysis_screen import run_preanalysis_screen  # noqa: E402
+
+
+def _load_manifest_rows(manifest_path: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_ids_by_source: dict[str, set[str]] = {}
+    for entry in manifest["entries"]:
+        manifest_ids_by_source.setdefault(entry["source_dir"], set()).add(entry["episode_id"])
+
+    episodes: list[dict[str, Any]] = []
+    steps: list[dict[str, Any]] = []
+    for source_dir, ep_ids in manifest_ids_by_source.items():
+        ds = load_run_dataset(source_dir)
+        kept = [e for e in ds.episodes if e.get("episode_id") in ep_ids]
+        kept_ids = {e.get("episode_id") for e in kept}
+        episodes.extend(kept)
+        steps.extend(s for s in ds.steps if s.get("episode_id") in kept_ids)
+    return episodes, steps
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json"
+    )
+    parser.add_argument(
+        "--output", default="data/results/phase1_analysis/stage1/preanalysis_screen.json"
+    )
+    args = parser.parse_args()
+
+    manifest_path = REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    if not manifest_path.exists():
+        print(
+            f"Stage 1 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.",
+            file=sys.stderr,
+        )
+        return 1
+
+    episodes, steps = _load_manifest_rows(manifest_path)
+    screen = run_preanalysis_screen(steps, episodes)
+
+    out_path = REPO_ROOT / args.output if not Path(args.output).is_absolute() else Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(screen, indent=2), encoding="utf-8")
+    print(f"Stage 1 OK -- screen written to {out_path}")
+
+    warned = False
+    for dom, report in screen.get("by_domain", {}).items():
+        n_empty = report.get("position_correctness", {}).get("n_empty_cells", 0)
+        if n_empty:
+            warned = True
+            print(f"  WARNING [{dom}]: {n_empty} empty position x correctness cell(s)")
+        icc = report.get("icc", {})
+        print(
+            f"  {dom}: n_steps={report.get('n_steps')} n_clusters={report.get('n_clusters')} "
+            f"icc_gee={icc.get('icc_gee')} vc_missing_rate={report.get('vc_missing_rate')}"
+        )
+    if warned:
+        print("Stage 1: see WARNING lines above -- diagnostic only, does not block later stages.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
