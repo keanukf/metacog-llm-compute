@@ -25,6 +25,9 @@ data/tasks/*/*
 .coverage
 htmlcov/
 
+# OS artifacts
+.DS_Store
+
 # Env and IDE
 .cursor/
 .cursorrules
