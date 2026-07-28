@@ -32,25 +32,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.analysis.datasets import load_run_dataset  # noqa: E402
+from src.analysis.phase1_canonical import load_canonical_dataset_from_manifest  # noqa: E402
 from src.analysis.preanalysis_screen import run_preanalysis_screen  # noqa: E402
-
-
-def _load_manifest_rows(manifest_path: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest_ids_by_source: dict[str, set[str]] = {}
-    for entry in manifest["entries"]:
-        manifest_ids_by_source.setdefault(entry["source_dir"], set()).add(entry["episode_id"])
-
-    episodes: list[dict[str, Any]] = []
-    steps: list[dict[str, Any]] = []
-    for source_dir, ep_ids in manifest_ids_by_source.items():
-        ds = load_run_dataset(source_dir)
-        kept = [e for e in ds.episodes if e.get("episode_id") in ep_ids]
-        kept_ids = {e.get("episode_id") for e in kept}
-        episodes.extend(kept)
-        steps.extend(s for s in ds.steps if s.get("episode_id") in kept_ids)
-    return episodes, steps
 
 
 def main() -> int:
@@ -71,8 +54,8 @@ def main() -> int:
         )
         return 1
 
-    episodes, steps = _load_manifest_rows(manifest_path)
-    screen = run_preanalysis_screen(steps, episodes)
+    ds = load_canonical_dataset_from_manifest(manifest_path)
+    screen = run_preanalysis_screen(ds.steps, ds.episodes)
 
     out_path = REPO_ROOT / args.output if not Path(args.output).is_absolute() else Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)

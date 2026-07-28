@@ -18,6 +18,7 @@ from src.analysis.phase1_canonical import (
     CanonicalDataset,
     assert_canonical_invariants,
     build_canonical_dataset,
+    load_canonical_dataset_from_manifest,
 )
 
 
@@ -126,6 +127,28 @@ def test_assert_canonical_invariants_passes_on_correctly_sized_data(tmp_path, mo
     dir1, dir2 = _build_mixed_domain_dirs(tmp_path)
     ds = pc.build_canonical_dataset({"tower_of_hanoi": dir1, "textworld": dir2})
     pc.assert_canonical_invariants(ds)  # must not raise
+
+
+def test_load_canonical_dataset_from_manifest_reproduces_build_output(tmp_path):
+    """Every Stage 1+ script reads through a Stage 0 manifest rather than re-deriving the
+    domain/directory split -- this must reconstruct exactly the same episode set."""
+    dir1, dir2 = _build_mixed_domain_dirs(tmp_path)
+    sources = {"tower_of_hanoi": dir1, "textworld": dir2}
+    original = build_canonical_dataset(sources)
+    manifest = {
+        "entries": [
+            {"episode_id": e["episode_id"], "domain": e["domain"], "source_dir": e["_source_dir"]}
+            for e in original.episodes
+        ]
+    }
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest))
+
+    reloaded = load_canonical_dataset_from_manifest(manifest_path)
+    assert sorted(e["episode_id"] for e in reloaded.episodes) == sorted(
+        e["episode_id"] for e in original.episodes
+    )
+    assert reloaded.sources == {"tower_of_hanoi": str(dir1), "textworld": str(dir2)}
 
 
 def test_assert_canonical_invariants_raises_on_wrong_total_count():

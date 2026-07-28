@@ -22,6 +22,7 @@ of logging findings at the point they're operationalized, not deferred to a late
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -139,3 +140,33 @@ def assert_canonical_invariants(ds: CanonicalDataset) -> None:
                 f"({sorted(holdout_instances, key=str)}), "
                 f"expected {EXPECTED_HOLDOUT_INSTANCES_PER_DOMAIN}"
             )
+
+
+def load_canonical_dataset_from_manifest(manifest_path: str | Path) -> CanonicalDataset:
+    """Re-load episode/step rows for exactly the episode IDs recorded in a Stage 0 manifest.
+
+    Every Stage 1+ pipeline script should call this rather than re-deriving the domain/directory
+    selection itself (or re-calling ``build_canonical_dataset`` fresh, which would silently
+    tolerate the underlying data changing between Stage 0 and a later stage's run) -- reading
+    through the manifest's own ``episode_id`` list is what makes "the same Stage 0 output feeds
+    every later stage" an actual guarantee rather than a convention.
+    """
+    manifest_path = Path(manifest_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    ids_by_source: dict[str, set[str]] = defaultdict(set)
+    for entry in manifest["entries"]:
+        ids_by_source[entry["source_dir"]].add(entry["episode_id"])
+
+    episodes: list[dict[str, Any]] = []
+    steps: list[dict[str, Any]] = []
+    source_map: dict[str, str] = {}
+    for source_dir, ep_ids in ids_by_source.items():
+        ds = load_run_dataset(source_dir)
+        kept = [e for e in ds.episodes if e.get("episode_id") in ep_ids]
+        kept_ids = {e.get("episode_id") for e in kept}
+        episodes.extend(kept)
+        steps.extend(s for s in ds.steps if s.get("episode_id") in kept_ids)
+        for e in kept:
+            source_map.setdefault(str(e.get("domain")), source_dir)
+
+    return CanonicalDataset(episodes=episodes, steps=steps, sources=source_map)
