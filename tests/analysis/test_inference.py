@@ -81,6 +81,76 @@ def test_h2_paired_delta_default():
     assert r["n_pairs"] == 1
 
 
+def test_h2_paired_decides_on_ci_bound_not_point_estimate():
+    """Regression for P0-5/P0-7 (revision_audit_2026-07.md): h2_paired must decide on the
+    cluster-bootstrap CI bound, not the raw paired-mean point estimate. Construction: 10
+    instances alternate which arm wins, so mean_success_diff = 0.0 -- a naive point-estimate
+    check (0.0 > -delta) would say non-inferiority holds -- but the high instance-to-instance
+    variance this alternation creates means the bootstrap CI lower bound is far below -delta,
+    so the correct (CI-bound) decision is that non-inferiority does NOT hold.
+    """
+    episodes = []
+    for i in range(10):
+        succ_p = i % 2 == 0
+        episodes.append(
+            {
+                "domain": "tw",
+                "instance": i,
+                "strategy": "adaptive_tle",
+                "task_success": succ_p,
+                "total_tokens_generated": 100,
+                "holdout": False,
+            }
+        )
+        episodes.append(
+            {
+                "domain": "tw",
+                "instance": i,
+                "strategy": "always_c2",
+                "task_success": not succ_p,
+                "total_tokens_generated": 100,
+                "holdout": False,
+            }
+        )
+    r = h2_paired(episodes, delta=0.05)
+    assert r["mean_success_diff"] == 0.0
+    assert r["success_ci_low"] is not None and r["success_ci_low"] < -0.05
+    assert r["non_inferiority_holds"] is False
+
+
+def test_h2_paired_holds_when_ci_bound_clears_threshold():
+    """Sanity counterpart: a well-powered, consistent effect (policy matches baseline success
+    everywhere and uses a quarter of the tokens everywhere) should show both decisions True,
+    with the CI collapsed onto the point estimate since there is zero instance-to-instance
+    variance in this construction."""
+    episodes = []
+    for i in range(10):
+        episodes.append(
+            {
+                "domain": "tw",
+                "instance": i,
+                "strategy": "adaptive_tle",
+                "task_success": True,
+                "total_tokens_generated": 50,
+                "holdout": False,
+            }
+        )
+        episodes.append(
+            {
+                "domain": "tw",
+                "instance": i,
+                "strategy": "always_c2",
+                "task_success": True,
+                "total_tokens_generated": 200,
+                "holdout": False,
+            }
+        )
+    r = h2_paired(episodes, delta=0.05)
+    assert r["non_inferiority_holds"] is True
+    assert r["token_superiority_holds"] is True
+    assert r["log_token_ci_low"] is not None and r["log_token_ci_low"] > 0
+
+
 def test_h4_diff_in_diff_sign_matches_preregistered_direction():
     """Regression: h4_diff_in_diff must return
     [AUROC_TLE - AUROC_VC]_ToH - [AUROC_TLE - AUROC_VC]_TextWorld, matching thesis H_{1,4}

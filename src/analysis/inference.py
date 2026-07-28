@@ -181,11 +181,24 @@ def h2_paired(
     policy_strategy: str = "adaptive_tle",
     baseline: str = "always_c2",
     delta: float = 0.05,
+    n_boot: int = 5000,
+    seed: int = 20260703,
 ) -> dict[str, Any]:
     """
-    Paired cluster contrast: success non-inferiority (ΔP > -δ) and log-token superiority.
+    Paired cluster-bootstrap contrast: success non-inferiority and log-token superiority,
+    decided on the bootstrap CI bound over resampled instances -- not the raw point estimate.
 
-    §5.8 default: ``delta=0.05``.
+    §5.8 default: ``delta=0.05``; decision rule per thesis Ch.5 §5.8: "H2 holds ... only when
+    both one-sided bootstrap intervals satisfy their bounds." An earlier version compared
+    ``mean_success_diff``/``mean_log_token_diff`` directly against the threshold, which ignores
+    the paired-cluster non-independence the rest of the inference engine exists to handle (see
+    revision_audit P0-7, ``notes/praeregistrierung_auswertungsplan.md`` §5/§10 in
+    ../metacog-thesis) -- a point estimate crossing a threshold is a materially weaker claim than
+    a CI bound crossing it.
+
+    Both ``succ_diff`` (policy success − baseline success) and ``log_tok_diff`` (log baseline
+    tokens − log policy tokens) are oriented so that *larger is better*; both decision rules
+    therefore use the **lower** CI bound.
     """
     by_inst: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
     for ep in episodes:
@@ -194,28 +207,46 @@ def h2_paired(
         key = f"{ep.get('domain')}:{ep.get('instance')}"
         strat = str(ep.get("strategy", ""))
         by_inst[key][strat] = ep
-    succ_diffs: list[float] = []
-    log_tok_diffs: list[float] = []
-    for _k, m in by_inst.items():
+
+    paired_rows: list[dict[str, Any]] = []
+    for key, m in by_inst.items():
         if policy_strategy not in m or baseline not in m:
             continue
         p = m[policy_strategy]
         b = m[baseline]
-        succ_diffs.append(float(bool(p.get("task_success"))) - float(bool(b.get("task_success"))))
         tp = max(1.0, float(p.get("total_tokens_generated") or 1))
         tb = max(1.0, float(b.get("total_tokens_generated") or 1))
-        log_tok_diffs.append(math.log(tb) - math.log(tp))
-    if not succ_diffs:
+        paired_rows.append(
+            {
+                "instance_key": key,
+                "succ_diff": float(bool(p.get("task_success"))) - float(bool(b.get("task_success"))),
+                "log_tok_diff": math.log(tb) - math.log(tp),
+            }
+        )
+    if not paired_rows:
         return {"n_pairs": 0, "delta": delta}
-    mean_succ = sum(succ_diffs) / len(succ_diffs)
-    mean_log = sum(log_tok_diffs) / len(log_tok_diffs)
+
+    mean_succ = sum(r["succ_diff"] for r in paired_rows) / len(paired_rows)
+    mean_log = sum(r["log_tok_diff"] for r in paired_rows) / len(paired_rows)
+    succ_boot = cluster_bootstrap(
+        paired_rows, lambda rs: sum(r["succ_diff"] for r in rs) / len(rs), n_boot=n_boot, seed=seed
+    )
+    log_boot = cluster_bootstrap(
+        paired_rows, lambda rs: sum(r["log_tok_diff"] for r in rs) / len(rs), n_boot=n_boot, seed=seed
+    )
+    succ_ci_low = succ_boot["ci_low"]
+    log_ci_low = log_boot["ci_low"]
     return {
-        "n_pairs": len(succ_diffs),
+        "n_pairs": len(paired_rows),
         "delta": delta,
         "mean_success_diff": mean_succ,
         "mean_log_token_diff": mean_log,
-        "non_inferiority_holds": mean_succ > -delta,
-        "token_superiority_holds": mean_log > 0,
+        "success_ci_low": succ_ci_low,
+        "success_ci_high": succ_boot["ci_high"],
+        "log_token_ci_low": log_ci_low,
+        "log_token_ci_high": log_boot["ci_high"],
+        "non_inferiority_holds": succ_ci_low is not None and succ_ci_low > -delta,
+        "token_superiority_holds": log_ci_low is not None and log_ci_low > 0,
     }
 
 
