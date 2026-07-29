@@ -8,6 +8,7 @@ markdown contains the expected table titles and numeric cells.
 from __future__ import annotations
 
 from src.analysis.descriptive_stats import (
+    compute_difficulty_tier_breakdown,
     compute_sample_composition,
     compute_signal_correlation,
     compute_variable_codebook,
@@ -28,6 +29,15 @@ def test_describe_values_matches_hand_computed_stats():
     assert d["q1"] < d["median"] < d["q3"]
     # Symmetric distribution -> skewness ~ 0.
     assert abs(d["skewness"]) < 1e-9
+    assert d["n_outliers_iqr"] == 0
+
+
+def test_describe_values_flags_iqr_outliers():
+    # Tight cluster around 1-5 plus one far outlier -> Tukey 1.5xIQR fence should catch it.
+    vals = [1.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0, 5.0, 100.0]
+    d = describe_values(vals)
+    assert d["n_outliers_iqr"] == 1
+    assert d["outlier_rate_iqr"] == 0.1
 
 
 def test_describe_values_empty_input():
@@ -35,6 +45,7 @@ def test_describe_values_empty_input():
     assert d["n"] == 0
     assert d["mean"] is None
     assert d["skewness"] is None
+    assert d["n_outliers_iqr"] is None
 
 
 def test_describe_variable_reports_missingness_relative_to_total():
@@ -76,6 +87,7 @@ def _fixture_steps_and_episodes():
             "task_success": i % 2 == 0,
             "episode_length_steps": 10 + i,
             "normalized_compute_cost": 0.5 + 0.01 * i,
+            "difficulty_tier": "medium" if dom == "tower_of_hanoi" else ("easy" if i < 3 else "medium"),
         }
         for dom in ("tower_of_hanoi", "textworld")
         for stage in ("C0", "C1", "C2")
@@ -120,6 +132,13 @@ def test_compute_variable_codebook_shape():
     )
     assert holdout_row["n_episodes"] == 1  # only i=0 has holdout=True
 
+    tiers = {(r["domain"], r["difficulty_tier"]): r for r in codebook["difficulty_tier_breakdown"]}
+    assert set(k[1] for k in tiers if k[0] == "tower_of_hanoi") == {"medium"}
+    assert tiers[("tower_of_hanoi", "medium")]["n_episodes"] == 15
+    assert set(k[1] for k in tiers if k[0] == "textworld") == {"easy", "medium"}
+    assert tiers[("textworld", "easy")]["n_episodes"] == 9
+    assert tiers[("textworld", "medium")]["n_episodes"] == 6
+
 
 def test_compute_signal_correlation_insufficient_data_returns_none():
     c = compute_signal_correlation([{"tle_mean_entropy": 0.1, "vc": 50}])
@@ -137,19 +156,34 @@ def test_compute_sample_composition_counts_design_cells():
     assert {"domain": "tower_of_hanoi", "compute_stage": "C0", "holdout": True, "n_episodes": 1} in rows
 
 
+def test_compute_difficulty_tier_breakdown_reports_rate_per_tier():
+    episodes = [
+        {"domain": "textworld", "difficulty_tier": "easy", "task_success": True},
+        {"domain": "textworld", "difficulty_tier": "easy", "task_success": False},
+        {"domain": "textworld", "difficulty_tier": "medium", "task_success": False},
+    ]
+    rows = compute_difficulty_tier_breakdown(episodes)
+    easy = next(r for r in rows if r["difficulty_tier"] == "easy")
+    medium = next(r for r in rows if r["difficulty_tier"] == "medium")
+    assert easy["n_episodes"] == 2 and easy["task_success_rate"] == 0.5
+    assert medium["n_episodes"] == 1 and medium["task_success_rate"] == 0.0
+
+
 def test_render_apa_codebook_markdown_contains_expected_tables():
     steps, episodes = _fixture_steps_and_episodes()
     codebook = compute_variable_codebook(steps, episodes)
     md = render_apa_codebook_markdown(codebook)
 
-    for i in range(1, 8):
+    for i in range(1, 9):
         assert f"*Table {i}*" in md
     assert "Variable roles and measurement scales" in md
     assert "Sample composition" in md
     assert "step-level signals, by domain" in md
+    assert "Outliers (1.5xIQR)" in md
     assert "by domain and compute stage" in md
     assert "correctness rate (y_optimal)" in md
     assert "episode-level variables, by domain" in md
     assert "TLE-VC association" in md
+    assert "Instance difficulty tier" in md
     assert "tower_of_hanoi" in md and "textworld" in md
     assert "*Note.*" in md

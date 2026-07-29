@@ -100,6 +100,16 @@ MEASUREMENT_SCALES: list[dict[str, str]] = [
         "scale": "Ratio, bounded [0, 1] by construction",
         "note": "Normalized against the maximum possible compute for that condition.",
     },
+    {
+        "variable": "difficulty_tier",
+        "role": "Instance-level covariate",
+        "scale": "Ordinal (observed levels: easy, medium)",
+        "note": "Constant ('medium') for every tower_of_hanoi episode -- ToH's frozen manifest "
+        "(4 disks, one scramble seed) gives no per-instance difficulty variation. Genuinely "
+        "heterogeneous within textworld (Table 8) -- an asymmetry between domains worth keeping "
+        "in mind whenever comparing them (H4), since only textworld's instance pool has this "
+        "extra source of variance.",
+    },
 ]
 
 
@@ -118,19 +128,31 @@ def describe_values(values: list[float]) -> dict[str, Any]:
             "q3": None,
             "max": None,
             "skewness": None,
+            "n_outliers_iqr": None,
+            "outlier_rate_iqr": None,
         }
     arr = np.asarray(values, dtype=float)
     sd = float(arr.std(ddof=1)) if arr.size > 1 else None
+    q1 = float(np.percentile(arr, 25))
+    q3 = float(np.percentile(arr, 75))
+    iqr = q3 - q1
+    n_outliers = int(np.sum((arr < q1 - 1.5 * iqr) | (arr > q3 + 1.5 * iqr)))
     return {
         "n": int(arr.size),
         "mean": float(arr.mean()),
         "sd": sd,
         "min": float(arr.min()),
-        "q1": float(np.percentile(arr, 25)),
+        "q1": q1,
         "median": float(np.percentile(arr, 50)),
-        "q3": float(np.percentile(arr, 75)),
+        "q3": q3,
         "max": float(arr.max()),
         "skewness": _skewness(arr) if arr.size >= 3 else None,
+        # Standard Tukey 1.5xIQR fence -- a plain count/rate to go with the skewness figure,
+        # relevant here specifically because TLE's real skewness (2-38 across domain/stage,
+        # Table 4) is extreme enough that "how many points, exactly" is worth stating rather
+        # than leaving a reader to infer it from the boxplot figure alone.
+        "n_outliers_iqr": n_outliers,
+        "outlier_rate_iqr": n_outliers / arr.size,
     }
 
 
@@ -208,6 +230,7 @@ def compute_variable_codebook(
         codebook["episode_level"][dom]["n_episodes"] = len(eps)
 
     codebook["sample_composition"] = compute_sample_composition(episodes)
+    codebook["difficulty_tier_breakdown"] = compute_difficulty_tier_breakdown(episodes)
     return codebook
 
 
@@ -268,6 +291,31 @@ def compute_sample_composition(episodes: list[dict[str, Any]]) -> list[dict[str,
         {"domain": dom, "compute_stage": stage, "holdout": holdout, "n_episodes": n}
         for (dom, stage, holdout), n in sorted(counts.items())
     ]
+
+
+def compute_difficulty_tier_breakdown(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Instance-level difficulty covariate (``difficulty_tier``), by domain: n episodes and task
+    success rate per tier. Surfaces a real domain asymmetry -- tower_of_hanoi's frozen manifest
+    gives every episode the same tier ('medium'), while textworld's 50 procedurally generated
+    instances land in two tiers ('easy'/'medium') with real prevalence -- so this covariate is a
+    source of variance in one domain but not the other, worth checking against outcome rather
+    than assuming it's inert."""
+    by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for e in episodes:
+        key = (str(e.get("domain", "unknown")), str(e.get("difficulty_tier", "unknown")))
+        by_key.setdefault(key, []).append(e)
+    rows = []
+    for (dom, tier), eps in sorted(by_key.items()):
+        success = [1.0 if bool(e.get("task_success")) else 0.0 for e in eps]
+        rows.append(
+            {
+                "domain": dom,
+                "difficulty_tier": tier,
+                "n_episodes": len(eps),
+                "task_success_rate": (sum(success) / len(success)) if success else None,
+            }
+        )
+    return rows
 
 
 _VAR_LABELS = {
@@ -339,22 +387,32 @@ def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start
     lines.append("")
     lines.append("*Descriptive statistics for step-level signals, by domain*")
     lines.append("")
-    lines.append("| Domain | Variable | N | N missing | M | SD | Min | Mdn | Max | Skewness |")
-    lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+    lines.append(
+        "| Domain | Variable | N | N missing | M | SD | Min | Mdn | Max | Skewness | "
+        "Outliers (1.5xIQR) |"
+    )
+    lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for dom in domains:
         for var in POOLED_STEP_VARS:
             d = codebook["step_level"][dom][var]
             nd = _nd_for(var)
+            outlier_cell = (
+                f"{d['n_outliers_iqr']} ({_fmt(d['outlier_rate_iqr'], 3)})"
+                if d.get("n_outliers_iqr") is not None
+                else "--"
+            )
             lines.append(
                 f"| {dom} | {_VAR_LABELS.get(var, var)} | {d['n']} | {d['n_missing']} | "
                 f"{_fmt(d['mean'], nd)} | {_fmt(d['sd'], nd)} | {_fmt(d['min'], nd)} | "
-                f"{_fmt(d['median'], nd)} | {_fmt(d['max'], nd)} | {_fmt(d['skewness'])} |"
+                f"{_fmt(d['median'], nd)} | {_fmt(d['max'], nd)} | {_fmt(d['skewness'])} | "
+                f"{outlier_cell} |"
             )
     lines.append("")
     lines.append(
         "*Note.* N missing = steps where the variable could not be extracted (e.g. no closed "
         "`</think>` block for TLE). TLE = token-level entropy; VC = verbalized confidence "
-        "(0-100 scale, raw, not yet mapped to a stage-conditional z-score). See Table 1 for "
+        "(0-100 scale, raw, not yet mapped to a stage-conditional z-score). Outliers = points "
+        "beyond Q1-1.5xIQR or Q3+1.5xIQR (Tukey fence), count (rate). See Table 1 for "
         "measurement-scale caveats."
     )
     lines.append("")
@@ -453,6 +511,30 @@ def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start
         "linearity assumption questionable; a Pearson/Spearman gap indicates the association is "
         "real but non-linear, not that one estimate is simply wrong. Negative sign is expected: "
         "higher TLE (entropy) should co-occur with lower VC (confidence)."
+    )
+    lines.append("")
+    n += 1
+
+    # Table: instance-level difficulty covariate, by domain -- surfaces the domain asymmetry
+    # (ToH constant, textworld heterogeneous) rather than leaving difficulty_tier undocumented.
+    lines.append(f"*Table {n}*")
+    lines.append("")
+    lines.append("*Instance difficulty tier, by domain*")
+    lines.append("")
+    lines.append("| Domain | Difficulty tier | N episodes | Task success rate |")
+    lines.append("|---|---|---:|---:|")
+    for row in codebook.get("difficulty_tier_breakdown", []):
+        lines.append(
+            f"| {row['domain']} | {row['difficulty_tier']} | {row['n_episodes']} | "
+            f"{_fmt(row['task_success_rate'], 3)} |"
+        )
+    lines.append("")
+    lines.append(
+        "*Note.* tower_of_hanoi's frozen manifest (4 disks, single scramble seed) gives every "
+        "episode the same tier -- no per-instance difficulty variance. textworld's 50 "
+        "procedurally generated instances land in two tiers with real prevalence; this is a "
+        "source of variance present in one domain but not the other, relevant whenever comparing "
+        "domains directly (H4)."
     )
 
     return "\n".join(lines) + "\n"
