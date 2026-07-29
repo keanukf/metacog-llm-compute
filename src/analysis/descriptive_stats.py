@@ -20,6 +20,88 @@ STAGE_CONDITIONAL_STEP_VARS = ("tle_mean_entropy", "vc")
 POOLED_STEP_VARS = ("tle_mean_entropy", "vc", "position_norm")
 EPISODE_VARS = ("episode_length_steps", "normalized_compute_cost")
 
+# Measurement-scale documentation (qualitative, not computed from data) -- role/scale/note per
+# variable actually collected. Not just bookkeeping: VC's scale assumption in particular is load-
+# bearing for whether Pearson correlation/OLS-style reasoning about it is even appropriate (see
+# the empirical check in compute_signal_correlation below, which is why VC's note points there).
+MEASUREMENT_SCALES: list[dict[str, str]] = [
+    {
+        "variable": "domain",
+        "role": "Grouping factor",
+        "scale": "Nominal (2 levels)",
+        "note": "tower_of_hanoi, textworld -- not ordered.",
+    },
+    {
+        "variable": "compute_stage",
+        "role": "Grouping factor / manipulated condition",
+        "scale": "Ordinal (3 levels)",
+        "note": "C0 < C1 < C2 by increasing compute investment, but analyzed as an unordered "
+        "categorical factor (separate stage-wise z-standardization, ADR-006), not a numeric "
+        "predictor -- the ordering is conceptual, not used as a linear scale in any model.",
+    },
+    {
+        "variable": "instance_key",
+        "role": "Clustering unit",
+        "scale": "Nominal (50 levels per domain)",
+        "note": "The resampling/clustering unit for cluster_bootstrap and the GEE grouping "
+        "variable -- not a variable of substantive interest itself.",
+    },
+    {
+        "variable": "holdout",
+        "role": "Design flag",
+        "scale": "Nominal (binary)",
+        "note": "5 of 50 instances per domain, frozen after Gate D; used for calibrator/threshold "
+        "fitting, never for confirmatory hypothesis tests on the same steps.",
+    },
+    {
+        "variable": "tle_mean_entropy (TLE)",
+        "role": "Predictor signal",
+        "scale": "Ratio",
+        "note": "Shannon entropy over top-K renormalized logprobs; true zero = complete "
+        "certainty. Right-skewed, often near-floor (see Table 4) -- analyses use it "
+        "stage-wise z-standardized, never the raw scale directly.",
+    },
+    {
+        "variable": "vc (VC)",
+        "role": "Predictor signal",
+        "scale": "Interval, by convention -- with a caveat",
+        "note": "Self-reported 0-100 confidence, but only 16 distinct values occur in the real "
+        "data (multiples of 5/10), not a continuous 0-100 scale. Conventionally analyzed as "
+        "interval/ratio (as the thesis and this pipeline both do), but strictly it is a coarse, "
+        "self-reported ordinal judgment -- Pearson correlations/OLS-style linear assumptions on "
+        "it should be read with that caveat in mind (see the Spearman comparison in Table 7).",
+    },
+    {
+        "variable": "position_norm",
+        "role": "Covariate (H3 temporal-degradation axis)",
+        "scale": "Ratio / interval, deterministic",
+        "note": "t / max(episode_length - 1, 1) -- computed exactly from step index and episode "
+        "length, not measured with error. Its near-uniform distribution (Table 3) is guaranteed "
+        "by construction, not an empirical finding.",
+    },
+    {
+        "variable": "y_optimal / task_success",
+        "role": "Outcome (dependent variable)",
+        "scale": "Nominal (binary, Bernoulli)",
+        "note": "Step-level (y_optimal) and episode-level (task_success) correctness. Mean = "
+        "proportion correct; skewness/quantiles are not meaningful for a binary variable and are "
+        "not reported (see Table 5 instead of Tables 3-4's continuous-variable format).",
+    },
+    {
+        "variable": "episode_length_steps",
+        "role": "Episode-level descriptive / covariate",
+        "scale": "Ratio (discrete count)",
+        "note": "Right-censored at the frozen difficulty-manifest step ceiling (max 45) -- values "
+        "at the maximum reflect the cap, not necessarily the episode's true difficulty.",
+    },
+    {
+        "variable": "normalized_compute_cost",
+        "role": "Episode-level descriptive",
+        "scale": "Ratio, bounded [0, 1] by construction",
+        "note": "Normalized against the maximum possible compute for that condition.",
+    },
+]
+
 
 def describe_values(values: list[float]) -> dict[str, Any]:
     """Numeric summary of already-filtered (non-missing) values. Missingness is the caller's
@@ -103,6 +185,17 @@ def compute_variable_codebook(
             for stage, stage_rows in sorted(by_stage.items())
         }
 
+        codebook["step_level"][dom]["y_optimal"] = _describe_binary(rows, "y_optimal")
+        codebook["step_level_by_stage"][dom] = {
+            stage: {
+                **codebook["step_level_by_stage"][dom][stage],
+                "y_optimal": _describe_binary(stage_rows, "y_optimal"),
+            }
+            for stage, stage_rows in sorted(by_stage.items())
+        }
+        codebook["signal_correlation"] = codebook.get("signal_correlation", {})
+        codebook["signal_correlation"][dom] = compute_signal_correlation(rows)
+
     for dom in sorted(by_dom_eps):
         eps = by_dom_eps[dom]
         success = [1.0 if bool(e.get("task_success")) else 0.0 for e in eps]
@@ -114,7 +207,67 @@ def compute_variable_codebook(
         )
         codebook["episode_level"][dom]["n_episodes"] = len(eps)
 
+    codebook["sample_composition"] = compute_sample_composition(episodes)
     return codebook
+
+
+def _describe_binary(rows: list[dict[str, Any]], key: str, *, total: int | None = None) -> dict[str, Any]:
+    """Bernoulli summary (rate, not mean/sd/quantiles/skew -- those aren't meaningful for a
+    0/1 outcome). ``sd`` is still reported since it's fully determined by the rate
+    (sqrt(p(1-p))) and downstream readers may want it for a quick power/precision sense-check."""
+    total = total if total is not None else len(rows)
+    values = [int(r[key]) for r in rows if r.get(key) is not None]
+    n_missing = total - len(values)
+    rate = (sum(values) / len(values)) if values else None
+    sd = (rate * (1 - rate)) ** 0.5 if rate is not None else None
+    return {
+        "n": len(values),
+        "n_missing": n_missing,
+        "missing_rate": (n_missing / total) if total else None,
+        "rate": rate,
+        "sd": sd,
+    }
+
+
+def compute_signal_correlation(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """TLE-VC association (convergent validity of the two signals): Pearson r AND Spearman rho,
+    since VC's coarse 16-value self-report scale (see MEASUREMENT_SCALES) makes the linear-
+    correlation assumption behind Pearson r questionable -- reporting both lets a reader see
+    whether they actually diverge (they do: e.g. r=-0.12 vs rho=-0.34 on the real textworld data,
+    meaning the relationship is real but not well captured by a straight line)."""
+    paired = [
+        (float(r["tle_mean_entropy"]), float(r["vc"]))
+        for r in rows
+        if r.get("tle_mean_entropy") is not None and r.get("vc") is not None
+    ]
+    if len(paired) < 3:
+        return {"n": len(paired), "pearson_r": None, "pearson_p": None, "spearman_rho": None, "spearman_p": None}
+    tle = np.array([p[0] for p in paired], dtype=float)
+    vc = np.array([p[1] for p in paired], dtype=float)
+    from scipy.stats import pearsonr, spearmanr
+
+    r, p_r = pearsonr(tle, vc)
+    rho, p_rho = spearmanr(tle, vc)
+    return {
+        "n": len(paired),
+        "pearson_r": float(r),
+        "pearson_p": float(p_r),
+        "spearman_rho": float(rho),
+        "spearman_p": float(p_rho),
+    }
+
+
+def compute_sample_composition(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Episode-level design cell counts (domain x compute_stage x holdout) -- makes the
+    preregistered 2x3x(5/45 holdout split) design tangible as numbers, not just prose."""
+    counts: dict[tuple[str, str, bool], int] = {}
+    for e in episodes:
+        key = (str(e.get("domain", "unknown")), str(e.get("compute_stage", "unknown")), bool(e.get("holdout")))
+        counts[key] = counts.get(key, 0) + 1
+    return [
+        {"domain": dom, "compute_stage": stage, "holdout": holdout, "n_episodes": n}
+        for (dom, stage, holdout), n in sorted(counts.items())
+    ]
 
 
 _VAR_LABELS = {
@@ -144,13 +297,44 @@ def _nd_for(var: str) -> int:
 def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start: int = 1) -> str:
     """Render the codebook as APA-7-styled Markdown tables (title above, note below, no vertical
     rules -- Markdown tables are horizontal-rule-only by construction, which already matches
-    APA's own convention). One table for pooled step-level variables, one for episode-level
-    variables, one per domain for the stage-conditional breakdown."""
+    APA's own convention)."""
     n = table_number_start
     lines: list[str] = []
-
     domains = sorted(codebook.get("step_level", {}).keys())
 
+    # Table: measurement scales and roles (qualitative, orients the reader before any numbers).
+    lines.append(f"*Table {n}*")
+    lines.append("")
+    lines.append("*Variable roles and measurement scales*")
+    lines.append("")
+    lines.append("| Variable | Role | Measurement scale | Note |")
+    lines.append("|---|---|---|---|")
+    for row in MEASUREMENT_SCALES:
+        lines.append(f"| {row['variable']} | {row['role']} | {row['scale']} | {row['note']} |")
+    lines.append("")
+    n += 1
+
+    # Table: sample composition (design cell counts).
+    lines.append(f"*Table {n}*")
+    lines.append("")
+    lines.append("*Sample composition: episodes by domain, compute stage, and holdout status*")
+    lines.append("")
+    lines.append("| Domain | Stage | Holdout | N episodes |")
+    lines.append("|---|---|---|---:|")
+    for row in codebook.get("sample_composition", []):
+        lines.append(
+            f"| {row['domain']} | {row['compute_stage']} | {row['holdout']} | {row['n_episodes']} |"
+        )
+    lines.append("")
+    lines.append(
+        "*Note.* Holdout = True are the 5-of-50 instances per domain frozen after Gate D for "
+        "calibrator/threshold fitting; Holdout = False (45 instances x 5 runs = 225) are used "
+        "for the confirmatory hypothesis tests."
+    )
+    lines.append("")
+    n += 1
+
+    # Table: pooled continuous step-level signals (TLE, VC, position_norm).
     lines.append(f"*Table {n}*")
     lines.append("")
     lines.append("*Descriptive statistics for step-level signals, by domain*")
@@ -158,7 +342,8 @@ def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start
     lines.append("| Domain | Variable | N | N missing | M | SD | Min | Mdn | Max | Skewness |")
     lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
     for dom in domains:
-        for var, d in codebook["step_level"][dom].items():
+        for var in POOLED_STEP_VARS:
+            d = codebook["step_level"][dom][var]
             nd = _nd_for(var)
             lines.append(
                 f"| {dom} | {_VAR_LABELS.get(var, var)} | {d['n']} | {d['n_missing']} | "
@@ -169,11 +354,13 @@ def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start
     lines.append(
         "*Note.* N missing = steps where the variable could not be extracted (e.g. no closed "
         "`</think>` block for TLE). TLE = token-level entropy; VC = verbalized confidence "
-        "(0-100 scale, raw, not yet mapped to a stage-conditional z-score)."
+        "(0-100 scale, raw, not yet mapped to a stage-conditional z-score). See Table 1 for "
+        "measurement-scale caveats."
     )
     lines.append("")
     n += 1
 
+    # Table: TLE/VC by domain and compute stage (the ADR-006 z-standardization granularity).
     lines.append(f"*Table {n}*")
     lines.append("")
     lines.append("*Descriptive statistics for TLE and VC, by domain and compute stage*")
@@ -183,7 +370,8 @@ def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start
     for dom in domains:
         stages = sorted(codebook.get("step_level_by_stage", {}).get(dom, {}).keys())
         for stage in stages:
-            for var, d in codebook["step_level_by_stage"][dom][stage].items():
+            for var in STAGE_CONDITIONAL_STEP_VARS:
+                d = codebook["step_level_by_stage"][dom][stage][var]
                 nd = _nd_for(var)
                 lines.append(
                     f"| {dom} | {stage} | {_VAR_LABELS.get(var, var)} | {d['n']} | "
@@ -198,6 +386,31 @@ def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start
     lines.append("")
     n += 1
 
+    # Table: binary outcome (y_optimal), pooled and by stage -- separate from Tables 3-4 since
+    # mean/quantiles/skewness aren't meaningful summaries for a 0/1 variable.
+    lines.append(f"*Table {n}*")
+    lines.append("")
+    lines.append("*Step-level correctness rate (y_optimal), by domain and compute stage*")
+    lines.append("")
+    lines.append("| Domain | Stage | N | Rate correct | SD |")
+    lines.append("|---|---|---:|---:|---:|")
+    for dom in domains:
+        pooled = codebook["step_level"][dom]["y_optimal"]
+        lines.append(f"| {dom} | pooled | {pooled['n']} | {_fmt(pooled['rate'], 3)} | {_fmt(pooled['sd'], 3)} |")
+        stages = sorted(codebook.get("step_level_by_stage", {}).get(dom, {}).keys())
+        for stage in stages:
+            d = codebook["step_level_by_stage"][dom][stage]["y_optimal"]
+            lines.append(f"| {dom} | {stage} | {d['n']} | {_fmt(d['rate'], 3)} | {_fmt(d['sd'], 3)} |")
+    lines.append("")
+    lines.append(
+        "*Note.* Rate = proportion of steps with the optimal action; SD = sqrt(rate x (1-rate)), "
+        "the Bernoulli standard deviation implied by the rate, not an independently estimated "
+        "quantity."
+    )
+    lines.append("")
+    n += 1
+
+    # Table: episode-level variables.
     lines.append(f"*Table {n}*")
     lines.append("")
     lines.append("*Descriptive statistics for episode-level variables, by domain*")
@@ -217,6 +430,29 @@ def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start
     lines.append(
         "*Note.* M = mean, SD = standard deviation. Task success rate is the raw episode-level "
         "success proportion, not the calibrated proxy objective used in policy threshold search."
+    )
+    lines.append("")
+    n += 1
+
+    # Table: TLE-VC association (convergent validity of the two signals).
+    lines.append(f"*Table {n}*")
+    lines.append("")
+    lines.append("*TLE-VC association, by domain*")
+    lines.append("")
+    lines.append("| Domain | N | Pearson r | p | Spearman rho | p |")
+    lines.append("|---|---:|---:|---:|---:|---:|")
+    for dom in domains:
+        c = codebook.get("signal_correlation", {}).get(dom, {})
+        lines.append(
+            f"| {dom} | {c.get('n')} | {_fmt(c.get('pearson_r'), 3)} | {_fmt(c.get('pearson_p'), 4)} | "
+            f"{_fmt(c.get('spearman_rho'), 3)} | {_fmt(c.get('spearman_p'), 4)} |"
+        )
+    lines.append("")
+    lines.append(
+        "*Note.* Both reported because VC's coarse self-report scale (Table 1) makes Pearson's "
+        "linearity assumption questionable; a Pearson/Spearman gap indicates the association is "
+        "real but non-linear, not that one estimate is simply wrong. Negative sign is expected: "
+        "higher TLE (entropy) should co-occur with lower VC (confidence)."
     )
 
     return "\n".join(lines) + "\n"
