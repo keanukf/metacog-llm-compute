@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.analysis.visualization import plot_auroc_comparison_bars, plot_h3_marginal_effect
+from src.analysis.visualization import (
+    plot_auroc_comparison_bars,
+    plot_episode_length_boxplot,
+    plot_h3_marginal_effect,
+    plot_signal_boxplots,
+    plot_signal_histograms,
+)
 
 
 def _h1a_fixture() -> dict:
@@ -72,3 +78,50 @@ def test_plot_h3_marginal_effect_writes_one_png_per_converged_domain_signal(tmp_
 def test_plot_auroc_comparison_bars_empty_domains_returns_empty(tmp_path):
     out = plot_auroc_comparison_bars({"by_domain": {}, "descriptive_cross_check": {}}, tmp_path)
     assert out == {}
+
+
+def _step_fixture() -> list[dict]:
+    steps = []
+    for dom, tle_base, vc_base in (("tower_of_hanoi", 0.1, 60), ("textworld", 0.3, 45)):
+        for i in range(40):
+            steps.append(
+                {
+                    "domain": dom,
+                    "tle_mean_entropy": tle_base + 0.01 * i,
+                    "vc": vc_base + i % 10,
+                }
+            )
+    return steps
+
+
+def test_plot_signal_histograms_writes_one_png_per_domain(tmp_path):
+    out = plot_signal_histograms(_step_fixture(), tmp_path)
+    assert set(out.keys()) == {"hist_signals_tower_of_hanoi", "hist_signals_textworld"}
+    for path_str in out.values():
+        p = Path(path_str)
+        assert p.exists() and p.stat().st_size > 0
+
+
+def test_plot_signal_histograms_empty_input_returns_empty(tmp_path):
+    assert plot_signal_histograms([], tmp_path) == {}
+
+
+def test_plot_signal_boxplots_writes_png(tmp_path):
+    out = plot_signal_boxplots(_step_fixture(), tmp_path)
+    assert "boxplot_signals_by_domain" in out
+    p = Path(out["boxplot_signals_by_domain"])
+    assert p.exists() and p.stat().st_size > 0
+
+
+def test_plot_episode_length_boxplot_writes_png(tmp_path):
+    episodes = [
+        {"domain": "tower_of_hanoi", "episode_length_steps": 20 + i} for i in range(10)
+    ] + [{"domain": "textworld", "episode_length_steps": 30 + i} for i in range(10)]
+    out = plot_episode_length_boxplot(episodes, tmp_path)
+    assert "boxplot_episode_length" in out
+    p = Path(out["boxplot_episode_length"])
+    assert p.exists() and p.stat().st_size > 0
+
+
+def test_plot_episode_length_boxplot_empty_input_returns_empty(tmp_path):
+    assert plot_episode_length_boxplot([], tmp_path) == {}

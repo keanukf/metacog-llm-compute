@@ -9,6 +9,10 @@ an explicit empty-cell flag), episode-length distribution (full quartile spread,
 and real ICC estimation (src/analysis/icc.py, lifted out of the H3 power simulation so it can
 finally be run against actual data) -- before any confirmatory hypothesis test runs.
 
+Also renders a full per-variable descriptive codebook (src/analysis/descriptive_stats.py, APA-7
+styled Markdown tables) and distribution/whisker-plot figures (src/analysis/visualization.py) --
+the "describe every variable properly" artifacts, not just the pass/fail data-quality gates above.
+
 This stage does not hard-fail on a bad screen result (the preregistered plan frames these checks
 as diagnostic, not selective -- see thesis §5.8/§5.9); it prints a clear warning banner for any
 empty position x correctness cells or near-degenerate signal variance so a human reads it before
@@ -32,8 +36,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.analysis.descriptive_stats import (  # noqa: E402
+    compute_variable_codebook,
+    render_apa_codebook_markdown,
+)
 from src.analysis.phase1_canonical import load_canonical_dataset_from_manifest  # noqa: E402
 from src.analysis.preanalysis_screen import run_preanalysis_screen  # noqa: E402
+from src.analysis.visualization import (  # noqa: E402
+    plot_episode_length_boxplot,
+    plot_signal_boxplots,
+    plot_signal_histograms,
+)
 
 
 def main() -> int:
@@ -43,6 +56,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--output", default="data/results/phase1_analysis/stage1/preanalysis_screen.json"
+    )
+    parser.add_argument(
+        "--codebook-output", default="data/results/phase1_analysis/stage1/variable_codebook.md"
+    )
+    parser.add_argument(
+        "--figures-output", default="data/results/phase1_analysis/stage1/figures"
     )
     args = parser.parse_args()
 
@@ -57,10 +76,38 @@ def main() -> int:
     ds = load_canonical_dataset_from_manifest(manifest_path)
     screen = run_preanalysis_screen(ds.steps, ds.episodes)
 
+    codebook = compute_variable_codebook(ds.steps, ds.episodes)
+    screen["variable_codebook"] = codebook
+
     out_path = REPO_ROOT / args.output if not Path(args.output).is_absolute() else Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(screen, indent=2), encoding="utf-8")
     print(f"Stage 1 OK -- screen written to {out_path}")
+
+    codebook_md = render_apa_codebook_markdown(codebook)
+    codebook_path = (
+        REPO_ROOT / args.codebook_output
+        if not Path(args.codebook_output).is_absolute()
+        else Path(args.codebook_output)
+    )
+    codebook_path.parent.mkdir(parents=True, exist_ok=True)
+    codebook_path.write_text(codebook_md, encoding="utf-8")
+    print(f"Stage 1 OK -- variable codebook written to {codebook_path}")
+
+    figures_dir = (
+        REPO_ROOT / args.figures_output
+        if not Path(args.figures_output).is_absolute()
+        else Path(args.figures_output)
+    )
+    written_figures: dict[str, str] = {}
+    written_figures.update(plot_signal_histograms(ds.steps, figures_dir))
+    written_figures.update(plot_signal_boxplots(ds.steps, figures_dir))
+    written_figures.update(plot_episode_length_boxplot(ds.episodes, figures_dir))
+    if written_figures:
+        print(f"Stage 1 OK -- {len(written_figures)} figure(s) written to {figures_dir}")
+        (figures_dir / "figures_manifest.json").write_text(
+            json.dumps(written_figures, indent=2), encoding="utf-8"
+        )
 
     warned = False
     for dom, report in screen.get("by_domain", {}).items():

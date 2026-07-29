@@ -328,3 +328,142 @@ def plot_h3_marginal_effect(
             written[f"h3_marginal_effect_{dom}_{sig}"] = str(p)
 
     return written
+
+
+def plot_signal_histograms(
+    steps: Iterable[dict[str, Any]],
+    output_dir: str | Path,
+) -> dict[str, str]:
+    """
+    Phase 1 analysis Stage 1: one figure per domain, TLE and VC histograms side by side --
+    the raw-variable distribution picture the descriptive codebook table
+    (``src/analysis/descriptive_stats.py``) summarizes numerically.
+    """
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except Exception:
+        return {}
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    written: dict[str, str] = {}
+
+    by_dom: dict[str, list[dict[str, Any]]] = {}
+    for r in steps:
+        if isinstance(r, dict):
+            by_dom.setdefault(str(r.get("domain", "unknown")), []).append(r)
+
+    for dom, rows in sorted(by_dom.items()):
+        tle = [_safe_float(r.get("tle_mean_entropy")) for r in rows]
+        tle = [v for v in tle if v is not None]
+        vc = [_safe_float(r.get("vc")) for r in rows]
+        vc = [v for v in vc if v is not None]
+        if not tle and not vc:
+            continue
+
+        fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.8))
+        if tle:
+            axes[0].hist(tle, bins=30, color="tab:blue")
+        axes[0].set_title("TLE")
+        axes[0].set_xlabel("tle_mean_entropy")
+        axes[0].set_ylabel("Count")
+        axes[0].grid(True, alpha=0.3)
+        if vc:
+            axes[1].hist(vc, bins=30, color="tab:orange")
+        axes[1].set_title("VC")
+        axes[1].set_xlabel("vc")
+        axes[1].grid(True, alpha=0.3)
+        fig.suptitle(f"Signal distributions -- {dom}")
+        fig.tight_layout()
+        p = output_dir / f"hist_signals_{dom}.png"
+        fig.savefig(p, dpi=160)
+        plt.close(fig)
+        written[f"hist_signals_{dom}"] = str(p)
+
+    return written
+
+
+def plot_signal_boxplots(
+    steps: Iterable[dict[str, Any]],
+    output_dir: str | Path,
+) -> dict[str, str]:
+    """
+    Phase 1 analysis Stage 1: whisker (box) plots of TLE and VC across domains, side by side.
+    """
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except Exception:
+        return {}
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    by_dom: dict[str, list[dict[str, Any]]] = {}
+    for r in steps:
+        if isinstance(r, dict):
+            by_dom.setdefault(str(r.get("domain", "unknown")), []).append(r)
+    domains = sorted(by_dom.keys())
+    if not domains:
+        return {}
+
+    tle_by_dom = [
+        [v for v in (_safe_float(r.get("tle_mean_entropy")) for r in by_dom[d]) if v is not None]
+        for d in domains
+    ]
+    vc_by_dom = [
+        [v for v in (_safe_float(r.get("vc")) for r in by_dom[d]) if v is not None] for d in domains
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(9.0, 4.2))
+    axes[0].boxplot([v if v else [0.0] for v in tle_by_dom], tick_labels=domains)
+    axes[0].set_title("TLE by domain")
+    axes[0].set_ylabel("tle_mean_entropy")
+    axes[0].grid(True, axis="y", alpha=0.3)
+    axes[1].boxplot([v if v else [0.0] for v in vc_by_dom], tick_labels=domains)
+    axes[1].set_title("VC by domain")
+    axes[1].set_ylabel("vc")
+    axes[1].grid(True, axis="y", alpha=0.3)
+    fig.tight_layout()
+    p = output_dir / "boxplot_signals_by_domain.png"
+    fig.savefig(p, dpi=160)
+    plt.close(fig)
+    return {"boxplot_signals_by_domain": str(p)}
+
+
+def plot_episode_length_boxplot(
+    episodes: Iterable[dict[str, Any]],
+    output_dir: str | Path,
+) -> dict[str, str]:
+    """
+    Phase 1 analysis Stage 1: whisker (box) plot of episode length across domains.
+    """
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except Exception:
+        return {}
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    by_dom: dict[str, list[float]] = {}
+    for e in episodes:
+        if not isinstance(e, dict):
+            continue
+        dom = str(e.get("domain", "unknown"))
+        length = _safe_float(e.get("episode_length_steps"))
+        if length is not None:
+            by_dom.setdefault(dom, []).append(length)
+    domains = sorted(by_dom.keys())
+    if not domains:
+        return {}
+
+    fig, ax = plt.subplots(figsize=(5.0, 4.2))
+    ax.boxplot([by_dom[d] for d in domains], tick_labels=domains)
+    ax.set_ylabel("Episode length (steps)")
+    ax.set_title("Episode length by domain")
+    ax.grid(True, axis="y", alpha=0.3)
+    fig.tight_layout()
+    p = output_dir / "boxplot_episode_length.png"
+    fig.savefig(p, dpi=160)
+    plt.close(fig)
+    return {"boxplot_episode_length": str(p)}
