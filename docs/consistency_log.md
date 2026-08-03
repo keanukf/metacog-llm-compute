@@ -2,6 +2,70 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-03 — Policy: etablierte Libraries statt Eigenimplementierung; H1a-Holdout-Frage geklärt
+
+**Policy-Entscheidung (Nutzer):** Wo immer eine etablierte, zitierfähige Library-Implementierung
+zu unseren Daten passt, wird sie bevorzugt gegenüber einer eigenen Implementierung — leichter zu
+verteidigen und zu evaluieren als eine Prüfung unserer eigenen Formel-/Tie-Break-Logik. Betrifft
+konkret:
+
+- **`compute_auroc`** (`src/analysis/calibration.py`): von einer handgeschriebenen
+  Mann-Whitney-U-Rangsummen-Implementierung auf `sklearn.metrics.roc_auc_score` umgestellt. Vorher
+  an 200 Zufallsstichproben (inkl. Ties) gegen sklearn verifiziert: max. Abweichung 1.1e-16
+  (Maschinenpräzision) — die alte Implementierung war korrekt, die neue ist es auch, jetzt aber
+  gegen eine zitierfähige Quelle statt gegen unsere eigene Rangberechnung zu verteidigen. Zitat für
+  die Prosa: AUROC = normalisierte Mann-Whitney-U-Statistik (Hanley & McNeil, 1982) — bereits so in
+  `chapters/05_methodology.md` §5.8 zitiert.
+- **`holm`/`bh`** (`src/analysis/inference.py`): von einer handgeschriebenen Step-down/Step-up-
+  Implementierung auf `statsmodels.stats.multitest.multipletests(method="holm"/"fdr_bh")`
+  umgestellt. War vorher schon gegen genau diese Funktion cross-verifiziert (siehe Docstring-
+  Historie); jetzt direkt darauf delegiert statt nur dagegen zu testen. Zitate: Holm (1979) für die
+  Family-A–E-Korrektur, Benjamini & Hochberg (1995) für die explorative FDR-Schicht — beide bereits
+  in `chapters/05_methodology.md` §5.8 zitiert.
+- **`_skewness`** (`src/analysis/inference.py` und `src/analysis/descriptive_stats.py`): auf
+  `scipy.stats.skew(arr, bias=True)` umgestellt (an 100 Zufallsstichproben gegen die alte Formel
+  verifiziert: max. Abweichung 5.6e-16). Dabei einen echten kleinen Robustheitsgewinn mitgenommen:
+  die Degenerationsprüfung prüft jetzt `np.allclose(arr, arr[0])` ("praktisch konstant") statt
+  exaktem `std == 0` — scipy warnte bei einem quasi-konstanten Bootstrap-Replikat-Array (Testfall
+  `test_h2_paired_holds_when_ci_bound_clears_threshold`, exakt null Instanz-zu-Instanz-Varianz) vor
+  "catastrophic cancellation"; die alte Formel hätte an derselben Stelle still einen numerisch
+  bedeutungslosen Wert geliefert, ohne zu warnen.
+- **`_quantile`** (`src/analysis/preanalysis_screen.py`): auf `numpy.percentile` umgestellt. Der
+  Kommentar "dependency-free by design" war ohnehin schon veraltet — das Modul importiert
+  `cluster_bootstrap`/`estimate_icc`, die selbst längst numpy/scipy/statsmodels ziehen.
+- **`requirements.txt`/`pyproject.toml`**: `statsmodels` und `scikit-learn` waren als feste,
+  unbedingte Imports in Kern-Analysecode (`fit_h3_model`, `gee_icc`, `fit_tle_calibrator`, jetzt
+  auch `compute_auroc`) im Einsatz, aber nur in `pyproject.toml`s optionalem `analysis`-Extra
+  deklariert, nicht in `requirements.txt`. Jetzt in beide als harte Kern-Dependencies verschoben.
+
+**Bewusst NICHT umgestellt — ICC (`src/analysis/icc.py`):** `pingouin` steht zwar schon als
+optionale Dependency bereit, passt aber inhaltlich nicht auf unseren Anwendungsfall. Pingouins
+`intraclass_corr` ist für klassische Rater-Reliabilitätsstudien gebaut (K Rater bewerten dieselben
+N Zielobjekte je einmal) — wir haben aber keine "Rater", sondern wiederholte binäre Beobachtungen
+(Steps) pro Instanz mit stark unterschiedlicher Anzahl je Instanz. Eine künstliche "Rater"-Zuordnung
+(z.B. Step-Index innerhalb der Instanz) wäre semantisch bedeutungslos und würde eine
+Reliabilitäts-Frage vortäuschen, die wir gar nicht stellen — wir fragen nach der
+Varianzkomponente durch Clustering, nicht nach Bewerter-Übereinstimmung. `gee_icc` nutzt bereits
+`statsmodels.GEE` (Library); `anova_icc1` bleibt die handgeschriebene Shrout-&-Fleiss-ICC(1)-
+Formel als unabhängiger Cross-Check, weiterhin gegen `gee_icc` auf echten Daten verifiziert (siehe
+Preanalysis-Screen-Report, beide Domänen stimmen überein).
+
+**H1a-Holdout-Frage geklärt (Nutzerfrage):** H1a läuft auf allen 50 Instanzen pro Domäne, nicht nur
+den 45 Nicht-Holdout-Instanzen — das ist beabsichtigt, nicht übersehen. Direkt in
+`chapters/05_methodology.md` §5.8 verifiziert: der H1a-Absatz ("$Q_{\mathrm{disc}}$ ... computed
+per domain ...") enthält keine Holdout-Einschränkung, im Unterschied zu den Absätzen für die
+Schwellenwert-Suche ("estimated on the Phase 1 holdout") und H1b ("fitted on the holdout
+instances"). Der Grund: H1a fitted nichts — AUROC ist eine rangbasierte, parameterfreie Messung
+direkt auf dem (vorzeichenkorrigierten) Rohsignal. Es gibt keine Zirkularitätsgefahr wie bei
+Schwellenwertsuche/Kalibrator (dort wird etwas auf Daten gefittet, das dann evaluiert werden
+soll) — deshalb keine Notwendigkeit, Holdout auszuschließen. `stage2_h1a_discrimination.py` filtert
+entsprechend nicht nach `holdout`, geprüft direkt im Code.
+
+**Volle Suite:** 453 Tests grün nach dem Swap; komplette Pipeline (`run_all.py`) einmal gegen die
+echten Daten neu durchlaufen, alle Stage-Outputs zahlenmäßig identisch zum Stand vor dem Swap
+(reiner Implementierungswechsel, keine Verhaltensänderung — siehe Diff-Verifikation im gleichen
+Arbeitsschritt).
+
 ## 2026-07-28 — Kanonischer Phase-1-Datensatz erstmals im Code festgeschrieben
 
 Die realen Phase-1-Daten liegen in zwei Verzeichnissen, weil `phase1_20260722_091125`'s

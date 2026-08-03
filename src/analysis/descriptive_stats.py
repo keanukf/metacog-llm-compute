@@ -157,10 +157,17 @@ def describe_values(values: list[float]) -> dict[str, Any]:
 
 
 def _skewness(arr: np.ndarray) -> float | None:
-    sd = float(arr.std(ddof=0))
-    if sd == 0:
+    """Population (biased) skewness via ``scipy.stats.skew`` (verified machine-precision-identical
+    to the prior hand-rolled formula, max abs diff 5.6e-16, before this 2026-08-03 swap). Guards
+    on "effectively constant" (``np.allclose``), not literal zero std -- see the matching
+    docstring in ``src/analysis/inference.py::_skewness`` for why (a near-degenerate array's
+    floating-point std can be nonzero but numerically meaningless, which scipy itself flags as a
+    "catastrophic cancellation" warning)."""
+    from scipy.stats import skew
+
+    if arr.size == 0 or np.allclose(arr, arr[0]):
         return None
-    return float(np.mean(((arr - arr.mean()) / sd) ** 3))
+    return float(skew(arr, bias=True))
 
 
 def describe_variable(rows: list[dict[str, Any]], key: str, *, total: int | None = None) -> dict[str, Any]:

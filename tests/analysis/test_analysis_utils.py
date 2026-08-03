@@ -32,6 +32,31 @@ def test_compute_auroc_no_separation():
     assert compute_auroc(scores, labels) == pytest.approx(0.5)
 
 
+def test_compute_auroc_matches_sklearn_on_random_data_with_ties():
+    """General-case regression, not just the perfect/no-separation edge cases above -- catches a
+    tie-handling or rank-sum regression that those two trivial cases can't."""
+    import random
+
+    from sklearn.metrics import roc_auc_score
+
+    rng = random.Random(20260803)
+    for _ in range(50):
+        n = rng.randint(5, 100)
+        # Coarse rounding forces genuine ties, exercising the average-rank tie-handling path.
+        scores = [round(rng.gauss(0, 1), 1) for _ in range(n)]
+        labels = [rng.randint(0, 1) for _ in range(n)]
+        if len(set(labels)) < 2:
+            continue
+        assert compute_auroc(scores, labels) == pytest.approx(roc_auc_score(labels, scores), abs=1e-9)
+
+
+def test_compute_auroc_undefined_returns_chance_not_sklearn_valueerror():
+    """sklearn.roc_auc_score raises ValueError with only one class present; this repo's own
+    convention is to return 0.5 (chance) instead -- must stay true after the sklearn swap."""
+    assert compute_auroc([0.1, 0.2, 0.3], [1, 1, 1]) == pytest.approx(0.5)
+    assert compute_auroc([], []) == pytest.approx(0.5)
+
+
 def test_calibration_by_step_position_smoke():
     episodes = [
         {

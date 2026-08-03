@@ -28,16 +28,13 @@ def _variance(vals: list[float]) -> float | None:
 
 
 def _quantile(sorted_vals: list[float], q: float) -> float:
-    """Linear-interpolation quantile (matches numpy's default), no numpy dependency --
-    this module is deliberately dependency-free (module docstring)."""
-    n = len(sorted_vals)
-    if n == 1:
-        return sorted_vals[0]
-    idx = q * (n - 1)
-    lo = int(idx)
-    hi = min(lo + 1, n - 1)
-    frac = idx - lo
-    return sorted_vals[lo] * (1 - frac) + sorted_vals[hi] * frac
+    """Linear-interpolation quantile via ``numpy.percentile`` (2026-08-03: prefer the library over
+    a hand-rolled interpolation formula -- this module already imports numpy transitively via
+    ``cluster_bootstrap``/``estimate_icc``, so "dependency-free" no longer described its actual
+    import graph anyway)."""
+    import numpy as np
+
+    return float(np.percentile(sorted_vals, q * 100))
 
 
 def _episode_length_distribution(lengths: list[int]) -> dict[str, Any]:

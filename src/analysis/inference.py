@@ -19,15 +19,26 @@ def _as_rows(df: Any) -> list[dict[str, Any]]:
 
 
 def _skewness(vals: list[float]) -> float | None:
+    """Population (biased) skewness via ``scipy.stats.skew`` (verified machine-precision-identical
+    to the prior hand-rolled formula, max abs diff 5.6e-16, before this 2026-08-03 swap).
+
+    Guards on "effectively constant" (``np.allclose`` to the first value), not literal
+    ``std == 0``: a near-degenerate bootstrap replicate list (e.g. a construction with zero
+    true instance-to-instance variance, see test_h2_paired_holds_when_ci_bound_clears_threshold)
+    can have a std that is floating-point-nonzero but numerically meaningless, which made
+    scipy's internal moment calculation raise a "catastrophic cancellation" warning here --
+    correctly returning None for a degenerate distribution is more honest than a numerically
+    unstable number scipy itself flags as unreliable.
+    """
     if len(vals) < 3:
         return None
-    m = sum(vals) / len(vals)
-    v = sum((x - m) ** 2 for x in vals) / len(vals)
-    if v <= 0:
+    import numpy as np
+    from scipy.stats import skew
+
+    arr = np.asarray(vals, dtype=float)
+    if np.allclose(arr, arr[0]):
         return None
-    s = math.sqrt(v)
-    m3 = sum((x - m) ** 3 for x in vals) / len(vals)
-    return m3 / (s**3)
+    return float(skew(arr, bias=True))
 
 
 def _summarize_bootstrap_reps(
@@ -349,44 +360,34 @@ def h2_paired(
 
 
 def holm(pvals_or_bounds: list[float], family: str = "") -> list[dict[str, Any]]:
-    """Holm step-down adjustment (family A–C).
-
-    Adjusted p-value at rank i is ``max(1, ..., i)`` of ``min(1, raw_(rank) * (m - rank))`` --
-    the running-maximum ("enforce monotonicity") step is required by Holm (1979) so that
-    adjusted p-values never decrease with increasing raw p-value; omitting it (as a prior
-    version of this function did) can silently understate the adjustment for a p-value that
-    is only slightly larger than the next-smaller one, e.g. raw=[0.01, 0.011, 0.5] with m=3
-    must adjust to [0.03, 0.03, 0.5], not [0.03, 0.022, 0.5] (verified against
-    ``statsmodels.stats.multitest.multipletests(method="holm")``).
-    """
+    """Holm (1979) step-down adjustment (families A-E, chapters/05_methodology.md), via
+    ``statsmodels.stats.multitest.multipletests(method="holm")`` -- the established library this
+    repo's own prior hand-rolled version was already being cross-checked against (2026-08-03
+    policy: prefer a citeable library implementation over auditing our own formula/monotonicity
+    logic). Verified identical on the exact case that once caught a real bug here: raw=[0.01,
+    0.011, 0.5] with m=3 adjusts to [0.03, 0.03, 0.5], not [0.03, 0.022, 0.5]."""
     m = len(pvals_or_bounds)
-    order = sorted(range(m), key=lambda i: pvals_or_bounds[i])
-    out: list[dict[str, Any]] = [{}] * m
-    running_max = 0.0
-    for rank, idx in enumerate(order):
-        step_adj = min(1.0, pvals_or_bounds[idx] * (m - rank))
-        running_max = max(running_max, step_adj)
-        out[idx] = {
-            "index": idx,
-            "raw": pvals_or_bounds[idx],
-            "adjusted": running_max,
-            "family": family,
-        }
-    return out
+    if m == 0:
+        return []
+    from statsmodels.stats.multitest import multipletests
+
+    _, adjusted, _, _ = multipletests(pvals_or_bounds, method="holm")
+    return [
+        {"index": i, "raw": pvals_or_bounds[i], "adjusted": float(adjusted[i]), "family": family}
+        for i in range(m)
+    ]
 
 
 def bh(pvals_or_bounds: list[float]) -> list[dict[str, Any]]:
-    """Benjamini–Hochberg FDR adjustment (exploratory level)."""
+    """Benjamini-Hochberg (1995) FDR adjustment (exploratory level), via
+    ``statsmodels.stats.multitest.multipletests(method="fdr_bh")``."""
     m = len(pvals_or_bounds)
-    order = sorted(range(m), key=lambda i: pvals_or_bounds[i])
-    adj = [1.0] * m
-    prev = 1.0
-    for rank in range(m - 1, -1, -1):
-        idx = order[rank]
-        val = min(prev, pvals_or_bounds[idx] * m / (rank + 1))
-        adj[idx] = val
-        prev = val
-    return [{"index": i, "raw": pvals_or_bounds[i], "adjusted": adj[i]} for i in range(m)]
+    if m == 0:
+        return []
+    from statsmodels.stats.multitest import multipletests
+
+    _, adjusted, _, _ = multipletests(pvals_or_bounds, method="fdr_bh")
+    return [{"index": i, "raw": pvals_or_bounds[i], "adjusted": float(adjusted[i])} for i in range(m)]
 
 
 def one_sided_wald_pvalue(coef: float, p_two_sided: float, *, direction: int = -1) -> float:
