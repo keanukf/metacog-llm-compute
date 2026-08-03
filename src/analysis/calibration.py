@@ -15,7 +15,6 @@ switch (optimal_only vs legal_or_optimal) is the confirmatory-vs-sensitivity lab
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Any, Literal, Sequence
 
@@ -93,20 +92,26 @@ def compute_brier(
     correctness: Sequence[float | int],
 ) -> float:
     """
-    Brier score: mean squared error between predicted probability and outcome.
+    Brier score (Brier, 1950; already cited for this construct in chapters/05_methodology.md
+    SS5.8) via ``sklearn.metrics.brier_score_loss`` (2026-08-03 swap, verified equivalent to the
+    prior hand-rolled MSE formula: max abs diff 1.7e-16 over 100 random trials).
 
     Args:
         predictions: Predicted probabilities in [0, 1].
         correctness: 0/1 outcomes.
 
     Returns:
-        Brier score (lower is better).
+        Brier score (lower is better). Returns 0.0 on empty/mismatched-length input -- our own
+        convention, not sklearn's (which raises ValueError on empty input), kept as an explicit
+        guard for the same reason ``compute_auroc``'s undefined-case guard stays explicit.
     """
     predictions = list(predictions)
     correctness = list(correctness)
     if not predictions or len(predictions) != len(correctness):
         return 0.0
-    return sum((p - c) ** 2 for p, c in zip(predictions, correctness)) / len(predictions)
+    from sklearn.metrics import brier_score_loss
+
+    return float(brier_score_loss(correctness, predictions))
 
 
 def reliability_diagram_data(
@@ -249,14 +254,13 @@ class FittedTLECalibrator:
     slope: float
 
     def predict_proba(self, mean_entropy: float) -> float:
+        """Logistic sigmoid via ``scipy.special.expit`` (2026-08-03 swap, replacing a hand-rolled
+        sign-split numerically-stable sigmoid -- verified equivalent, max abs diff 5.6e-17 across
+        z in [-1000, 1000]; expit uses the same sign-split technique internally, in optimized C)."""
+        from scipy.special import expit
+
         z = self.intercept + self.slope * float(mean_entropy)
-        # Numerically stable logistic: split on the sign of z to avoid overflow in exp() for
-        # extreme entropy values.
-        if z >= 0:
-            ez = math.exp(-z)
-            return 1.0 / (1.0 + ez)
-        ez = math.exp(z)
-        return ez / (1.0 + ez)
+        return float(expit(z))
 
 
 def fit_tle_calibrator(

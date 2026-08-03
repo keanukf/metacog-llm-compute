@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 from src.analysis.calibration import FittedTLECalibrator, fit_tle_calibrator
 
 
@@ -46,6 +48,17 @@ def test_predict_proba_numerically_stable_at_extreme_inputs():
     calibrator = FittedTLECalibrator(intercept=0.0, slope=-50.0)
     assert 0.0 <= calibrator.predict_proba(100.0) <= 1.0
     assert 0.0 <= calibrator.predict_proba(-100.0) <= 1.0
+
+
+def test_predict_proba_matches_scipy_expit_directly():
+    """Regression for the 2026-08-03 sklearn/scipy swap: predict_proba must be exactly the
+    logistic sigmoid of (intercept + slope*x), not an approximation of it."""
+    from scipy.special import expit
+
+    calibrator = FittedTLECalibrator(intercept=0.7, slope=-3.2)
+    for x in (-1000.0, -5.0, -0.001, 0.0, 0.3, 5.0, 1000.0):
+        expected = float(expit(calibrator.intercept + calibrator.slope * x))
+        assert calibrator.predict_proba(x) == pytest.approx(expected, abs=1e-12)
 
 
 def test_fit_tle_calibrator_fails_gracefully_on_insufficient_rows():

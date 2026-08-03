@@ -14,6 +14,7 @@ import pytest
 from src.analysis.calibration import (
     calibration_by_step_position,
     compute_auroc,
+    compute_brier,
     compute_strategy_efficiency,
     signal_discrimination_report,
 )
@@ -55,6 +56,31 @@ def test_compute_auroc_undefined_returns_chance_not_sklearn_valueerror():
     convention is to return 0.5 (chance) instead -- must stay true after the sklearn swap."""
     assert compute_auroc([0.1, 0.2, 0.3], [1, 1, 1]) == pytest.approx(0.5)
     assert compute_auroc([], []) == pytest.approx(0.5)
+
+
+def test_compute_brier_perfect_predictions():
+    assert compute_brier([1.0, 0.0, 1.0], [1, 0, 1]) == pytest.approx(0.0)
+
+
+def test_compute_brier_matches_sklearn_on_random_data():
+    """No test existed for compute_brier at all before this (2026-08-03 sklearn swap) -- closes
+    the same kind of general-case gap test_compute_auroc_matches_sklearn... closes for AUROC."""
+    import random
+
+    from sklearn.metrics import brier_score_loss
+
+    rng = random.Random(20260803)
+    for _ in range(50):
+        n = rng.randint(1, 100)
+        preds = [rng.random() for _ in range(n)]
+        labels = [rng.randint(0, 1) for _ in range(n)]
+        assert compute_brier(preds, labels) == pytest.approx(brier_score_loss(labels, preds), abs=1e-9)
+
+
+def test_compute_brier_empty_or_mismatched_returns_zero_not_sklearn_error():
+    """sklearn.brier_score_loss raises on empty input; this repo's own convention returns 0.0."""
+    assert compute_brier([], []) == pytest.approx(0.0)
+    assert compute_brier([0.5], [1, 0]) == pytest.approx(0.0)  # mismatched length
 
 
 def test_calibration_by_step_position_smoke():
