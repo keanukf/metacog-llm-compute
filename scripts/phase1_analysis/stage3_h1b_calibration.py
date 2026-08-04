@@ -39,7 +39,9 @@ from src.analysis.phase1_canonical import load_canonical_dataset_from_manifest  
 DOMAINS = ("tower_of_hanoi", "textworld")
 
 
-def _predictions_for_domain(rows: list[dict[str, Any]], calibrator: Any) -> tuple[list[int], list[float], list[float]]:
+def _predictions_for_domain(
+    rows: list[dict[str, Any]], calibrator: Any
+) -> tuple[list[int], list[float], list[float]]:
     """Pairwise VC-missing exclusion (thesis §5.2.2/§2.5): a step needs both TLE and VC present to
     enter this comparison. Shared by the confirmatory Brier-delta stat_fn and the reliability
     diagrams so both use the exact same evaluation subset."""
@@ -130,17 +132,28 @@ def run_h1b(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json")
-    parser.add_argument("--output", default="data/results/phase1_analysis/stage3/h1b_calibration.json")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json"
+    )
+    parser.add_argument(
+        "--output", default="data/results/phase1_analysis/stage3/h1b_calibration.json"
+    )
     parser.add_argument("--figures-output", default="data/results/phase1_analysis/stage3/figures")
     parser.add_argument("--n-boot", type=int, default=5000)
     parser.add_argument("--seed", type=int, default=20260703)
     args = parser.parse_args()
 
-    manifest_path = REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    manifest_path = (
+        REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    )
     if not manifest_path.exists():
-        print(f"Stage 3 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.", file=sys.stderr)
+        print(
+            f"Stage 3 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.",
+            file=sys.stderr,
+        )
         return 1
 
     from src.analysis.visualization import plot_bootstrap_distribution, reliability_diagram
@@ -166,7 +179,9 @@ def main() -> int:
             )
         )
 
-    def _on_calibrator_fit(dom: str, calibrator: Any, non_holdout_steps: list[dict[str, Any]]) -> None:
+    def _on_calibrator_fit(
+        dom: str, calibrator: Any, non_holdout_steps: list[dict[str, Any]]
+    ) -> None:
         # Reliability diagrams evaluated on the exact same non-holdout subset ΔBrier is computed
         # on (via _predictions_for_domain's pairwise VC-missing exclusion) -- not the full,
         # unfiltered step table, so the plot matches what the confirmatory number is actually
@@ -176,7 +191,9 @@ def main() -> int:
         if not ys:
             return
         tle_path = figures_dir / f"reliability_tle_mapped_{dom}.png"
-        reliability_diagram(ps_tle, ys, save_path=str(tle_path), title=f"Reliability: TLE-mapped ({dom})")
+        reliability_diagram(
+            ps_tle, ys, save_path=str(tle_path), title=f"Reliability: TLE-mapped ({dom})"
+        )
         written_figures[f"reliability_tle_mapped_{dom}"] = str(tle_path)
         vc_path = figures_dir / f"reliability_vc_{dom}.png"
         reliability_diagram(ps_vc, ys, save_path=str(vc_path), title=f"Reliability: VC/100 ({dom})")
@@ -196,7 +213,9 @@ def main() -> int:
     out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     if written_figures:
-        (figures_dir / "figures_manifest.json").write_text(json.dumps(written_figures, indent=2), encoding="utf-8")
+        (figures_dir / "figures_manifest.json").write_text(
+            json.dumps(written_figures, indent=2), encoding="utf-8"
+        )
 
     print(f"Stage 3 OK -- H1b written to {out_path}")
     for dom in DOMAINS:

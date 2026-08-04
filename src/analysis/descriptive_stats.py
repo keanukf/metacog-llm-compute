@@ -171,7 +171,9 @@ def _skewness(arr: np.ndarray) -> float | None:
     return float(skew(arr, bias=True))
 
 
-def describe_variable(rows: list[dict[str, Any]], key: str, *, total: int | None = None) -> dict[str, Any]:
+def describe_variable(
+    rows: list[dict[str, Any]], key: str, *, total: int | None = None
+) -> dict[str, Any]:
     """``describe_values`` plus missingness, relative to ``total`` rows (defaults to ``len(rows)``
     -- pass an explicit ``total`` when describing a variable within an already-filtered subset,
     e.g. per compute_stage, so the missing rate is relative to that subset, not the whole table)."""
@@ -231,9 +233,7 @@ def compute_variable_codebook(
     for dom in sorted(by_dom_eps):
         eps = by_dom_eps[dom]
         success = [1.0 if bool(e.get("task_success")) else 0.0 for e in eps]
-        codebook["episode_level"][dom] = {
-            var: describe_variable(eps, var) for var in EPISODE_VARS
-        }
+        codebook["episode_level"][dom] = {var: describe_variable(eps, var) for var in EPISODE_VARS}
         codebook["episode_level"][dom]["task_success_rate"] = (
             (sum(success) / len(success)) if success else None
         )
@@ -244,7 +244,9 @@ def compute_variable_codebook(
     return codebook
 
 
-def _describe_binary(rows: list[dict[str, Any]], key: str, *, total: int | None = None) -> dict[str, Any]:
+def _describe_binary(
+    rows: list[dict[str, Any]], key: str, *, total: int | None = None
+) -> dict[str, Any]:
     """Bernoulli summary (rate, not mean/sd/quantiles/skew -- those aren't meaningful for a
     0/1 outcome). ``sd`` is still reported since it's fully determined by the rate
     (sqrt(p(1-p))) and downstream readers may want it for a quick power/precision sense-check."""
@@ -274,7 +276,13 @@ def compute_signal_correlation(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if r.get("tle_mean_entropy") is not None and r.get("vc") is not None
     ]
     if len(paired) < 3:
-        return {"n": len(paired), "pearson_r": None, "pearson_p": None, "spearman_rho": None, "spearman_p": None}
+        return {
+            "n": len(paired),
+            "pearson_r": None,
+            "pearson_p": None,
+            "spearman_rho": None,
+            "spearman_p": None,
+        }
     tle = np.array([p[0] for p in paired], dtype=float)
     vc = np.array([p[1] for p in paired], dtype=float)
     from scipy.stats import pearsonr, spearmanr
@@ -305,8 +313,12 @@ def compute_missingness_outcome_check(rows: list[dict[str, Any]]) -> dict[str, A
     committed to a parseable action, so excluding these steps from signal-quality analyses is the
     intended scope, not a coverage gap -- but that scope needs to be stated, not assumed.
     """
-    present = [r for r in rows if r.get("tle_mean_entropy") is not None and r.get("y_optimal") is not None]
-    missing = [r for r in rows if r.get("tle_mean_entropy") is None and r.get("y_optimal") is not None]
+    present = [
+        r for r in rows if r.get("tle_mean_entropy") is not None and r.get("y_optimal") is not None
+    ]
+    missing = [
+        r for r in rows if r.get("tle_mean_entropy") is None and r.get("y_optimal") is not None
+    ]
 
     def _rate(subset: list[dict[str, Any]]) -> float | None:
         if not subset:
@@ -326,7 +338,11 @@ def compute_sample_composition(episodes: list[dict[str, Any]]) -> list[dict[str,
     preregistered 2x3x(5/45 holdout split) design tangible as numbers, not just prose."""
     counts: dict[tuple[str, str, bool], int] = {}
     for e in episodes:
-        key = (str(e.get("domain", "unknown")), str(e.get("compute_stage", "unknown")), bool(e.get("holdout")))
+        key = (
+            str(e.get("domain", "unknown")),
+            str(e.get("compute_stage", "unknown")),
+            bool(e.get("holdout")),
+        )
         counts[key] = counts.get(key, 0) + 1
     return [
         {"domain": dom, "compute_stage": stage, "holdout": holdout, "n_episodes": n}
@@ -495,11 +511,15 @@ def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start
     lines.append("|---|---|---:|---:|---:|")
     for dom in domains:
         pooled = codebook["step_level"][dom]["y_optimal"]
-        lines.append(f"| {dom} | pooled | {pooled['n']} | {_fmt(pooled['rate'], 3)} | {_fmt(pooled['sd'], 3)} |")
+        lines.append(
+            f"| {dom} | pooled | {pooled['n']} | {_fmt(pooled['rate'], 3)} | {_fmt(pooled['sd'], 3)} |"
+        )
         stages = sorted(codebook.get("step_level_by_stage", {}).get(dom, {}).keys())
         for stage in stages:
             d = codebook["step_level_by_stage"][dom][stage]["y_optimal"]
-            lines.append(f"| {dom} | {stage} | {d['n']} | {_fmt(d['rate'], 3)} | {_fmt(d['sd'], 3)} |")
+            lines.append(
+                f"| {dom} | {stage} | {d['n']} | {_fmt(d['rate'], 3)} | {_fmt(d['sd'], 3)} |"
+            )
     lines.append("")
     lines.append(
         "*Note.* Rate = proportion of steps with the optimal action; SD = sqrt(rate x (1-rate)), "
@@ -514,8 +534,9 @@ def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start
     lines.append("")
     lines.append("*Descriptive statistics for episode-level variables, by domain*")
     lines.append("")
-    lines.append("| Domain | N episodes | Task success rate | Episode length M (SD) | "
-                  "Compute cost M (SD) |")
+    lines.append(
+        "| Domain | N episodes | Task success rate | Episode length M (SD) | Compute cost M (SD) |"
+    )
     lines.append("|---|---:|---:|---:|---:|")
     for dom in sorted(codebook.get("episode_level", {}).keys()):
         d = codebook["episode_level"][dom]
@@ -587,7 +608,9 @@ def render_apa_codebook_markdown(codebook: dict[str, Any], *, table_number_start
     lines.append("")
     lines.append("*TLE missingness vs. step outcome, by domain*")
     lines.append("")
-    lines.append("| Domain | N present | Rate correct (present) | N missing | Rate correct (missing) |")
+    lines.append(
+        "| Domain | N present | Rate correct (present) | N missing | Rate correct (missing) |"
+    )
     lines.append("|---|---:|---:|---:|---:|")
     for dom in domains:
         c = codebook.get("missingness_outcome_check", {}).get(dom, {})

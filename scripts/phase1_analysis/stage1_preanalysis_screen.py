@@ -30,7 +30,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -50,7 +49,9 @@ from src.analysis.visualization import (  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json"
     )
@@ -60,12 +61,12 @@ def main() -> int:
     parser.add_argument(
         "--codebook-output", default="data/results/phase1_analysis/stage1/variable_codebook.md"
     )
-    parser.add_argument(
-        "--figures-output", default="data/results/phase1_analysis/stage1/figures"
-    )
+    parser.add_argument("--figures-output", default="data/results/phase1_analysis/stage1/figures")
     args = parser.parse_args()
 
-    manifest_path = REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    manifest_path = (
+        REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    )
     if not manifest_path.exists():
         print(
             f"Stage 1 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.",

@@ -47,7 +47,11 @@ def test_position_correctness_bins_flags_empty_cells():
     ]
     report = _position_correctness_bins(rows, n_bins=10)
     assert report["n_empty_cells"] > 0
-    assert all(b["position_range"][0] >= 0.5 for b in report["bins"] if b["bin"] in report["empty_cell_bins"])
+    assert all(
+        b["position_range"][0] >= 0.5
+        for b in report["bins"]
+        if b["bin"] in report["empty_cell_bins"]
+    )
 
 
 def test_position_correctness_bins_no_empty_cells_when_evenly_spread():

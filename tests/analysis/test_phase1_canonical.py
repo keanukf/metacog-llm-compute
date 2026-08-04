@@ -152,9 +152,7 @@ def test_load_canonical_dataset_from_manifest_reproduces_build_output(tmp_path):
 
 
 def test_assert_canonical_invariants_raises_on_wrong_total_count():
-    ds = CanonicalDataset(
-        episodes=[], steps=[], sources={"tower_of_hanoi": "x", "textworld": "y"}
-    )
+    ds = CanonicalDataset(episodes=[], steps=[], sources={"tower_of_hanoi": "x", "textworld": "y"})
     with pytest.raises(AssertionError, match="episodes"):
         assert_canonical_invariants(ds)
 

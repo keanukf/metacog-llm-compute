@@ -130,7 +130,9 @@ def render(snap: dict, *, expected: int | None, elapsed_s: float) -> str:
         n_inflight = snap["inflight"].get(cell, 0)
         n_success = snap["success"].get(cell, 0)
         suffix = f" (+{n_inflight} in flight)" if n_inflight else ""
-        succ_str = f", success {n_success}/{n_done} ({100 * n_success / n_done:.0f}%)" if n_done else ""
+        succ_str = (
+            f", success {n_success}/{n_done} ({100 * n_success / n_done:.0f}%)" if n_done else ""
+        )
         lines.append(f"  {d}/{s}: {n_done} done{suffix}{succ_str}")
 
     total_str = (

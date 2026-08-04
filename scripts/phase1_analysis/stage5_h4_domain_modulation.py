@@ -56,22 +56,35 @@ def run_h4(
     result = {k: v for k, v in boot.items() if k != "reps"}
     result["one_sided_pvalue"] = p
     result["holm"] = holm_result
-    result["decision_holds"] = boot["ci_low"] is not None and boot["ci_low"] > 0 and holm_result["adjusted"] < 0.05
+    result["decision_holds"] = (
+        boot["ci_low"] is not None and boot["ci_low"] > 0 and holm_result["adjusted"] < 0.05
+    )
     return {"family": "C", "result": result}
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json")
-    parser.add_argument("--output", default="data/results/phase1_analysis/stage5/h4_domain_modulation.json")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json"
+    )
+    parser.add_argument(
+        "--output", default="data/results/phase1_analysis/stage5/h4_domain_modulation.json"
+    )
     parser.add_argument("--figures-output", default="data/results/phase1_analysis/stage5/figures")
     parser.add_argument("--n-boot", type=int, default=5000)
     parser.add_argument("--seed", type=int, default=20260703)
     args = parser.parse_args()
 
-    manifest_path = REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    manifest_path = (
+        REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    )
     if not manifest_path.exists():
-        print(f"Stage 5 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.", file=sys.stderr)
+        print(
+            f"Stage 5 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.",
+            file=sys.stderr,
+        )
         return 1
 
     from src.analysis.visualization import plot_bootstrap_distribution
@@ -105,7 +118,9 @@ def main() -> int:
     out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     if written_figures:
-        (figures_dir / "figures_manifest.json").write_text(json.dumps(written_figures, indent=2), encoding="utf-8")
+        (figures_dir / "figures_manifest.json").write_text(
+            json.dumps(written_figures, indent=2), encoding="utf-8"
+        )
 
     r = result["result"]
     print(f"Stage 5 OK -- H4 written to {out_path}")

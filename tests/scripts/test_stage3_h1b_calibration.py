@@ -13,7 +13,9 @@ import random
 from scripts.phase1_analysis.stage3_h1b_calibration import DOMAINS, run_h1b
 
 
-def _rows(domain: str, *, n: int, holdout_fraction: float, tle_discriminates: bool, seed: int) -> list[dict]:
+def _rows(
+    domain: str, *, n: int, holdout_fraction: float, tle_discriminates: bool, seed: int
+) -> list[dict]:
     rng = random.Random(seed)
     rows = []
     n_holdout_instances = max(1, int(10 * holdout_fraction))
@@ -40,7 +42,9 @@ def _rows(domain: str, *, n: int, holdout_fraction: float, tle_discriminates: bo
 def test_run_h1b_uses_disjoint_holdout_and_evaluation_sets():
     steps = []
     for dom in DOMAINS:
-        steps += _rows(dom, n=400, holdout_fraction=0.1, tle_discriminates=True, seed=hash(dom) % 1000)
+        steps += _rows(
+            dom, n=400, holdout_fraction=0.1, tle_discriminates=True, seed=hash(dom) % 1000
+        )
 
     result = run_h1b(steps, n_boot=200, seed=1)
 
@@ -99,7 +103,9 @@ def test_run_h1b_hooks_fire_only_for_converged_domains():
         n_boot=50,
         seed=1,
         on_bootstrap=lambda dom, boot: boot_seen.__setitem__(dom, boot),
-        on_calibrator_fit=lambda dom, calibrator, non_holdout: fit_seen.__setitem__(dom, calibrator),
+        on_calibrator_fit=lambda dom, calibrator, non_holdout: fit_seen.__setitem__(
+            dom, calibrator
+        ),
     )
 
     # Only the converged domain gets a bootstrap/calibrator-fit callback -- textworld's failed

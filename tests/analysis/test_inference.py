@@ -343,7 +343,9 @@ def test_build_h3_frame_matches_fit_h3_model_standardization():
 
 
 def test_build_h3_frame_insufficient_data_returns_none_with_note():
-    frame, note = build_h3_frame([{"y_optimal": 1, "compute_stage": "C0", "tle_mean_entropy": 0.1}], signal="tle")
+    frame, note = build_h3_frame(
+        [{"y_optimal": 1, "compute_stage": "C0", "tle_mean_entropy": 0.1}], signal="tle"
+    )
     assert frame is None
     assert note == "insufficient data"
 
@@ -353,7 +355,9 @@ def test_cluster_bootstrap_exposes_reps_for_pvalue_derivation():
         {"instance_key": f"t:{i // 3}", "y_optimal": i % 2, "tle_mean_entropy": 0.1 * i}
         for i in range(30)
     ]
-    out = cluster_bootstrap(rows, lambda rs: sum(int(r["y_optimal"]) for r in rs) / len(rs), n_boot=200, seed=1)
+    out = cluster_bootstrap(
+        rows, lambda rs: sum(int(r["y_optimal"]) for r in rs) / len(rs), n_boot=200, seed=1
+    )
     assert isinstance(out["reps"], list)
     assert len(out["reps"]) == out["n_boot_effective"]
 

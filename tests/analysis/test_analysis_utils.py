@@ -48,7 +48,9 @@ def test_compute_auroc_matches_sklearn_on_random_data_with_ties():
         labels = [rng.randint(0, 1) for _ in range(n)]
         if len(set(labels)) < 2:
             continue
-        assert compute_auroc(scores, labels) == pytest.approx(roc_auc_score(labels, scores), abs=1e-9)
+        assert compute_auroc(scores, labels) == pytest.approx(
+            roc_auc_score(labels, scores), abs=1e-9
+        )
 
 
 def test_compute_auroc_undefined_returns_chance_not_sklearn_valueerror():
@@ -74,7 +76,9 @@ def test_compute_brier_matches_sklearn_on_random_data():
         n = rng.randint(1, 100)
         preds = [rng.random() for _ in range(n)]
         labels = [rng.randint(0, 1) for _ in range(n)]
-        assert compute_brier(preds, labels) == pytest.approx(brier_score_loss(labels, preds), abs=1e-9)
+        assert compute_brier(preds, labels) == pytest.approx(
+            brier_score_loss(labels, preds), abs=1e-9
+        )
 
 
 def test_compute_brier_empty_or_mismatched_returns_zero_not_sklearn_error():

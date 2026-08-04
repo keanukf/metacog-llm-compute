@@ -28,7 +28,9 @@ def _stage_cmd(script: str, *extra: str) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--seed", type=int, default=20260703)
     parser.add_argument("--n-boot", type=int, default=5000)
     args = parser.parse_args()
@@ -41,7 +43,10 @@ def main() -> int:
         ("Stage 2 (H1a discrimination)", _stage_cmd("stage2_h1a_discrimination.py", *boot_args)),
         ("Stage 3 (H1b calibration)", _stage_cmd("stage3_h1b_calibration.py", *boot_args)),
         ("Stage 4 (H3 temporal)", _stage_cmd("stage4_h3_temporal.py")),
-        ("Stage 5 (H4 domain modulation)", _stage_cmd("stage5_h4_domain_modulation.py", *boot_args)),
+        (
+            "Stage 5 (H4 domain modulation)",
+            _stage_cmd("stage5_h4_domain_modulation.py", *boot_args),
+        ),
         ("Stage 6 (visualizations)", _stage_cmd("stage6_visualizations.py")),
         ("Stage 7 (report generation)", _stage_cmd("stage7_generate_report.py")),
     ]

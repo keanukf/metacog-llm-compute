@@ -284,12 +284,17 @@ def _empirical_position_binned_means(
         return None
 
     out: dict[str, list[Any]] = {}
-    for label, mask in (("early", frame["position_norm"] < 0.5), ("late", frame["position_norm"] >= 0.5)):
+    for label, mask in (
+        ("early", frame["position_norm"] < 0.5),
+        ("late", frame["position_norm"] >= 0.5),
+    ):
         sub = frame[mask]
         if len(sub) < n_bins:
             continue
         sub = sub.assign(_bin=pd.qcut(sub["z_c"], q=n_bins, duplicates="drop"))
-        grouped = sub.groupby("_bin", observed=True).agg(z_mean=("z_c", "mean"), y_mean=("y", "mean"), n=("y", "size"))
+        grouped = sub.groupby("_bin", observed=True).agg(
+            z_mean=("z_c", "mean"), y_mean=("y", "mean"), n=("y", "size")
+        )
         out[label] = [
             {"z": float(row.z_mean), "y": float(row.y_mean), "n": int(row.n)}
             for row in grouped.itertuples()
@@ -324,8 +329,9 @@ def plot_h3_marginal_effect(
     read backwards to anyone comparing it against the raw entropy definition in the thesis text.
     """
     try:
-        import matplotlib.pyplot as plt  # type: ignore
         import math as _math
+
+        import matplotlib.pyplot as plt  # type: ignore
     except Exception:
         return {}
 
@@ -563,11 +569,17 @@ def plot_bootstrap_distribution(
     if point is not None:
         ax.axvline(point, color="black", linewidth=1.5, label=f"point={point:.4f}")
     if ci_low is not None:
-        ax.axvline(ci_low, color="tab:red", linestyle="--", linewidth=1.2, label=f"CI low={ci_low:.4f}")
+        ax.axvline(
+            ci_low, color="tab:red", linestyle="--", linewidth=1.2, label=f"CI low={ci_low:.4f}"
+        )
     if ci_high is not None:
-        ax.axvline(ci_high, color="tab:red", linestyle="--", linewidth=1.2, label=f"CI high={ci_high:.4f}")
+        ax.axvline(
+            ci_high, color="tab:red", linestyle="--", linewidth=1.2, label=f"CI high={ci_high:.4f}"
+        )
     if null_value is not None:
-        ax.axvline(null_value, color="gray", linestyle=":", linewidth=1.2, label=f"null={null_value:.2f}")
+        ax.axvline(
+            null_value, color="gray", linestyle=":", linewidth=1.2, label=f"null={null_value:.2f}"
+        )
     ax.set_xlabel("Bootstrap replicate value")
     ax.set_ylabel("Count")
     ax.set_title(title or f"Bootstrap distribution: {name}")

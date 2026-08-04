@@ -85,17 +85,28 @@ def run_h1a(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json")
-    parser.add_argument("--output", default="data/results/phase1_analysis/stage2/h1a_discrimination.json")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json"
+    )
+    parser.add_argument(
+        "--output", default="data/results/phase1_analysis/stage2/h1a_discrimination.json"
+    )
     parser.add_argument("--figures-output", default="data/results/phase1_analysis/stage2/figures")
     parser.add_argument("--n-boot", type=int, default=5000)
     parser.add_argument("--seed", type=int, default=20260703)
     args = parser.parse_args()
 
-    manifest_path = REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    manifest_path = (
+        REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    )
     if not manifest_path.exists():
-        print(f"Stage 2 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.", file=sys.stderr)
+        print(
+            f"Stage 2 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.",
+            file=sys.stderr,
+        )
         return 1
 
     from src.analysis.visualization import plot_bootstrap_distribution
@@ -122,14 +133,18 @@ def main() -> int:
         )
 
     ds = load_canonical_dataset_from_manifest(manifest_path)
-    result = run_h1a(ds.steps, ds.episodes, n_boot=args.n_boot, seed=args.seed, on_bootstrap=_on_bootstrap)
+    result = run_h1a(
+        ds.steps, ds.episodes, n_boot=args.n_boot, seed=args.seed, on_bootstrap=_on_bootstrap
+    )
 
     out_path = REPO_ROOT / args.output if not Path(args.output).is_absolute() else Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     if written_figures:
-        (figures_dir / "figures_manifest.json").write_text(json.dumps(written_figures, indent=2), encoding="utf-8")
+        (figures_dir / "figures_manifest.json").write_text(
+            json.dumps(written_figures, indent=2), encoding="utf-8"
+        )
 
     print(f"Stage 2 OK -- H1a written to {out_path}")
     for dom in DOMAINS:

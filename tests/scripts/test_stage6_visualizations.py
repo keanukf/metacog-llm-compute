@@ -34,15 +34,23 @@ _H3 = {
     "exploratory_domain": "tower_of_hanoi",
     "results": {
         "textworld": {
-            "tle": {"converged": True, "params": {"const": -1.6, "z_c": 0.6, "p_c": -0.02, "interaction": -1.37}},
+            "tle": {
+                "converged": True,
+                "params": {"const": -1.6, "z_c": 0.6, "p_c": -0.02, "interaction": -1.37},
+            },
             "vc": {"converged": False, "note": "insufficient data"},
         },
-        "tower_of_hanoi": {"tle": {"converged": False, "note": "insufficient data"}, "vc": {"converged": False, "note": "insufficient data"}},
+        "tower_of_hanoi": {
+            "tle": {"converged": False, "note": "insufficient data"},
+            "vc": {"converged": False, "note": "insufficient data"},
+        },
     },
 }
 
 
-def _write_episode_with_steps(dir_: Path, *, episode_id: str, domain: str, instance: int, n_steps: int, seed: int) -> None:
+def _write_episode_with_steps(
+    dir_: Path, *, episode_id: str, domain: str, instance: int, n_steps: int, seed: int
+) -> None:
     import random
 
     rng = random.Random(seed)
@@ -83,7 +91,9 @@ def _build_manifest_fixture(tmp_path: Path) -> Path:
     entries = []
     for inst in range(5):
         ep_id = f"ep_textworld_{inst}_C0_0"
-        _write_episode_with_steps(source_dir, episode_id=ep_id, domain="textworld", instance=inst, n_steps=10, seed=inst)
+        _write_episode_with_steps(
+            source_dir, episode_id=ep_id, domain="textworld", instance=inst, n_steps=10, seed=inst
+        )
         entries.append({"episode_id": ep_id, "domain": "textworld", "source_dir": str(source_dir)})
 
     manifest_path = tmp_path / "manifest.json"
@@ -117,10 +127,14 @@ def test_stage6_writes_figures_and_manifest(tmp_path, monkeypatch):
 
     rc = _run_main(
         [
-            "--manifest", str(manifest_path),
-            "--stage2", str(stage2_path),
-            "--stage4", str(stage4_path),
-            "--output-dir", str(out_dir),
+            "--manifest",
+            str(manifest_path),
+            "--stage2",
+            str(stage2_path),
+            "--stage4",
+            str(stage4_path),
+            "--output-dir",
+            str(out_dir),
         ],
         monkeypatch,
     )
@@ -142,9 +156,12 @@ def test_stage6_fails_loudly_on_missing_stage_input(tmp_path, monkeypatch):
     manifest_path = _build_manifest_fixture(tmp_path)
     rc = _run_main(
         [
-            "--manifest", str(manifest_path),
-            "--stage2", str(tmp_path / "missing.json"),
-            "--stage4", str(tmp_path / "missing2.json"),
+            "--manifest",
+            str(manifest_path),
+            "--stage2",
+            str(tmp_path / "missing.json"),
+            "--stage4",
+            str(tmp_path / "missing2.json"),
         ],
         monkeypatch,
     )

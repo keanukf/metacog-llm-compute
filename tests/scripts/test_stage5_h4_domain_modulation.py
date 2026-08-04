@@ -12,7 +12,9 @@ import random
 from scripts.phase1_analysis.stage5_h4_domain_modulation import run_h4
 
 
-def _domain_steps(domain: str, *, n_instances: int, steps_per_instance: int, tle_advantage: float, seed: int) -> list[dict]:
+def _domain_steps(
+    domain: str, *, n_instances: int, steps_per_instance: int, tle_advantage: float, seed: int
+) -> list[dict]:
     """tle_advantage controls how much better TLE discriminates correctness than VC in this
     domain -- larger in tower_of_hanoi than textworld reproduces the preregistered H4 direction."""
     rng = random.Random(seed)
@@ -36,8 +38,12 @@ def _domain_steps(domain: str, *, n_instances: int, steps_per_instance: int, tle
 
 def test_run_h4_shape_and_family():
     steps = []
-    steps += _domain_steps("tower_of_hanoi", n_instances=10, steps_per_instance=8, tle_advantage=0.8, seed=1)
-    steps += _domain_steps("textworld", n_instances=10, steps_per_instance=8, tle_advantage=0.1, seed=2)
+    steps += _domain_steps(
+        "tower_of_hanoi", n_instances=10, steps_per_instance=8, tle_advantage=0.8, seed=1
+    )
+    steps += _domain_steps(
+        "textworld", n_instances=10, steps_per_instance=8, tle_advantage=0.1, seed=2
+    )
 
     result = run_h4(steps, n_boot=200, seed=7)
 
@@ -52,9 +58,27 @@ def test_run_h4_shape_and_family():
 
 def test_run_h4_insufficient_clusters_returns_none_point():
     steps = [
-        {"domain": "tower_of_hanoi", "instance_key": "toh:0", "y_optimal": 1, "tle_mean_entropy": 0.1, "vc": 60},
-        {"domain": "textworld", "instance_key": "tw:0", "y_optimal": 1, "tle_mean_entropy": 0.1, "vc": 60},
-        {"domain": "textworld", "instance_key": "tw:1", "y_optimal": 0, "tle_mean_entropy": 0.4, "vc": 40},
+        {
+            "domain": "tower_of_hanoi",
+            "instance_key": "toh:0",
+            "y_optimal": 1,
+            "tle_mean_entropy": 0.1,
+            "vc": 60,
+        },
+        {
+            "domain": "textworld",
+            "instance_key": "tw:0",
+            "y_optimal": 1,
+            "tle_mean_entropy": 0.1,
+            "vc": 60,
+        },
+        {
+            "domain": "textworld",
+            "instance_key": "tw:1",
+            "y_optimal": 0,
+            "tle_mean_entropy": 0.4,
+            "vc": 40,
+        },
     ]
     result = run_h4(steps, n_boot=50, seed=1)
     assert result["result"]["point"] is None
@@ -63,8 +87,12 @@ def test_run_h4_insufficient_clusters_returns_none_point():
 
 def test_run_h4_on_bootstrap_hook_fires_with_reps():
     steps = []
-    steps += _domain_steps("tower_of_hanoi", n_instances=10, steps_per_instance=8, tle_advantage=0.8, seed=1)
-    steps += _domain_steps("textworld", n_instances=10, steps_per_instance=8, tle_advantage=0.1, seed=2)
+    steps += _domain_steps(
+        "tower_of_hanoi", n_instances=10, steps_per_instance=8, tle_advantage=0.8, seed=1
+    )
+    steps += _domain_steps(
+        "textworld", n_instances=10, steps_per_instance=8, tle_advantage=0.1, seed=2
+    )
 
     seen = {}
     run_h4(steps, n_boot=50, seed=7, on_bootstrap=lambda boot: seen.update(boot))

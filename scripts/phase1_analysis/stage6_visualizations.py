@@ -37,26 +37,48 @@ from src.analysis.visualization import (  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json")
-    parser.add_argument("--stage2", default="data/results/phase1_analysis/stage2/h1a_discrimination.json")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json"
+    )
+    parser.add_argument(
+        "--stage2", default="data/results/phase1_analysis/stage2/h1a_discrimination.json"
+    )
     parser.add_argument("--stage4", default="data/results/phase1_analysis/stage4/h3_temporal.json")
     parser.add_argument("--output-dir", default="data/results/phase1_analysis/stage6/figures")
     args = parser.parse_args()
 
-    manifest_path = REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
-    stage2_path = REPO_ROOT / args.stage2 if not Path(args.stage2).is_absolute() else Path(args.stage2)
-    stage4_path = REPO_ROOT / args.stage4 if not Path(args.stage4).is_absolute() else Path(args.stage4)
-    for p, stage in ((manifest_path, "Stage 0"), (stage2_path, "Stage 2"), (stage4_path, "Stage 4")):
+    manifest_path = (
+        REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    )
+    stage2_path = (
+        REPO_ROOT / args.stage2 if not Path(args.stage2).is_absolute() else Path(args.stage2)
+    )
+    stage4_path = (
+        REPO_ROOT / args.stage4 if not Path(args.stage4).is_absolute() else Path(args.stage4)
+    )
+    for p, stage in (
+        (manifest_path, "Stage 0"),
+        (stage2_path, "Stage 2"),
+        (stage4_path, "Stage 4"),
+    ):
         if not p.exists():
-            print(f"Stage 6 FAILED -- {stage} output not found at {p}; run it first.", file=sys.stderr)
+            print(
+                f"Stage 6 FAILED -- {stage} output not found at {p}; run it first.", file=sys.stderr
+            )
             return 1
 
     h1a_results = json.loads(stage2_path.read_text(encoding="utf-8"))
     h3_results = json.loads(stage4_path.read_text(encoding="utf-8"))
     ds = load_canonical_dataset_from_manifest(manifest_path)
 
-    output_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
+    output_dir = (
+        REPO_ROOT / args.output_dir
+        if not Path(args.output_dir).is_absolute()
+        else Path(args.output_dir)
+    )
     written: dict[str, str] = {}
     written.update(plot_auroc_comparison_bars(h1a_results, output_dir))
     written.update(plot_h3_marginal_effect(h3_results, output_dir, steps=ds.steps))

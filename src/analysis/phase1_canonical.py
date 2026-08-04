@@ -92,8 +92,7 @@ def assert_canonical_invariants(ds: CanonicalDataset) -> None:
     """
     if len(ds.episodes) != EXPECTED_TOTAL_EPISODES:
         raise AssertionError(
-            f"canonical dataset has {len(ds.episodes)} episodes, "
-            f"expected {EXPECTED_TOTAL_EPISODES}"
+            f"canonical dataset has {len(ds.episodes)} episodes, expected {EXPECTED_TOTAL_EPISODES}"
         )
 
     by_domain: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -109,9 +108,7 @@ def assert_canonical_invariants(ds: CanonicalDataset) -> None:
     for domain, expected_dir in ds.sources.items():
         eps = by_domain.get(domain, [])
         if len(eps) != EXPECTED_PER_DOMAIN:
-            raise AssertionError(
-                f"{domain}: {len(eps)} episodes, expected {EXPECTED_PER_DOMAIN}"
-            )
+            raise AssertionError(f"{domain}: {len(eps)} episodes, expected {EXPECTED_PER_DOMAIN}")
 
         wrong_source = [e for e in eps if e.get("_source_dir") != expected_dir]
         if wrong_source:

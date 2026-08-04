@@ -18,7 +18,9 @@ from scripts.phase1_analysis.stage4_h3_temporal import (
 )
 
 
-def _degrading_signal_steps(domain: str, *, n_instances: int, steps_per_instance: int, seed: int) -> list[dict]:
+def _degrading_signal_steps(
+    domain: str, *, n_instances: int, steps_per_instance: int, seed: int
+) -> list[dict]:
     """Signal predicts correctness well early in the episode, badly late -- a genuine
     signal x position interaction, same construction style as fit_h3_model's own tests."""
     rng = random.Random(seed)
@@ -46,8 +48,12 @@ def _degrading_signal_steps(domain: str, *, n_instances: int, steps_per_instance
 
 def test_run_h3_shape_and_family_scoping():
     steps = []
-    steps += _degrading_signal_steps(CONFIRMATORY_DOMAIN, n_instances=15, steps_per_instance=10, seed=1)
-    steps += _degrading_signal_steps(EXPLORATORY_DOMAIN, n_instances=15, steps_per_instance=6, seed=2)
+    steps += _degrading_signal_steps(
+        CONFIRMATORY_DOMAIN, n_instances=15, steps_per_instance=10, seed=1
+    )
+    steps += _degrading_signal_steps(
+        EXPLORATORY_DOMAIN, n_instances=15, steps_per_instance=6, seed=2
+    )
 
     result = run_h3(steps)
 

@@ -72,7 +72,9 @@ def build_manifest(sources: dict[str, Path] | None = None) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "--output",
         default="data/results/phase1_analysis/stage0/canonical_manifest.json",

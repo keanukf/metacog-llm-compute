@@ -68,7 +68,10 @@ def _position_correctness_bins(
             for r in rows
             if r.get("position_norm") is not None
             and r.get("y_optimal") is not None
-            and (lo <= float(r["position_norm"]) < hi or (b == n_bins - 1 and float(r["position_norm"]) == hi))
+            and (
+                lo <= float(r["position_norm"]) < hi
+                or (b == n_bins - 1 and float(r["position_norm"]) == hi)
+            )
         ]
         n = len(in_bin)
         n_pos = sum(1 for r in in_bin if int(r["y_optimal"]) == 1)

@@ -26,7 +26,14 @@ _SCREEN = {
             "n_clusters": 10,
             "vc_missing_rate": 0.01,
             "icc": {"icc_gee": 0.02},
-            "episode_length_distribution": {"n": 10, "min": 1, "q1": 2, "median": 3, "q3": 4, "max": 5},
+            "episode_length_distribution": {
+                "n": 10,
+                "min": 1,
+                "q1": 2,
+                "median": 3,
+                "q3": 4,
+                "max": 5,
+            },
             "position_correctness": {"n_empty_cells": 0},
         },
         "textworld": {
@@ -34,7 +41,14 @@ _SCREEN = {
             "n_clusters": 10,
             "vc_missing_rate": 0.05,
             "icc": {"icc_gee": 0.03},
-            "episode_length_distribution": {"n": 10, "min": 1, "q1": 2, "median": 3, "q3": 4, "max": 5},
+            "episode_length_distribution": {
+                "n": 10,
+                "min": 1,
+                "q1": 2,
+                "median": 3,
+                "q3": 4,
+                "max": 5,
+            },
             "position_correctness": {"n_empty_cells": 1},
         },
     }
@@ -135,28 +149,42 @@ def _write_fake_figures(figures_dir, names):
 
 def _write_all(stage_dir):
     (stage_dir / "stage0").mkdir(parents=True)
-    (stage_dir / "stage0" / "canonical_manifest.json").write_text(json.dumps(_MANIFEST), encoding="utf-8")
+    (stage_dir / "stage0" / "canonical_manifest.json").write_text(
+        json.dumps(_MANIFEST), encoding="utf-8"
+    )
     (stage_dir / "stage1").mkdir(parents=True)
-    (stage_dir / "stage1" / "preanalysis_screen.json").write_text(json.dumps(_SCREEN), encoding="utf-8")
+    (stage_dir / "stage1" / "preanalysis_screen.json").write_text(
+        json.dumps(_SCREEN), encoding="utf-8"
+    )
     (stage_dir / "stage1" / "variable_codebook.md").write_text(
         "*Table 1*\n\n*Variable roles and measurement scales*\n\n| Variable |\n|---|\n| domain |\n",
         encoding="utf-8",
     )
     (stage_dir / "stage2").mkdir(parents=True)
-    (stage_dir / "stage2" / "h1a_discrimination.json").write_text(json.dumps(_H1A), encoding="utf-8")
+    (stage_dir / "stage2" / "h1a_discrimination.json").write_text(
+        json.dumps(_H1A), encoding="utf-8"
+    )
     (stage_dir / "stage3").mkdir(parents=True)
     (stage_dir / "stage3" / "h1b_calibration.json").write_text(json.dumps(_H1B), encoding="utf-8")
     (stage_dir / "stage4").mkdir(parents=True)
     (stage_dir / "stage4" / "h3_temporal.json").write_text(json.dumps(_H3), encoding="utf-8")
     (stage_dir / "stage5").mkdir(parents=True)
-    (stage_dir / "stage5" / "h4_domain_modulation.json").write_text(json.dumps(_H4), encoding="utf-8")
+    (stage_dir / "stage5" / "h4_domain_modulation.json").write_text(
+        json.dumps(_H4), encoding="utf-8"
+    )
 
     _write_fake_figures(
         stage_dir / "stage1" / "figures",
-        ["hist_signals_tower_of_hanoi", "hist_signals_textworld", "boxplot_signals_by_domain", "boxplot_episode_length"],
+        [
+            "hist_signals_tower_of_hanoi",
+            "hist_signals_textworld",
+            "boxplot_signals_by_domain",
+            "boxplot_episode_length",
+        ],
     )
     _write_fake_figures(
-        stage_dir / "stage2" / "figures", ["bootstrap_dist_h1a_tower_of_hanoi", "bootstrap_dist_h1a_textworld"]
+        stage_dir / "stage2" / "figures",
+        ["bootstrap_dist_h1a_tower_of_hanoi", "bootstrap_dist_h1a_textworld"],
     )
     _write_fake_figures(
         stage_dir / "stage3" / "figures",
@@ -172,7 +200,11 @@ def _write_all(stage_dir):
     _write_fake_figures(stage_dir / "stage5" / "figures", ["bootstrap_dist_h4"])
     _write_fake_figures(
         stage_dir / "stage6" / "figures",
-        ["h1a_auroc_comparison", "h3_marginal_effect_textworld_tle", "h3_marginal_effect_tower_of_hanoi_tle"],
+        [
+            "h1a_auroc_comparison",
+            "h3_marginal_effect_textworld_tle",
+            "h3_marginal_effect_tower_of_hanoi_tle",
+        ],
     )
 
 
@@ -189,9 +221,12 @@ def test_stage7_generates_report_with_all_sections(tmp_path, monkeypatch):
 
     rc = _run_main(
         [
-            "--stage-dir", str(stage_dir),
-            "--report-out", str(report_out),
-            "--figures-out", str(figures_out),
+            "--stage-dir",
+            str(stage_dir),
+            "--report-out",
+            str(report_out),
+            "--figures-out",
+            str(figures_out),
         ],
         monkeypatch,
     )
@@ -233,9 +268,12 @@ def test_stage7_report_is_idempotent(tmp_path, monkeypatch):
     report_out = tmp_path / "report.md"
     figures_out = tmp_path / "docs_figures"
     argv = [
-        "--stage-dir", str(stage_dir),
-        "--report-out", str(report_out),
-        "--figures-out", str(figures_out),
+        "--stage-dir",
+        str(stage_dir),
+        "--report-out",
+        str(report_out),
+        "--figures-out",
+        str(figures_out),
     ]
     _run_main(argv, monkeypatch)
     first = report_out.read_text(encoding="utf-8")

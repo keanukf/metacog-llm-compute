@@ -47,7 +47,9 @@ def run_h3(steps: list[dict[str, Any]]) -> dict[str, Any]:
                 coef = fit["params"].get("interaction")
                 p_two = fit["pvalues"].get("interaction")
                 fit["interaction_coef"] = coef
-                fit["one_sided_pvalue_degradation"] = one_sided_wald_pvalue(coef, p_two, direction=-1)
+                fit["one_sided_pvalue_degradation"] = one_sided_wald_pvalue(
+                    coef, p_two, direction=-1
+                )
             results[dom][sig] = fit
 
     # Family E: TextWorld TLE + VC, Holm-corrected -- the confirmatory decision.
@@ -61,7 +63,10 @@ def run_h3(steps: list[dict[str, Any]]) -> dict[str, Any]:
         r["holm"] = holm_result[i]
         coef = r.get("interaction_coef")
         r["decision_holds"] = (
-            r.get("converged", False) and coef is not None and coef < 0 and holm_result[i]["adjusted"] < 0.05
+            r.get("converged", False)
+            and coef is not None
+            and coef < 0
+            and holm_result[i]["adjusted"] < 0.05
         )
 
     # Exploratory ToH: no Holm correction against the confirmatory family, report raw.
@@ -81,14 +86,23 @@ def run_h3(steps: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json"
+    )
     parser.add_argument("--output", default="data/results/phase1_analysis/stage4/h3_temporal.json")
     args = parser.parse_args()
 
-    manifest_path = REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    manifest_path = (
+        REPO_ROOT / args.manifest if not Path(args.manifest).is_absolute() else Path(args.manifest)
+    )
     if not manifest_path.exists():
-        print(f"Stage 4 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.", file=sys.stderr)
+        print(
+            f"Stage 4 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.",
+            file=sys.stderr,
+        )
         return 1
 
     ds = load_canonical_dataset_from_manifest(manifest_path)

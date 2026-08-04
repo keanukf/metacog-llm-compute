@@ -23,8 +23,18 @@ def _h1a_fixture() -> dict:
     return {
         "family": "A",
         "by_domain": {
-            "tower_of_hanoi": {"point": 0.09, "ci_low": 0.08, "ci_high": 0.11, "decision_holds": True},
-            "textworld": {"point": -0.001, "ci_low": -0.03, "ci_high": 0.02, "decision_holds": False},
+            "tower_of_hanoi": {
+                "point": 0.09,
+                "ci_low": 0.08,
+                "ci_high": 0.11,
+                "decision_holds": True,
+            },
+            "textworld": {
+                "point": -0.001,
+                "ci_low": -0.03,
+                "ci_high": 0.02,
+                "decision_holds": False,
+            },
         },
         "descriptive_cross_check": {
             "tower_of_hanoi": {"optimal_only": {"tle": {"auroc": 0.71}, "vc": {"auroc": 0.62}}},
@@ -51,7 +61,10 @@ def _h3_fixture() -> dict:
                     "converged": True,
                     "params": {"const": -1.1, "z_c": 0.1, "p_c": -0.14, "interaction": 0.6},
                 },
-                "vc": {"converged": True, "params": {"const": -0.9, "z_c": 0.2, "p_c": 0.05, "interaction": 0.1}},
+                "vc": {
+                    "converged": True,
+                    "params": {"const": -0.9, "z_c": 0.2, "p_c": 0.05, "interaction": 0.1},
+                },
             },
         },
     }
@@ -166,9 +179,9 @@ def test_plot_signal_boxplots_writes_png(tmp_path):
 
 
 def test_plot_episode_length_boxplot_writes_png(tmp_path):
-    episodes = [
-        {"domain": "tower_of_hanoi", "episode_length_steps": 20 + i} for i in range(10)
-    ] + [{"domain": "textworld", "episode_length_steps": 30 + i} for i in range(10)]
+    episodes = [{"domain": "tower_of_hanoi", "episode_length_steps": 20 + i} for i in range(10)] + [
+        {"domain": "textworld", "episode_length_steps": 30 + i} for i in range(10)
+    ]
     out = plot_episode_length_boxplot(episodes, tmp_path)
     assert "boxplot_episode_length" in out
     p = Path(out["boxplot_episode_length"])

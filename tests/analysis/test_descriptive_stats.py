@@ -90,7 +90,9 @@ def _fixture_steps_and_episodes():
             "task_success": i % 2 == 0,
             "episode_length_steps": 10 + i,
             "normalized_compute_cost": 0.5 + 0.01 * i,
-            "difficulty_tier": "medium" if dom == "tower_of_hanoi" else ("easy" if i < 3 else "medium"),
+            "difficulty_tier": "medium"
+            if dom == "tower_of_hanoi"
+            else ("easy" if i < 3 else "medium"),
         }
         for dom in ("tower_of_hanoi", "textworld")
         for stage in ("C0", "C1", "C2")
@@ -131,7 +133,9 @@ def test_compute_variable_codebook_shape():
     composition = codebook["sample_composition"]
     assert len(composition) == 2 * 3 * 2  # domain x stage x holdout(True/False)
     holdout_row = next(
-        r for r in composition if r["domain"] == "tower_of_hanoi" and r["compute_stage"] == "C0" and r["holdout"]
+        r
+        for r in composition
+        if r["domain"] == "tower_of_hanoi" and r["compute_stage"] == "C0" and r["holdout"]
     )
     assert holdout_row["n_episodes"] == 1  # only i=0 has holdout=True
 
@@ -181,8 +185,18 @@ def test_compute_sample_composition_counts_design_cells():
         {"domain": "tower_of_hanoi", "compute_stage": "C0", "holdout": False} for _ in range(3)
     ] + [{"domain": "tower_of_hanoi", "compute_stage": "C0", "holdout": True}]
     rows = compute_sample_composition(episodes)
-    assert {"domain": "tower_of_hanoi", "compute_stage": "C0", "holdout": False, "n_episodes": 3} in rows
-    assert {"domain": "tower_of_hanoi", "compute_stage": "C0", "holdout": True, "n_episodes": 1} in rows
+    assert {
+        "domain": "tower_of_hanoi",
+        "compute_stage": "C0",
+        "holdout": False,
+        "n_episodes": 3,
+    } in rows
+    assert {
+        "domain": "tower_of_hanoi",
+        "compute_stage": "C0",
+        "holdout": True,
+        "n_episodes": 1,
+    } in rows
 
 
 def test_compute_difficulty_tier_breakdown_reports_rate_per_tier():

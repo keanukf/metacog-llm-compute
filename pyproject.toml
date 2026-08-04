@@ -133,12 +133,18 @@ module = [
     "src.analysis.thresholds",
     "src.utils.dotenv_loader",
 ]
-disable_error_code = ["unused-ignore"]
+ignore_missing_imports = true
+disable_error_code = ["unused-ignore", "import-untyped"]
 
 [[tool.mypy.overrides]]
 module = "src.analysis.inference"
 ignore_missing_imports = true
-disable_error_code = ["import-not-found", "unused-ignore"]
+disable_error_code = ["import-not-found", "unused-ignore", "import-untyped"]
+
+[[tool.mypy.overrides]]
+module = ["src.analysis.descriptive_stats", "src.analysis.icc"]
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
 
 [tool.coverage.run]
 source = ["src"]

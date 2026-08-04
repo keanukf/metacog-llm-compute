@@ -29,7 +29,13 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 # Figure-bearing stages, in the order their figures_manifest.json entries should be looked up.
-FIGURE_STAGES = ("stage1/figures", "stage2/figures", "stage3/figures", "stage5/figures", "stage6/figures")
+FIGURE_STAGES = (
+    "stage1/figures",
+    "stage2/figures",
+    "stage3/figures",
+    "stage5/figures",
+    "stage6/figures",
+)
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -94,7 +100,11 @@ def _render_h1a(h1a: dict[str, Any], figures: dict[str, str]) -> str:
         "bootstrap CI, point estimate falling inside the reported interval):"
     )
     for dom in h1a["by_domain"]:
-        lines.append(_img(figures, f"bootstrap_dist_h1a_{dom}", caption=f"H1a bootstrap distribution ({dom})"))
+        lines.append(
+            _img(
+                figures, f"bootstrap_dist_h1a_{dom}", caption=f"H1a bootstrap distribution ({dom})"
+            )
+        )
     return "\n".join(lines)
 
 
@@ -122,14 +132,22 @@ def _render_h1b(h1b: dict[str, Any], figures: dict[str, str]) -> str:
     for dom, d in h1b["by_domain"].items():
         if not d.get("calibrator_converged"):
             continue
-        lines.append(_img(figures, f"reliability_tle_mapped_{dom}", caption=f"Reliability: TLE-mapped ({dom})"))
+        lines.append(
+            _img(
+                figures, f"reliability_tle_mapped_{dom}", caption=f"Reliability: TLE-mapped ({dom})"
+            )
+        )
         lines.append(_img(figures, f"reliability_vc_{dom}", caption=f"Reliability: VC ({dom})"))
     lines.append("")
     lines.append("Bootstrap replicate distributions:")
     for dom, d in h1b["by_domain"].items():
         if not d.get("calibrator_converged"):
             continue
-        lines.append(_img(figures, f"bootstrap_dist_h1b_{dom}", caption=f"H1b bootstrap distribution ({dom})"))
+        lines.append(
+            _img(
+                figures, f"bootstrap_dist_h1b_{dom}", caption=f"H1b bootstrap distribution ({dom})"
+            )
+        )
     return "\n".join(lines)
 
 
@@ -141,7 +159,7 @@ def _render_h3(h3: dict[str, Any], figures: dict[str, str]) -> str:
         "",
         f"GEE clustered-logistic interaction coefficient, confirmatory domain = `{conf_dom}` "
         f"(TLE+VC, Holm family E); `{expl_dom}` reported exploratory only, not corrected against "
-        "the confirmatory family. Standard errors use statsmodels' GEE default `cov_type=\"robust\"` "
+        'the confirmatory family. Standard errors use statsmodels\' GEE default `cov_type="robust"` '
         "(sandwich estimator) -- a misspecified working correlation (Exchangeable, assumed) costs "
         "efficiency, not validity.",
         "",
@@ -179,7 +197,13 @@ def _render_h3(h3: dict[str, Any], figures: dict[str, str]) -> str:
     for dom in (conf_dom, expl_dom):
         for sig, r in h3["results"][dom].items():
             if r.get("converged"):
-                lines.append(_img(figures, f"h3_marginal_effect_{dom}_{sig}", caption=f"H3 marginal effect {dom}/{sig}"))
+                lines.append(
+                    _img(
+                        figures,
+                        f"h3_marginal_effect_{dom}_{sig}",
+                        caption=f"H3 marginal effect {dom}/{sig}",
+                    )
+                )
     return "\n".join(lines)
 
 
@@ -202,7 +226,9 @@ def _render_h4(h4: dict[str, Any], figures: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def _render_preanalysis(screen: dict[str, Any], codebook_md: str | None, figures: dict[str, str]) -> str:
+def _render_preanalysis(
+    screen: dict[str, Any], codebook_md: str | None, figures: dict[str, str]
+) -> str:
     lines = [
         "## Preanalysis screen (diagnostic, does not gate the confirmatory stages)",
         "",
@@ -286,13 +312,19 @@ def build_report(stage_dir: Path, figures: dict[str, str]) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--stage-dir", default="data/results/phase1_analysis")
     parser.add_argument("--report-out", default="docs/phase1_analysis_report.md")
     parser.add_argument("--figures-out", default="docs/figures/phase1_analysis")
     args = parser.parse_args()
 
-    stage_dir = REPO_ROOT / args.stage_dir if not Path(args.stage_dir).is_absolute() else Path(args.stage_dir)
+    stage_dir = (
+        REPO_ROOT / args.stage_dir
+        if not Path(args.stage_dir).is_absolute()
+        else Path(args.stage_dir)
+    )
     required = [
         stage_dir / "stage0" / "canonical_manifest.json",
         stage_dir / "stage1" / "preanalysis_screen.json",
@@ -304,10 +336,17 @@ def main() -> int:
     ]
     for p in required:
         if not p.exists():
-            print(f"Stage 7 FAILED -- required input not found at {p}; run Stages 0-6 first.", file=sys.stderr)
+            print(
+                f"Stage 7 FAILED -- required input not found at {p}; run Stages 0-6 first.",
+                file=sys.stderr,
+            )
             return 1
 
-    figures_out = REPO_ROOT / args.figures_out if not Path(args.figures_out).is_absolute() else Path(args.figures_out)
+    figures_out = (
+        REPO_ROOT / args.figures_out
+        if not Path(args.figures_out).is_absolute()
+        else Path(args.figures_out)
+    )
     figures_out.mkdir(parents=True, exist_ok=True)
 
     # Combine every stage's figures_manifest.json (if it ran and matplotlib was available) into
@@ -330,11 +369,17 @@ def main() -> int:
             figures[name] = src_path.name
 
     report = build_report(stage_dir, figures)
-    report_out = REPO_ROOT / args.report_out if not Path(args.report_out).is_absolute() else Path(args.report_out)
+    report_out = (
+        REPO_ROOT / args.report_out
+        if not Path(args.report_out).is_absolute()
+        else Path(args.report_out)
+    )
     report_out.parent.mkdir(parents=True, exist_ok=True)
     report_out.write_text(report, encoding="utf-8")
 
-    print(f"Stage 7 OK -- report written to {report_out}, {len(figures)} figure(s) copied to {figures_out}")
+    print(
+        f"Stage 7 OK -- report written to {report_out}, {len(figures)} figure(s) copied to {figures_out}"
+    )
     return 0
 
 

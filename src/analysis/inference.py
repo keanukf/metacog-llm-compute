@@ -170,7 +170,9 @@ def cluster_bootstrap_stratified(
         boot_rows: list[dict[str, Any]] = []
         for s in strata:
             clusters_s = cluster_lists[s]
-            sample_keys = [clusters_s[rng.randrange(len(clusters_s))] for _ in range(len(clusters_s))]
+            sample_keys = [
+                clusters_s[rng.randrange(len(clusters_s))] for _ in range(len(clusters_s))
+            ]
             for k in sample_keys:
                 boot_rows.extend(by_stratum_cluster[s][k])
         try:
@@ -328,7 +330,8 @@ def h2_paired(
         paired_rows.append(
             {
                 "instance_key": key,
-                "succ_diff": float(bool(p.get("task_success"))) - float(bool(b.get("task_success"))),
+                "succ_diff": float(bool(p.get("task_success")))
+                - float(bool(b.get("task_success"))),
                 "log_tok_diff": math.log(tb) - math.log(tp),
             }
         )
@@ -341,7 +344,10 @@ def h2_paired(
         paired_rows, lambda rs: sum(r["succ_diff"] for r in rs) / len(rs), n_boot=n_boot, seed=seed
     )
     log_boot = cluster_bootstrap(
-        paired_rows, lambda rs: sum(r["log_tok_diff"] for r in rs) / len(rs), n_boot=n_boot, seed=seed
+        paired_rows,
+        lambda rs: sum(r["log_tok_diff"] for r in rs) / len(rs),
+        n_boot=n_boot,
+        seed=seed,
     )
     succ_ci_low = succ_boot["ci_low"]
     log_ci_low = log_boot["ci_low"]
@@ -387,7 +393,9 @@ def bh(pvals_or_bounds: list[float]) -> list[dict[str, Any]]:
     from statsmodels.stats.multitest import multipletests
 
     _, adjusted, _, _ = multipletests(pvals_or_bounds, method="fdr_bh")
-    return [{"index": i, "raw": pvals_or_bounds[i], "adjusted": float(adjusted[i])} for i in range(m)]
+    return [
+        {"index": i, "raw": pvals_or_bounds[i], "adjusted": float(adjusted[i])} for i in range(m)
+    ]
 
 
 def one_sided_wald_pvalue(coef: float, p_two_sided: float, *, direction: int = -1) -> float:
@@ -404,7 +412,9 @@ def one_sided_wald_pvalue(coef: float, p_two_sided: float, *, direction: int = -
     return half if points_right_way else (1.0 - half)
 
 
-def build_h3_frame(df: Any, *, signal: str = "tle", domain: str | None = None) -> tuple[Any, str | None]:
+def build_h3_frame(
+    df: Any, *, signal: str = "tle", domain: str | None = None
+) -> tuple[Any, str | None]:
     """
     Filters and stage-wise z-standardizes TLE/VC exactly as ``fit_h3_model`` requires (see its
     docstring for the "why stage-wise" argument), returned as a pandas DataFrame with columns
