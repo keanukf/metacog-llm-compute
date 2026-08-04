@@ -61,10 +61,12 @@ paths:
 logging:
   # off | action_window | full — production: action_window (TLE reanalysis without reasoning bloat)
   logprob_sidecar_mode: action_window
-  # Full reasoning sidecars — non-holdout only (mod-10 holdout: 0,10,20,30,40)
-  logprob_sidecar_full_instances:
-    textworld: [1, 2, 3]
-    tower_of_hanoi: [1, 2, 3]
+  # Full reasoning sidecars intentionally OFF for Phase 2 (see docs/consistency_log.md 2026-08-04
+  # "Full reasoning logprob sidecars dropped for Phase 2"). Phase 1 already collected this subset
+  # (data/results/phase1/, 6 non-holdout instances x 3 stages x 5 runs, still on disk) and no
+  # implemented or preregistered analysis reads reasoning-token logprobs -- re-collecting it in
+  # Phase 2 would only add multi-hundred-GB storage risk to a one-shot run for no analytical gain.
+  logprob_sidecar_full_instances: {}
   logprob_export_format: json
   logprob_subdir: logprobs
   save_vc_distributions: false

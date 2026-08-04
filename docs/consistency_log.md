@@ -2,6 +2,42 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-04 — Volle Reasoning-Logprob-Sidecars für Phase 2 abgeschaltet
+
+**Anlass:** Punch-List-Punkt 6 (echter GPU-Smoke-Test) deckte auf, dass `logprob_sidecar_mode: full`
+für die 6 nicht-Holdout-Instanzen (`logprob_sidecar_full_instances`) bei C1/C2-lastigen Strategien
+auf bis zu ~1GB pro Episode anwächst (Top-K=20-Logprobs über den *gesamten* Reasoning-Block, nicht
+nur das Action-Window). Bei Phase 2s Design (6 Strategien × 5 Runs, mehrere davon C1/C2-lastig)
+multipliziert sich diese Exposition weit stärker als in Phase 1 — echtes Risiko für den einmaligen,
+nicht wiederholbaren 3000-Episoden-Lauf.
+
+**Geprüft, nicht nur angenommen:** Zwei unabhängige Subagenten beauftragt (einer Sonnet/Explore für
+den Code-Pfad, einer Opus für eine bewusst skeptische Prüfung "gibt es einen plausiblen Grund, das
+zu behalten"). Kernbefunde:
+- Kein Code-Pfad (TLE-Berechnung, VC, Allocator, `src/analysis/*`) liest die Sidecar-Datei inhaltlich
+  zurück — TLE wird im Arbeitsspeicher berechnet, *bevor* der Sidecar geschrieben wird.
+- Einziger dokumentierter Zweck war ein Verweis auf ein mögliches Kapitel-9-"Future Work" (Log-Eintrag
+  2026-07-14) — nie in `chapters/outline.md`/`04`/`05`/`08`/`09` operationalisiert. Kapitel 9 nennt
+  namentlich nur die Self-Correction-Achse (Self-Refine, Reflexion) als offene Richtung.
+- **Entscheidend:** Phase 1 hat diesen Vollmodus bereits gesammelt (`data/results/phase1/`, 90
+  Episoden × alle 3 Stufen × beide Domains, `full`-Sidecars weiterhin lokal vorhanden, ~29GB davon).
+  Jeder geprüfte Use Case (Reasoning-inklusive-TLE-Ablation, Audit der TLE-Fenster-Grenze auf einen
+  Parsing-Bug, Reviewer-Nachfrage "hat der Allocator wirklich nur das Action-Window gesehen") ist
+  damit bereits abgedeckt — eine Wiederholung in Phase 2 hätte nur Speicherrisiko ohne analytischen
+  Mehrwert bedeutet.
+
+**Entscheidung (Nutzer, 2026-08-04):** `logprob_sidecar_full_instances` in
+`configs/experiment_core.yaml` für Phase 2 auf `{}` gesetzt — alle Episoden laufen einheitlich im
+Produktions-Default `action_window`. Der volle, lesbare Reasoning-Text bleibt davon unberührt in
+`trace_{episode_id}.jsonl` erhalten (separater Mechanismus, `save_step_traces`/`write_debug_views`).
+
+**Nicht betroffen:** Phase 1 ist bereits abgeschlossen und gesammelt; diese Änderung wirkt nur auf
+zukünftige (Phase-2-)Läufe.
+
+**Verifikation:** reine Config-Änderung, keine Codeänderung; `LogprobSidecarConfig.mode_for()`
+(`src/utils/logprob_sidecar.py:95-102`) fällt bei leerem `full_instances_by_domain` korrekt auf
+`default_mode` zurück, per Code-Lesung bestätigt.
+
 ## 2026-08-04 — Phase-2-Threshold-Artefakt gebaut; präregistrierte Tie-Break-Regel bewusst ersetzt (ADR-009)
 
 **Anlass:** Punch-List-Punkt 1 (der einzige harte Blocker vor echter Phase-2-Sammlung) —
