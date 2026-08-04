@@ -35,8 +35,10 @@ phase1:
 phase2:
   domains: ["textworld", "tower_of_hanoi"]
   instances_per_domain: 50
-  # Required for adaptive_tle, adaptive_vc, eager_style (hard-fail if missing).
-  # policy_artifact: "data/results/phase1/threshold_artifact.json"
+  # Required for adaptive_tle, adaptive_vc, eager_style (hard-fail if missing). Built by
+  # scripts/phase2_prep/build_threshold_artifact.py against the real Phase 1 canonical dataset
+  # (see docs/consistency_log.md 2026-08-04 entry, docs/adrs.md ADR-009 for the selection rule).
+  policy_artifact: "data/results/phase1/threshold_artifact.json"
   strategies:
     - adaptive_tle
     - adaptive_vc

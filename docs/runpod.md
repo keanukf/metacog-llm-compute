@@ -368,7 +368,28 @@ STOP_POD=1 ./scripts/cloud/shell/run_with_autostop.sh scripts/experiment/run_pha
   --checkpoint-dir "${RESULTS_DIR}/phase1/phase1_YYYYMMDD_HHMMSS_UTC"
 ```
 
-**Resume directory trap:** `--checkpoint-dir` must be the **exact timestamped run folder** that contains `ep_*.json` (and optionally `quarantine.jsonl`), not the parent `phase1/` base.
+**Phase 2** follows the identical pattern, `run_phase2.py` instead of `run_phase1.py`:
+
+```bash
+cd /workspace/metacog-llm-compute
+export RESULTS_DIR="/workspace/metacog-llm-compute/data/results"
+STOP_POD=1 ./scripts/cloud/shell/run_with_autostop.sh scripts/experiment/run_phase2.py \
+  --config configs/experiment_core.yaml --real --resume \
+  --checkpoint-dir "${RESULTS_DIR}/phase2/phase2_YYYYMMDD_HHMMSS_UTC"
+```
+
+**Before the first real Phase 2 run:** `configs/experiment_core.yaml`'s `phase2.policy_artifact`
+must point at a real threshold artifact
+(`python scripts/phase2_prep/build_threshold_artifact.py`, see docs/consistency_log.md 2026-08-04
+entry) -- `run_phase2.py` hard-fails at startup (`SystemExit`) for `adaptive_tle`/`adaptive_vc`/
+`eager_style` otherwise, so this fails fast before spending any GPU time, not mid-run.
+
+**Scale**: the real Phase 2 design is 50 instances x 2 domains x 6 strategies x 5 runs = 3000
+episodes (vs. Phase 1's 1500) -- budget more wall-clock and more persistent-volume headroom than
+the Phase 1 numbers above; check the network volume has room to grow before starting (cheap to
+resize on RunPod, expensive to run out of mid-collection and have to pause).
+
+**Resume directory trap:** `--checkpoint-dir` must be the **exact timestamped run folder** that contains `ep_*.json` (and optionally `quarantine.jsonl`), not the parent `phase1/`/`phase2/` base.
 
 Phase runners write `env_assertion` / `label_error` failures to `quarantine.jsonl` and skip those episodes on resume; all other episode failures still append to `errors.jsonl` unchanged.
 
