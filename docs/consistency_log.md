@@ -2,6 +2,47 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-04 — Phase-2-Strategieblöcke: sequentielle statt interleaved Ausführung
+
+**Anlass:** Der reale GPU-Smoke-Test (Punch-List-Punkt 6) lief mit der bisherigen Job-Reihenfolge
+(`domain → instance → strategy → run`) — dadurch liefen alle 6 Strategien von Anfang an gemischt im
+selben Concurrent-Pool (bis zu N=32), bei ihren jeweiligen Compute-Stufen-Temperaturen (C0=0.3,
+C1=0.5, C2=0.7) gleichzeitig.
+
+**Befund (Subagenten-Recherche gegen `verify_backend_parity.py` + Doku):** Die eingefrorene TLE-
+Batch-Invarianz (N=32, eps=0.05 bits, Gate C-1) wurde nie gegen einen echten heterogenen Batch
+getestet — der Validierungsaufbau schickt einen Probe-Prompt gegen N-1 **identische** Filler-
+Requests bei fixer Temperatur, nie eine echte Mischung mehrerer Compute-Stufen/Strategien
+gleichzeitig. `docs/runpod.md` §5.9 skaliert die Zusicherung explizit auf "stage-homogeneous
+passes" — genau das, was Phase 1 auch gefahren ist. Die architektonische Begründung (vLLM
+Continuous Batching + PagedAttention berechnet Logits pro Request unabhängig von Nachbarn,
+`raw_logprobs`-Modus ist genau deshalb eingefroren) spricht klar dafür, dass es generalisiert — ist
+aber nicht empirisch geprüft.
+
+**Entscheidung (Nutzer, 2026-08-04):** Statt eine neue Batch-Invarianz-Probe für heterogene Batches
+zu bauen (Mehraufwand + zusätzliche GPU-Zeit vor dem einmaligen Lauf), Phase 2 stattdessen strikt
+strategieweise sequentiell ausführen — bleibt automatisch im bereits validierten Bereich.
+
+**Umgesetzt:**
+- `build_phase2_worklist()` (`src/execution/worklist.py`) — Strategie ist jetzt die äußerste
+  Schleife (`strategy → domain → instance → run`), macht die Job-Liste selbst schon strategie-
+  zusammenhängend.
+- Neue `group_jobs_by_strategy()` — partitioniert die Liste in zusammenhängende Pro-Strategie-
+  Blöcke.
+- `scripts/experiment/run_phase2.py` — statt eines einzigen `scheduler.run(jobs, ...)`-Aufrufs für
+  die gesamte Liste läuft jetzt ein Block nach dem anderen durch denselben `EpisodeScheduler`
+  (`scheduler.run()` blockiert bis zur vollständigen Abarbeitung, bevor der nächste Block startet)
+  — echte Drain-Barriere zwischen Strategien, keine bloße Listen-Umsortierung. `max_in_flight_
+  observed` bleibt über den ganzen Lauf kumulativ korrekt (derselbe Scheduler wird wiederverwendet).
+
+**Nicht betroffen:** Resume-Verhalten unverändert (Episode-IDs/Checkpoints bleiben identisch,
+nur die Ausführungsreihenfolge ändert sich); Phase 1 ist bereits abgeschlossen.
+
+**Verifikation:** 3 neue Tests (`tests/execution/test_execution_worklist.py`) — Strategie-Majorität
+der Worklist-Ausgabe, korrekte Blockpartitionierung, Ein-Block-Sonderfall. Volle Testsuite (481
+Tests) grün, ruff/mypy sauber (mypy-Restfehler in unberührten Dateien, gegen den ungeänderten
+Stand verifiziert).
+
 ## 2026-08-04 — Volle Reasoning-Logprob-Sidecars für Phase 2 abgeschaltet
 
 **Anlass:** Punch-List-Punkt 6 (echter GPU-Smoke-Test) deckte auf, dass `logprob_sidecar_mode: full`
