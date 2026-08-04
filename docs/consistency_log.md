@@ -2,6 +2,50 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-04 — Phase-2-Threshold-Artefakt gebaut; präregistrierte Tie-Break-Regel bewusst ersetzt (ADR-009)
+
+**Anlass:** Punch-List-Punkt 1 (der einzige harte Blocker vor echter Phase-2-Sammlung) —
+`scripts/phase2_prep/build_threshold_artifact.py` neu geschrieben, gegen die echten Phase-1-
+Holdout-Daten gelaufen.
+
+**Befund beim ersten echten Lauf:** Die präregistrierte Tie-Break-Regel ("resolved by the most
+token-efficient point on the Pareto front", §5.4, wörtlich als Minimum des absoluten Token-Werts
+implementiert) wählte in **allen vier** Domain×Signal-Zellen exakt θ1=0.8/θ2=0.9 — die adaptive
+Policy würde real fast durchgängig bei C0 bleiben, auch in Tower of Hanoi, wo TLE laut H1a stark
+diskriminiert. Auf der ToH/TLE-Pareto-Front erreichte der gewählte Punkt nur `success_proxy=0.14`,
+während der beste Punkt der Front `0.33` erreicht (mehr als doppelt so viel) für ~3x höhere
+Tokenkosten.
+
+**Nutzer-Entscheidung (2026-08-04):** Präregistrierung ist internes Arbeitsmittel, keine externe
+Institutions-Vorgabe — Abweichung ist erlaubt, wenn sauber begründet und dem wissenschaftlichen
+Wert der Arbeit dient. Auftrag: "analysiere und finde heraus, was für den Wert der Thesis am
+besten ist."
+
+**Durchgeführte Analyse, nicht nur erste Idee genommen:** Erfolg/Token-Verhältnis als naheliegende
+Alternative direkt an den echten Daten getestet — wählte in allen vier Zellen **denselben**
+entarteten Extrempunkt (Skalenartefakt: sehr kleiner Token-Nenner dominiert die Ratio). Verworfen.
+
+**Umgesetzt:** Knee-Point-Selektion (`_select_knee_point`, `src/analysis/thresholds.py`) —
+parameterfreie Standardmethode, maximaler normierter Abstand zur Idealecke. Verhält sich auf den
+echten Daten genau wie erwartet: großer Sprung in ToH (θ dort, wo die Front echte Krümmung hat),
+kaum Änderung in TextWorld (Front dort fast flach — passt zu H1a's Nullergebnis dort). Ein echter
+Sonderfall (2-Punkte-Front → Score-Unentschieden by construction) vor dem Einsatz durch einen
+Regressionstest gefangen, nicht zufällig entdeckt — expliziter Tie-Break auf den günstigeren Punkt
+ergänzt.
+
+Volle Argumentation, alle Zahlen, Zitate: `docs/adrs.md` ADR-009.
+
+**Ergebnis-Artefakt:** `data/results/phase1/threshold_artifact.json` (gitignored, lokal) —
+θ1/θ2 pro Domain×Signal, `selection_rule` jetzt in jedem Block mitgeschrieben, damit die
+Provenienz auch ohne diesen Log nachvollziehbar bleibt.
+
+**Prosa-Auswirkung:** §5.4-Methodiktext braucht eine kleine Anpassung (beschreibt noch die alte
+Regel) — im Handover für die Prosa-Session vermerkt
+(`../metacog-thesis/notes/phase1_results_handover_2026-08-04.md`).
+
+**Verifikation:** 477 Tests grün, ruff/mypy sauber, Threshold-Artefakt real neu gebaut und die
+neuen θ-Werte manuell gegen die Handrechnung verifiziert.
+
 ## 2026-08-04 — Annahmen-Checks + fehlende Visualisierungen für H1a/H1b/H3 nachgerüstet
 
 **Anlass:** Nutzerfrage, ob wir für die konfirmatorischen Tests (H1a/H1b/H3/H4) die nötigen
