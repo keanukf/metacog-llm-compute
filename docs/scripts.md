@@ -96,6 +96,12 @@ the archived results once the pipeline has been run against the real data.
 | [`stage7_generate_report.py`](../scripts/phase1_analysis/stage7_generate_report.py) | Renders `docs/phase1_analysis_report.md` from every prior stage's JSON output, embeds the full Stage 1 variable codebook (all 9 tables), and copies every stage's figures (1/2/3/5/6, wherever a `figures_manifest.json` exists) into the committed `docs/figures/phase1_analysis/` | Last stage; produces the archived deliverable | `phase1-analysis` |
 | [`run_all.py`](../scripts/phase1_analysis/run_all.py) | Thin sequential orchestrator chaining Stages 0-7, stops on first non-zero exit | One-shot full-pipeline reproduction | `phase1-analysis` |
 
+## `scripts/phase2_prep/` — bridging real Phase 1 results into Phase 2 collection
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`build_threshold_artifact.py`](../scripts/phase2_prep/build_threshold_artifact.py) | Grid-searches TLE/VC allocator thresholds (theta1/theta2, `step_level_proxy_v1`) against the real Phase 1 holdout data via the Stage 0 canonical manifest, writes the frozen policy artifact `adaptive_tle`/`adaptive_vc`/`eager_style` require; warns (not fatal) on a degenerate theta1>=theta2 policy | Once, before starting real Phase 2 collection | `phase1-analysis` |
+
 ## `scripts/run_readiness/` — budget, run-hygiene, resume, and output-quality checks
 
 Pre-real-run readiness checks (former Gate F tooling) plus the live progress watcher.

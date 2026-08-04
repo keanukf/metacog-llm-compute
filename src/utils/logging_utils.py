@@ -148,12 +148,12 @@ def _iso_utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _sha256_file(path: str | Path) -> str:
+def sha256_file(path: str | Path) -> str:
     data = Path(path).read_bytes()
     return hashlib.sha256(data).hexdigest()
 
 
-def _try_git_commit(repo_root: str | Path) -> str | None:
+def try_git_commit(repo_root: str | Path) -> str | None:
     try:
         out = subprocess.check_output(
             ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
@@ -208,11 +208,11 @@ def write_run_metadata(
         "run_id": str(uuid.uuid4()),
         "script": str(script),
         "config_path": str(config_path),
-        "config_hash": _sha256_file(config_path),
+        "config_hash": sha256_file(config_path),
         "model_name": str(model_name),
         "model_dtype": str(model_dtype),
         "pilot_mode": str(pilot_mode),
-        "git_commit": _try_git_commit(repo_root),
+        "git_commit": try_git_commit(repo_root),
         "timestamp_start_utc": _iso_utc_now(),
         "python_version": sys.version.split()[0],
         "hostname": socket.gethostname(),
