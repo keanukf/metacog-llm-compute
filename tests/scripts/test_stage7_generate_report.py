@@ -72,6 +72,7 @@ _H1B = {
             "ci_low": -0.17,
             "ci_high": -0.14,
             "calibrator_slope": -9.3,
+            "calibrator_converged": True,
             "n_holdout_steps": 2128,
             "holm": {"adjusted": 0.0004},
             "decision_holds": True,
@@ -81,6 +82,7 @@ _H1B = {
             "ci_low": -0.11,
             "ci_high": -0.09,
             "calibrator_slope": -5.2,
+            "calibrator_converged": True,
             "n_holdout_steps": 2398,
             "holm": {"adjusted": 0.0004},
             "decision_holds": True,
@@ -121,11 +123,25 @@ _H4 = {
 }
 
 
+def _write_fake_figures(figures_dir, names):
+    figures_dir.mkdir(parents=True)
+    manifest = {}
+    for name in names:
+        p = figures_dir / f"{name}.png"
+        p.write_bytes(b"\x89PNG\r\n\x1a\n")
+        manifest[name] = str(p)
+    (figures_dir / "figures_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
 def _write_all(stage_dir):
     (stage_dir / "stage0").mkdir(parents=True)
     (stage_dir / "stage0" / "canonical_manifest.json").write_text(json.dumps(_MANIFEST), encoding="utf-8")
     (stage_dir / "stage1").mkdir(parents=True)
     (stage_dir / "stage1" / "preanalysis_screen.json").write_text(json.dumps(_SCREEN), encoding="utf-8")
+    (stage_dir / "stage1" / "variable_codebook.md").write_text(
+        "*Table 1*\n\n*Variable roles and measurement scales*\n\n| Variable |\n|---|\n| domain |\n",
+        encoding="utf-8",
+    )
     (stage_dir / "stage2").mkdir(parents=True)
     (stage_dir / "stage2" / "h1a_discrimination.json").write_text(json.dumps(_H1A), encoding="utf-8")
     (stage_dir / "stage3").mkdir(parents=True)
@@ -134,12 +150,29 @@ def _write_all(stage_dir):
     (stage_dir / "stage4" / "h3_temporal.json").write_text(json.dumps(_H3), encoding="utf-8")
     (stage_dir / "stage5").mkdir(parents=True)
     (stage_dir / "stage5" / "h4_domain_modulation.json").write_text(json.dumps(_H4), encoding="utf-8")
-    figures_dir = stage_dir / "stage6" / "figures"
-    figures_dir.mkdir(parents=True)
-    fake_png = figures_dir / "h1a_auroc_comparison.png"
-    fake_png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    (figures_dir / "figures_manifest.json").write_text(
-        json.dumps({"h1a_auroc_comparison": str(fake_png)}), encoding="utf-8"
+
+    _write_fake_figures(
+        stage_dir / "stage1" / "figures",
+        ["hist_signals_tower_of_hanoi", "hist_signals_textworld", "boxplot_signals_by_domain", "boxplot_episode_length"],
+    )
+    _write_fake_figures(
+        stage_dir / "stage2" / "figures", ["bootstrap_dist_h1a_tower_of_hanoi", "bootstrap_dist_h1a_textworld"]
+    )
+    _write_fake_figures(
+        stage_dir / "stage3" / "figures",
+        [
+            "bootstrap_dist_h1b_tower_of_hanoi",
+            "bootstrap_dist_h1b_textworld",
+            "reliability_tle_mapped_tower_of_hanoi",
+            "reliability_vc_tower_of_hanoi",
+            "reliability_tle_mapped_textworld",
+            "reliability_vc_textworld",
+        ],
+    )
+    _write_fake_figures(stage_dir / "stage5" / "figures", ["bootstrap_dist_h4"])
+    _write_fake_figures(
+        stage_dir / "stage6" / "figures",
+        ["h1a_auroc_comparison", "h3_marginal_effect_textworld_tle", "h3_marginal_effect_tower_of_hanoi_tle"],
     )
 
 
@@ -170,6 +203,21 @@ def test_stage7_generates_report_with_all_sections(tmp_path, monkeypatch):
     assert "## H3" in text
     assert "## H4" in text
     assert (figures_out / "h1a_auroc_comparison.png").exists()
+
+    # Every stage's figures got copied and embedded, not just Stage 6's.
+    assert (figures_out / "bootstrap_dist_h1a_tower_of_hanoi.png").exists()
+    assert (figures_out / "bootstrap_dist_h1b_tower_of_hanoi.png").exists()
+    assert (figures_out / "reliability_tle_mapped_tower_of_hanoi.png").exists()
+    assert (figures_out / "bootstrap_dist_h4.png").exists()
+    assert (figures_out / "hist_signals_textworld.png").exists()
+    assert "bootstrap_dist_h1a_tower_of_hanoi.png" in text
+    assert "reliability_tle_mapped_tower_of_hanoi.png" in text
+    assert "bootstrap_dist_h4.png" in text
+
+    # The full variable codebook (all 9 descriptive-stats tables) is embedded, not just the
+    # curated preanalysis summary table.
+    assert "Full variable codebook" in text
+    assert "Variable roles and measurement scales" in text
 
 
 def test_stage7_fails_loudly_on_missing_stage_input(tmp_path, monkeypatch):

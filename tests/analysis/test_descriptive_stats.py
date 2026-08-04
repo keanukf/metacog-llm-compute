@@ -7,8 +7,11 @@ markdown contains the expected table titles and numeric cells.
 
 from __future__ import annotations
 
+import pytest
+
 from src.analysis.descriptive_stats import (
     compute_difficulty_tier_breakdown,
+    compute_missingness_outcome_check,
     compute_sample_composition,
     compute_signal_correlation,
     compute_variable_codebook,
@@ -139,6 +142,32 @@ def test_compute_variable_codebook_shape():
     assert tiers[("textworld", "easy")]["n_episodes"] == 9
     assert tiers[("textworld", "medium")]["n_episodes"] == 6
 
+    for dom in ("tower_of_hanoi", "textworld"):
+        assert dom in codebook["missingness_outcome_check"]
+        assert codebook["missingness_outcome_check"][dom]["n_present"] == 30
+
+
+def test_compute_missingness_outcome_check_detects_mnar_pattern():
+    """The real Phase 1 data shows missing-TLE steps at exactly 0% success in both domains
+    (2026-08-04 finding) -- verify the check surfaces a stark rate gap like that, not just
+    computes something that happens to run without error."""
+    rows = [{"tle_mean_entropy": 0.2, "y_optimal": 1} for _ in range(20)]
+    rows += [{"tle_mean_entropy": 0.3, "y_optimal": 0} for _ in range(10)]  # present, mixed
+    rows += [{"tle_mean_entropy": None, "y_optimal": 0} for _ in range(15)]  # missing, all-fail
+
+    check = compute_missingness_outcome_check(rows)
+    assert check["n_present"] == 30
+    assert check["rate_present"] == pytest.approx(20 / 30)
+    assert check["n_missing"] == 15
+    assert check["rate_missing"] == 0.0
+
+
+def test_compute_missingness_outcome_check_no_missing_rows():
+    rows = [{"tle_mean_entropy": 0.2, "y_optimal": 1}]
+    check = compute_missingness_outcome_check(rows)
+    assert check["n_missing"] == 0
+    assert check["rate_missing"] is None
+
 
 def test_compute_signal_correlation_insufficient_data_returns_none():
     c = compute_signal_correlation([{"tle_mean_entropy": 0.1, "vc": 50}])
@@ -174,7 +203,7 @@ def test_render_apa_codebook_markdown_contains_expected_tables():
     codebook = compute_variable_codebook(steps, episodes)
     md = render_apa_codebook_markdown(codebook)
 
-    for i in range(1, 9):
+    for i in range(1, 10):
         assert f"*Table {i}*" in md
     assert "Variable roles and measurement scales" in md
     assert "Sample composition" in md
@@ -185,5 +214,6 @@ def test_render_apa_codebook_markdown_contains_expected_tables():
     assert "episode-level variables, by domain" in md
     assert "TLE-VC association" in md
     assert "Instance difficulty tier" in md
+    assert "TLE missingness vs. step outcome" in md
     assert "tower_of_hanoi" in md and "textworld" in md
     assert "*Note.*" in md

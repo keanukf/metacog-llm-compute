@@ -59,3 +59,14 @@ def test_run_h4_insufficient_clusters_returns_none_point():
     result = run_h4(steps, n_boot=50, seed=1)
     assert result["result"]["point"] is None
     assert result["result"]["decision_holds"] is False
+
+
+def test_run_h4_on_bootstrap_hook_fires_with_reps():
+    steps = []
+    steps += _domain_steps("tower_of_hanoi", n_instances=10, steps_per_instance=8, tle_advantage=0.8, seed=1)
+    steps += _domain_steps("textworld", n_instances=10, steps_per_instance=8, tle_advantage=0.1, seed=2)
+
+    seen = {}
+    run_h4(steps, n_boot=50, seed=7, on_bootstrap=lambda boot: seen.update(boot))
+
+    assert "reps" in seen and len(seen["reps"]) > 0

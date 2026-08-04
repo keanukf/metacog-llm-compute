@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src.analysis.visualization import (
     plot_auroc_comparison_bars,
+    plot_bootstrap_distribution,
     plot_episode_length_boxplot,
     plot_h3_marginal_effect,
     plot_signal_boxplots,
@@ -75,6 +76,57 @@ def test_plot_h3_marginal_effect_writes_one_png_per_converged_domain_signal(tmp_
     assert "h3_marginal_effect_textworld_vc" not in out
 
 
+def _h3_step_fixture() -> list[dict]:
+    import random
+
+    rng = random.Random(1)
+    rows = []
+    for inst in range(6):
+        for t in range(10):
+            pos = t / 9.0
+            tle = rng.uniform(0.0, 1.0)
+            rows.append(
+                {
+                    "domain": "textworld",
+                    "instance_key": f"tw:{inst}",
+                    "compute_stage": "C0",
+                    "y_optimal": 1 if rng.random() < 0.5 else 0,
+                    "tle_mean_entropy": tle,
+                    "position_norm": pos,
+                }
+            )
+    return rows
+
+
+def test_plot_h3_marginal_effect_with_steps_overlays_empirical_data(tmp_path):
+    """Same fitted-curve output as without steps, but with a real scatter overlay -- exercised via
+    a real (if tiny) step table so build_h3_frame's stage-wise standardization actually runs."""
+    out_with = plot_h3_marginal_effect(_h3_fixture(), tmp_path / "with", steps=_h3_step_fixture())
+    out_without = plot_h3_marginal_effect(_h3_fixture(), tmp_path / "without", steps=None)
+    assert set(out_with.keys()) == set(out_without.keys())
+    for path_str in out_with.values():
+        p = Path(path_str)
+        assert p.exists() and p.stat().st_size > 0
+
+
+def test_plot_h3_marginal_effect_steps_too_sparse_degrades_to_fitted_curve_only(tmp_path):
+    """Insufficient real data for build_h3_frame (< 20 rows) must not crash -- just no overlay."""
+    sparse_steps = [
+        {
+            "domain": "textworld",
+            "instance_key": "tw:0",
+            "compute_stage": "C0",
+            "y_optimal": 1,
+            "tle_mean_entropy": 0.2,
+            "position_norm": 0.1,
+        }
+    ]
+    out = plot_h3_marginal_effect(_h3_fixture(), tmp_path, steps=sparse_steps)
+    assert len(out) == 3
+    for path_str in out.values():
+        assert Path(path_str).exists()
+
+
 def test_plot_auroc_comparison_bars_empty_domains_returns_empty(tmp_path):
     out = plot_auroc_comparison_bars({"by_domain": {}, "descriptive_cross_check": {}}, tmp_path)
     assert out == {}
@@ -125,3 +177,19 @@ def test_plot_episode_length_boxplot_writes_png(tmp_path):
 
 def test_plot_episode_length_boxplot_empty_input_returns_empty(tmp_path):
     assert plot_episode_length_boxplot([], tmp_path) == {}
+
+
+def test_plot_bootstrap_distribution_writes_png(tmp_path):
+    import random
+
+    reps = [random.gauss(0.05, 0.02) for _ in range(500)]
+    out = plot_bootstrap_distribution(
+        reps, tmp_path, name="h1a_tower_of_hanoi", point=0.05, ci_low=0.02, ci_high=0.08
+    )
+    assert "bootstrap_dist_h1a_tower_of_hanoi" in out
+    p = Path(out["bootstrap_dist_h1a_tower_of_hanoi"])
+    assert p.exists() and p.stat().st_size > 0
+
+
+def test_plot_bootstrap_distribution_empty_reps_returns_empty(tmp_path):
+    assert plot_bootstrap_distribution([], tmp_path, name="empty") == {}

@@ -266,17 +266,57 @@ def plot_auroc_comparison_bars(
     return {"h1a_auroc_comparison": str(save_path)}
 
 
+def _empirical_position_binned_means(
+    steps: list[dict[str, Any]], *, signal: str, domain: str, n_bins: int = 8
+) -> dict[str, list[Any]] | None:
+    """Empirical (binned-average) counterpart to the fitted H3 curve: real early-half/late-half
+    steps, z_c-binned via the exact same stage-wise standardization ``fit_h3_model`` uses
+    (``build_h3_frame``, so this can never silently drift out of sync with the fit), with mean
+    observed y per bin -- what a reader needs to visually judge model fit (linearity-in-logit),
+    not just see the fitted curve on its own. Returns None if there isn't enough data for either
+    half to bin meaningfully."""
+    import pandas as pd
+
+    from src.analysis.inference import build_h3_frame
+
+    frame, _note = build_h3_frame(steps, signal=signal, domain=domain)
+    if frame is None or len(frame) < 2 * n_bins:
+        return None
+
+    out: dict[str, list[Any]] = {}
+    for label, mask in (("early", frame["position_norm"] < 0.5), ("late", frame["position_norm"] >= 0.5)):
+        sub = frame[mask]
+        if len(sub) < n_bins:
+            continue
+        sub = sub.assign(_bin=pd.qcut(sub["z_c"], q=n_bins, duplicates="drop"))
+        grouped = sub.groupby("_bin", observed=True).agg(z_mean=("z_c", "mean"), y_mean=("y", "mean"), n=("y", "size"))
+        out[label] = [
+            {"z": float(row.z_mean), "y": float(row.y_mean), "n": int(row.n)}
+            for row in grouped.itertuples()
+        ]
+    return out or None
+
+
 def plot_h3_marginal_effect(
     h3_results: dict[str, Any],
     output_dir: str | Path,
+    *,
+    steps: list[dict[str, Any]] | None = None,
 ) -> dict[str, str]:
     """
     Phase 1 analysis Stage 6: signal x position marginal-effect curves from a Stage 4
     (``stage4_h3_temporal.py``) result dict -- the temporal-degradation plot the thesis
     methodology (Ch.5 §5.8) describes: predicted P(correct) vs. the stage-wise z-standardized
     signal at an early (position_norm=0.1) and late (position_norm=0.9) episode position. Model
-    coefficients (const, z_c, p_c, interaction) already fully specify this curve -- no need to
-    re-touch the raw per-step table for a lower-level scatter overlay.
+    coefficients (const, z_c, p_c, interaction) already fully specify the fitted curve -- no need
+    to re-touch the raw per-step table for that part.
+
+    Pass ``steps`` (the canonical dataset's step rows) to additionally overlay empirical, binned
+    real data (z_c deciles within the early/late position halves, mean observed y per bin) as
+    scatter points alongside the fitted lines -- without this, the plot only shows what the model
+    *implies*, with no way for a reader to visually judge whether the linear-in-logit interaction
+    model actually fits the real data shape. Omit ``steps`` to get the fitted-curve-only plot (e.g.
+    from a context where the raw data isn't loaded).
 
     NOTE on the TLE sign flip: ``fit_h3_model`` builds its ``z`` column as ``-tle_mean_entropy``
     for the tle signal (higher z = lower entropy = more certain), not raw entropy, so the x-axis
@@ -313,14 +353,33 @@ def plot_h3_marginal_effect(
 
             axis_label = "-TLE (certainty, stage-wise z)" if sig == "tle" else "VC (stage-wise z)"
             fig, ax = plt.subplots(figsize=(5.5, 4.0))
-            ax.plot(z_grid, early, label="early (position_norm=0.1)")
-            ax.plot(z_grid, late, label="late (position_norm=0.9)")
+            (early_line,) = ax.plot(z_grid, early, label="early (position_norm=0.1), fitted")
+            (late_line,) = ax.plot(z_grid, late, label="late (position_norm=0.9), fitted")
+
+            if steps is not None:
+                empirical = _empirical_position_binned_means(steps, signal=sig, domain=dom)
+                if empirical:
+                    for label_key, line in (("early", early_line), ("late", late_line)):
+                        pts = empirical.get(label_key)
+                        if not pts:
+                            continue
+                        ax.scatter(
+                            [pt["z"] for pt in pts],
+                            [pt["y"] for pt in pts],
+                            color=line.get_color(),
+                            edgecolor="black",
+                            linewidth=0.5,
+                            s=[max(15, min(120, pt["n"] / 10)) for pt in pts],
+                            zorder=3,
+                            label=f"{label_key} (position < / >= 0.5), empirical (binned)",
+                        )
+
             ax.set_xlabel(f"z-standardized {axis_label}")
             ax.set_ylabel("Predicted P(correct)")
             ax.set_ylim(0, 1)
             ax.set_title(f"H3 marginal effect: {dom}/{sig} (interaction={interaction:.3f})")
             ax.grid(True, alpha=0.3)
-            ax.legend(loc="best", frameon=False)
+            ax.legend(loc="best", fontsize=7, frameon=False)
             fig.tight_layout()
             p = output_dir / f"h3_marginal_effect_{dom}_{sig}.png"
             fig.savefig(p, dpi=160)
@@ -467,3 +526,55 @@ def plot_episode_length_boxplot(
     fig.savefig(p, dpi=160)
     plt.close(fig)
     return {"boxplot_episode_length": str(p)}
+
+
+def plot_bootstrap_distribution(
+    reps: list[float],
+    output_dir: str | Path,
+    *,
+    name: str,
+    point: float | None = None,
+    ci_low: float | None = None,
+    ci_high: float | None = None,
+    null_value: float | None = 0.0,
+    title: str | None = None,
+) -> dict[str, str]:
+    """
+    Histogram of cluster-bootstrap replicates with point-estimate/CI-bound/null-value markers --
+    the standard diagnostic for a percentile-bootstrap CI (visualizes the shape/skew the
+    ``skewness`` field already reports numerically, and lets a reader see at a glance whether the
+    point estimate falls inside the reported interval). Call this from the stage script that
+    actually runs the bootstrap (Stages 2/3/5), not from Stage 6 -- the raw replicate list is
+    deliberately dropped from the stage JSON output before it's written to disk (would bloat it
+    with thousands of floats per domain), so it only exists in memory at the point of computation.
+    """
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except Exception:
+        return {}
+    if not reps:
+        return {}
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(6.0, 4.2))
+    ax.hist(reps, bins=50, color="tab:blue", alpha=0.75)
+    if point is not None:
+        ax.axvline(point, color="black", linewidth=1.5, label=f"point={point:.4f}")
+    if ci_low is not None:
+        ax.axvline(ci_low, color="tab:red", linestyle="--", linewidth=1.2, label=f"CI low={ci_low:.4f}")
+    if ci_high is not None:
+        ax.axvline(ci_high, color="tab:red", linestyle="--", linewidth=1.2, label=f"CI high={ci_high:.4f}")
+    if null_value is not None:
+        ax.axvline(null_value, color="gray", linestyle=":", linewidth=1.2, label=f"null={null_value:.2f}")
+    ax.set_xlabel("Bootstrap replicate value")
+    ax.set_ylabel("Count")
+    ax.set_title(title or f"Bootstrap distribution: {name}")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best", fontsize=8, frameon=False)
+    fig.tight_layout()
+    p = output_dir / f"bootstrap_dist_{name}.png"
+    fig.savefig(p, dpi=160)
+    plt.close(fig)
+    return {f"bootstrap_dist_{name}": str(p)}

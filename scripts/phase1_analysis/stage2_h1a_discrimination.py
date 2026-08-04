@@ -23,7 +23,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -42,13 +42,24 @@ DOMAINS = ("tower_of_hanoi", "textworld")
 
 
 def run_h1a(
-    steps: list[dict[str, Any]], episodes: list[dict[str, Any]], *, n_boot: int, seed: int
+    steps: list[dict[str, Any]],
+    episodes: list[dict[str, Any]],
+    *,
+    n_boot: int,
+    seed: int,
+    on_bootstrap: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
+    """``on_bootstrap(domain, boot)`` fires once per domain with the raw bootstrap dict
+    (including ``reps``) before it's stripped for the returned/persisted result -- lets
+    ``main()`` plot the replicate distribution without recomputing the bootstrap or changing
+    this function's own no-``reps``-in-the-output contract."""
     by_domain: dict[str, dict[str, Any]] = {}
     pvalues: list[float] = []
     for dom in DOMAINS:
         dom_steps = [r for r in steps if str(r.get("domain")) == dom]
         boot = cluster_bootstrap(dom_steps, lambda rs: delta_auroc(rs), n_boot=n_boot, seed=seed)
+        if on_bootstrap is not None:
+            on_bootstrap(dom, boot)
         holds = boot["ci_low"] is not None and boot["ci_low"] > 0
         p = one_sided_bootstrap_pvalue(boot["reps"], null_value=0.0)
         by_domain[dom] = {k: v for k, v in boot.items() if k != "reps"}
@@ -77,6 +88,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--manifest", default="data/results/phase1_analysis/stage0/canonical_manifest.json")
     parser.add_argument("--output", default="data/results/phase1_analysis/stage2/h1a_discrimination.json")
+    parser.add_argument("--figures-output", default="data/results/phase1_analysis/stage2/figures")
     parser.add_argument("--n-boot", type=int, default=5000)
     parser.add_argument("--seed", type=int, default=20260703)
     args = parser.parse_args()
@@ -86,12 +98,38 @@ def main() -> int:
         print(f"Stage 2 FAILED -- manifest not found at {manifest_path}; run Stage 0 first.", file=sys.stderr)
         return 1
 
+    from src.analysis.visualization import plot_bootstrap_distribution
+
+    figures_dir = (
+        REPO_ROOT / args.figures_output
+        if not Path(args.figures_output).is_absolute()
+        else Path(args.figures_output)
+    )
+    written_figures: dict[str, str] = {}
+
+    def _on_bootstrap(dom: str, boot: dict[str, Any]) -> None:
+        written_figures.update(
+            plot_bootstrap_distribution(
+                boot["reps"],
+                figures_dir,
+                name=f"h1a_{dom}",
+                point=boot.get("point"),
+                ci_low=boot.get("ci_low"),
+                ci_high=boot.get("ci_high"),
+                null_value=0.0,
+                title=f"H1a bootstrap distribution ({dom}): DeltaAUROC(TLE,VC)",
+            )
+        )
+
     ds = load_canonical_dataset_from_manifest(manifest_path)
-    result = run_h1a(ds.steps, ds.episodes, n_boot=args.n_boot, seed=args.seed)
+    result = run_h1a(ds.steps, ds.episodes, n_boot=args.n_boot, seed=args.seed, on_bootstrap=_on_bootstrap)
 
     out_path = REPO_ROOT / args.output if not Path(args.output).is_absolute() else Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+
+    if written_figures:
+        (figures_dir / "figures_manifest.json").write_text(json.dumps(written_figures, indent=2), encoding="utf-8")
 
     print(f"Stage 2 OK -- H1a written to {out_path}")
     for dom in DOMAINS:

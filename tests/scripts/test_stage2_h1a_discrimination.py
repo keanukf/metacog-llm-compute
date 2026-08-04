@@ -73,3 +73,22 @@ def test_run_h1a_shape_and_per_domain_descriptive_split():
     toh_desc = result["descriptive_cross_check"]["tower_of_hanoi"]["optimal_only"]["tle"]["auroc"]
     tw_desc = result["descriptive_cross_check"]["textworld"]["optimal_only"]["tle"]["auroc"]
     assert toh_desc > tw_desc  # matches the confirmatory finding's direction
+
+
+def test_run_h1a_on_bootstrap_hook_fires_once_per_domain_with_reps():
+    steps = []
+    for inst in range(6):
+        for i in range(10):
+            steps.append(_make_step("tower_of_hanoi", inst, i, tle_discriminates=True))
+            steps.append(_make_step("textworld", inst, i, tle_discriminates=False))
+
+    seen: dict[str, dict] = {}
+
+    def _on_bootstrap(dom, boot):
+        seen[dom] = boot
+
+    run_h1a(steps, [], n_boot=50, seed=1, on_bootstrap=_on_bootstrap)
+
+    assert set(seen.keys()) == set(DOMAINS)
+    for boot in seen.values():
+        assert "reps" in boot and len(boot["reps"]) > 0

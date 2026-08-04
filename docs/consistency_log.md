@@ -2,6 +2,53 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-04 — Annahmen-Checks + fehlende Visualisierungen für H1a/H1b/H3 nachgerüstet
+
+**Anlass:** Nutzerfrage, ob wir für die konfirmatorischen Tests (H1a/H1b/H3/H4) die nötigen
+statistischen Annahmen geprüft und alle sinnvollen Visualisierungen erstellt haben. Vier echte
+Lücken identifiziert und geschlossen:
+
+1. **Bootstrap-Verteilungs-Histogramme** (`plot_bootstrap_distribution`,
+   `src/analysis/visualization.py`) — für alle 5 konfirmatorischen Bootstraps (H1a×2, H1b×2, H4×1)
+   jetzt ein Histogramm der Replikat-Verteilung mit Punktschätzer-/CI-Grenzen-/Null-Markierung.
+   Gewonnen aus den Stage-Skripten selbst über einen `on_bootstrap`-Hook (die rohen Replikate
+   werden bewusst nie in die persistierte JSON geschrieben — zu groß, kein Report-Feld — der Hook
+   lässt `main()` trotzdem plotten, ohne den Bootstrap ein zweites Mal zu rechnen oder den
+   No-`reps`-Rückgabevertrag von `run_h1a`/`run_h1b`/`run_h4` zu brechen).
+2. **Reliability-Diagramme für den echten H1b-Kalibrator** (`stage3_h1b_calibration.py`, nutzt die
+   bereits existierende `reliability_diagram`-Funktion) — TLE-mapped und VC/100, je Domäne, auf
+   exakt der Nicht-Holdout-Teilmenge, auf der auch ΔBrier berechnet wird. Ergebnis auf echten Daten
+   (ToH): VC ist massiv überkonfident (vorhergesagt bis 0.9, empirische Trefferquote plateaut bei
+   ~0.3), TLE-mapped bleibt näher an der Diagonale — visuelle Bestätigung, warum ΔBrier so klar zu
+   TLEs Gunsten ausfällt.
+3. **Empirischer Overlay im H3-Marginal-Effekt-Plot** (`plot_h3_marginal_effect`, jetzt mit
+   optionalem `steps`-Parameter) — echte, in Deciles gebinnte Daten (z_c früh/spät) neben der
+   gefitteten Kurve, als Linearität-in-Logit-Modellcheck. Dafür `fit_h3_model`s
+   Stage-weise-Standardisierung in eine geteilte Funktion `build_h3_frame`
+   (`src/analysis/inference.py`) ausgelagert, damit Fit und Empirie-Plot garantiert dieselbe
+   Transformation verwenden (nicht nur zwei Implementierungen derselben Formel, die auseinanderlaufen
+   könnten — genau das Muster, das schon einmal bei ADR-006/P0-5 zum Bug wurde).
+4. **GEE-Kovarianzschätzer verifiziert und dokumentiert:** `sm.GEE.fit()` hat `cov_type="robust"`
+   als Default (per `inspect.signature` geprüft), nirgends überschrieben — eine falsch spezifizierte
+   Working-Correlation (wir nehmen Exchangeable an) kostet also nur Effizienz, nicht Validität.
+   Jetzt explizit in `fit_h3_model`s Docstring festgehalten.
+5. **Missingness-Mechanismus (MNAR) geprüft und als reproduzierbare Tabelle dokumentiert**
+   (`compute_missingness_outcome_check`, Tabelle 9 im Variablen-Codebook) — Steps mit fehlendem
+   TLE/VC haben in **beiden Domänen exakt 0.0% Erfolgsquote** (132 Steps ToH, 1443 TextWorld),
+   gegenüber ~21-23% bei vorhandenem Signal. Kein Zufallsmuster (MCAR), sondern MNAR — mechanistisch
+   erwartet: ein Step ohne geschlossenen `</think>`-Block bzw. ohne parsebare admissible Aktion hat
+   keine committed-action-Tokens, über die TLE überhaupt berechnet werden könnte, und vermutlich
+   auch keinen sinnvollen VC-Folgeaufruf. Die Exklusion dieser Steps aus allen konfirmatorischen
+   Analysen (H1a/H1b/H3) ist daher der beabsichtigte Scope, kein Coverage-Fehler — das war vorher
+   nur implizit im Code (Gate-F-Admissibility-Logik), jetzt explizit dokumentiert.
+
+**Verifikation:** 469 Tests grün. Volle Pipeline (`run_all.py`) neu gegen die echten Daten
+gelaufen — alle konfirmatorischen Zahlen (H1a/H1b/H3/H4, alle Stage-1-Diagnosewerte) **exakt
+identisch** zum Stand vor diesen Änderungen (0 abweichende numerische Felder; reine Additiv-
+Änderung, keine Berechnungslogik verändert). `docs/phase1_analysis_report.md` bettet jetzt alle
+neuen Grafiken sowie das vollständige 9-Tabellen-Variablen-Codebook ein, nicht mehr nur die
+kuratierte Kurzfassung.
+
 ## 2026-08-03 — Policy: etablierte Libraries statt Eigenimplementierung; H1a-Holdout-Frage geklärt
 
 **Policy-Entscheidung (Nutzer):** Wo immer eine etablierte, zitierfähige Library-Implementierung

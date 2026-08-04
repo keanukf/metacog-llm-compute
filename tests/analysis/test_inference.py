@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from src.analysis.inference import (
     bh,
+    build_h3_frame,
     cluster_bootstrap,
     cluster_bootstrap_stratified,
     fit_h3_model,
@@ -294,6 +297,55 @@ def test_fit_h3_model_standardizes_per_stage_not_pooled():
     out = fit_h3_model(rows, signal="tle", domain="textworld")
     assert out["converged"] is False
     assert "variance" in out["note"]
+
+
+def test_build_h3_frame_matches_fit_h3_model_standardization():
+    """build_h3_frame was factored out of fit_h3_model (2026-08-03, for the H3 empirical-overlay
+    plot) -- must produce the exact same z_c values fit_h3_model's GEE actually fits on, not just
+    a formula that's supposed to match."""
+    rows = []
+    for i in range(60):
+        stage = ["C0", "C1", "C2"][i % 3]
+        rows.append(
+            {
+                "domain": "textworld",
+                "instance_key": f"tw:{i % 6}",
+                "compute_stage": stage,
+                "y_optimal": i % 2,
+                "tle_mean_entropy": 0.05 + 0.01 * i,
+                "position_norm": (i % 10) / 10.0,
+            }
+        )
+    frame, note = build_h3_frame(rows, signal="tle", domain="textworld")
+    assert note is None
+    assert frame is not None
+    assert set(frame.columns) >= {"y", "z_c", "position_norm", "g", "stage"}
+    assert len(frame) == 60
+
+    fit = fit_h3_model(rows, signal="tle", domain="textworld")
+    assert fit["converged"] is True
+    # Re-deriving the GEE by hand from build_h3_frame's own z_c column must reproduce the same
+    # interaction coefficient fit_h3_model reports -- proof the two share one standardization path.
+    import statsmodels.api as sm
+    from statsmodels.genmod.cov_struct import Exchangeable
+    from statsmodels.genmod.families import Binomial
+
+    frame = frame.assign(p_c=frame["position_norm"] - frame["position_norm"].mean())
+    model = sm.GEE(
+        frame["y"],
+        sm.add_constant(frame[["z_c", "p_c"]].assign(interaction=frame["z_c"] * frame["p_c"])),
+        groups=frame["g"],
+        family=Binomial(),
+        cov_struct=Exchangeable(),
+    )
+    res = model.fit()
+    assert float(res.params["interaction"]) == pytest.approx(fit["params"]["interaction"], abs=1e-9)
+
+
+def test_build_h3_frame_insufficient_data_returns_none_with_note():
+    frame, note = build_h3_frame([{"y_optimal": 1, "compute_stage": "C0", "tle_mean_entropy": 0.1}], signal="tle")
+    assert frame is None
+    assert note == "insufficient data"
 
 
 def test_cluster_bootstrap_exposes_reps_for_pvalue_derivation():

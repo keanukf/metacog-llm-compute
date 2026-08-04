@@ -75,3 +75,35 @@ def test_run_h1b_reports_nonconverging_domain_without_crashing():
     assert result["by_domain"]["tower_of_hanoi"]["calibrator_converged"] is True
     assert result["by_domain"]["textworld"]["calibrator_converged"] is False
     assert result["by_domain"]["textworld"]["decision_holds"] is False
+
+
+def test_run_h1b_hooks_fire_only_for_converged_domains():
+    steps = []
+    steps += _rows("tower_of_hanoi", n=400, holdout_fraction=0.1, tle_discriminates=True, seed=1)
+    for i in range(50):  # textworld: single-class holdout -> calibrator fit fails
+        steps.append(
+            {
+                "domain": "textworld",
+                "instance_key": f"textworld:{i % 5}",
+                "holdout": True,
+                "y_optimal": 1,
+                "tle_mean_entropy": 0.3,
+                "vc": 50,
+            }
+        )
+
+    boot_seen: dict[str, dict] = {}
+    fit_seen: dict[str, object] = {}
+    run_h1b(
+        steps,
+        n_boot=50,
+        seed=1,
+        on_bootstrap=lambda dom, boot: boot_seen.__setitem__(dom, boot),
+        on_calibrator_fit=lambda dom, calibrator, non_holdout: fit_seen.__setitem__(dom, calibrator),
+    )
+
+    # Only the converged domain gets a bootstrap/calibrator-fit callback -- textworld's failed
+    # fit must not reach either hook.
+    assert set(boot_seen.keys()) == {"tower_of_hanoi"}
+    assert set(fit_seen.keys()) == {"tower_of_hanoi"}
+    assert "reps" in boot_seen["tower_of_hanoi"]

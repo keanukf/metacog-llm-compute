@@ -404,24 +404,18 @@ def one_sided_wald_pvalue(coef: float, p_two_sided: float, *, direction: int = -
     return half if points_right_way else (1.0 - half)
 
 
-def fit_h3_model(
-    df: Any,
-    *,
-    signal: str = "tle",
-    domain: str | None = None,
-) -> dict[str, Any]:
+def build_h3_frame(df: Any, *, signal: str = "tle", domain: str | None = None) -> tuple[Any, str | None]:
     """
-    GEE: y ~ z_signal * position_norm with exchangeable instance clustering.
+    Filters and stage-wise z-standardizes TLE/VC exactly as ``fit_h3_model`` requires (see its
+    docstring for the "why stage-wise" argument), returned as a pandas DataFrame with columns
+    ``y``, ``z_c`` (stage-wise standardized signal), ``position_norm``, ``g`` (instance_key),
+    ``stage``. Factored out of ``fit_h3_model`` so the H3 empirical-overlay plot
+    (``src/analysis/visualization.py::plot_h3_marginal_effect``) uses *identical* standardization
+    by construction, not just a formula that's supposed to match -- two independently-written
+    "the same" transforms have drifted apart in this codebase before (ADR-006/P0-5).
 
-    The signal is z-standardized (mean 0, SD 1) *within each compute_stage* (C0/C1/C2), not
-    pooled across stages -- raw TLE/VC scales are not commensurable across stages (different
-    decoding temperatures and reasoning-token budgets shift each signal's scale independently
-    of the construct being measured), mirroring the allocator's stage-wise ECDF normalization.
-    See docs/adrs.md ADR-006 for the full argument (incl. why this doesn't affect H3
-    significance, only interpretability) and the P0-5 entry in
-    ../metacog-thesis/notes/revision_audit_2026-07.md.
-
-    Fallback: returns error dict if statsmodels GEE fails to converge.
+    Returns ``(frame, None)`` on success or ``(None, note)`` with a diagnostic note on failure
+    (insufficient data, too few clusters, or degenerate within-stage variance).
     """
     rows = _as_rows(df)
     if domain is not None:
@@ -453,26 +447,53 @@ def fit_h3_model(
         groups.append(str(r.get("instance_key", "unknown")))
         stages.append(str(stage))
     if len(y) < 20 or len(set(groups)) < 3:
-        return {"converged": False, "note": "insufficient data"}
+        return None, "insufficient data"
+
+    import pandas as pd
+
+    frame = pd.DataFrame({"y": y, "z": z, "position_norm": pos, "g": groups, "stage": stages})
+    stage_mean = frame.groupby("stage")["z"].transform("mean")
+    stage_std = frame.groupby("stage")["z"].transform("std")
+    if (stage_std == 0).any() or stage_std.isna().any():
+        return None, "zero- or undefined-variance signal within a compute_stage group"
+    frame["z_c"] = (frame["z"] - stage_mean) / stage_std
+    return frame, None
+
+
+def fit_h3_model(
+    df: Any,
+    *,
+    signal: str = "tle",
+    domain: str | None = None,
+) -> dict[str, Any]:
+    """
+    GEE: y ~ z_signal * position_norm with exchangeable instance clustering.
+
+    The signal is z-standardized (mean 0, SD 1) *within each compute_stage* (C0/C1/C2), not
+    pooled across stages -- raw TLE/VC scales are not commensurable across stages (different
+    decoding temperatures and reasoning-token budgets shift each signal's scale independently
+    of the construct being measured), mirroring the allocator's stage-wise ECDF normalization.
+    See docs/adrs.md ADR-006 for the full argument (incl. why this doesn't affect H3
+    significance, only interpretability) and the P0-5 entry in
+    ../metacog-thesis/notes/revision_audit_2026-07.md.
+
+    Standard errors use statsmodels' GEE default ``cov_type="robust"`` (sandwich estimator) --
+    verified via ``inspect.signature(sm.GEE.fit)``, not overridden anywhere in this call. This
+    means a misspecified working correlation (we assume Exchangeable) costs statistical
+    efficiency, not validity: the reported p-values/CIs remain asymptotically correct even if the
+    true within-instance correlation structure isn't exactly exchangeable.
+
+    Fallback: returns error dict if standardization is degenerate or statsmodels GEE fails to
+    converge.
+    """
+    frame, note = build_h3_frame(df, signal=signal, domain=domain)
+    if frame is None:
+        return {"converged": False, "note": note, "signal": signal, "domain": domain}
     try:
-        import pandas as pd
         import statsmodels.api as sm
         from statsmodels.genmod.cov_struct import Exchangeable
         from statsmodels.genmod.families import Binomial
 
-        frame = pd.DataFrame(
-            {"y": y, "z": z, "position_norm": pos, "g": groups, "stage": stages}
-        )
-        stage_mean = frame.groupby("stage")["z"].transform("mean")
-        stage_std = frame.groupby("stage")["z"].transform("std")
-        if (stage_std == 0).any() or stage_std.isna().any():
-            return {
-                "converged": False,
-                "note": "zero- or undefined-variance signal within a compute_stage group",
-                "signal": signal,
-                "domain": domain,
-            }
-        frame["z_c"] = (frame["z"] - stage_mean) / stage_std
         frame["p_c"] = frame["position_norm"] - frame["position_norm"].mean()
         model = sm.GEE(
             frame["y"],
