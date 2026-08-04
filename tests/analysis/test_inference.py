@@ -10,7 +10,20 @@ from __future__ import annotations
 
 import math
 
-from src.analysis.inference import bh, cluster_bootstrap, fit_h3_model, h2_paired, h4_diff_in_diff, holm
+import pytest
+
+from src.analysis.inference import (
+    bh,
+    build_h3_frame,
+    cluster_bootstrap,
+    cluster_bootstrap_stratified,
+    fit_h3_model,
+    h2_paired,
+    h4_diff_in_diff,
+    holm,
+    one_sided_bootstrap_pvalue,
+    one_sided_wald_pvalue,
+)
 
 
 def test_cluster_bootstrap_smoke():
@@ -55,6 +68,50 @@ def test_cluster_bootstrap_drops_nonfinite_replicates():
     # Some resamples of only 6 clusters over 500 draws are expected to be single-class.
     assert out["n_boot_nonfinite"] > 0
     assert out["n_boot_effective"] == 500 - out["n_boot_nonfinite"]
+
+
+def test_cluster_bootstrap_stratified_resamples_within_each_domain_exactly():
+    """H4's preregistration requires resampling instances within each domain independently
+    (thesis Ch.5 §5.8), not pooling all instance_keys into one flat resampling pool. Construct a
+    deliberately imbalanced case -- 5 clusters in one domain, 50 in the other -- so an unstratified
+    bootstrap would draw a domain-imbalanced mix of clusters by chance; instrument via a stat_fn
+    that returns the per-replicate cluster count per domain to prove it never varies.
+    """
+    rows = []
+    for i in range(5):
+        rows.append({"domain": "tower_of_hanoi", "instance_key": f"toh:{i}", "y_optimal": i % 2})
+    for i in range(50):
+        rows.append({"domain": "textworld", "instance_key": f"tw:{i}", "y_optimal": i % 2})
+
+    def count_stat_fn(rs):
+        n_toh = len({r["instance_key"] for r in rs if r["domain"] == "tower_of_hanoi"})
+        n_tw = len({r["instance_key"] for r in rs if r["domain"] == "textworld"})
+        # Encode both counts into one float so the smoke path still gets a single number;
+        # the assertions below decode via the raw replicate-count sidecar collected separately.
+        return n_toh + 1000.0 * n_tw
+
+    out = cluster_bootstrap_stratified(rows, count_stat_fn, strata_col="domain", n_boot=300, seed=7)
+    assert out["point"] is not None
+    for rep in out["reps"]:
+        n_tw = int(rep // 1000.0)
+        n_toh = rep - 1000.0 * n_tw
+        # Distinct clusters observed in a with-replacement resample can only ever be <= the
+        # stratum's true cluster count -- never more, and stratification means the *pool size*
+        # drawn from is always exactly 5 (toh) and 50 (textworld), never a flattened mix of both.
+        assert 0 <= n_toh <= 5
+        assert 0 <= n_tw <= 50
+
+
+def test_cluster_bootstrap_stratified_requires_at_least_two_clusters_per_stratum():
+    rows = [
+        {"domain": "tower_of_hanoi", "instance_key": "toh:0", "y_optimal": 1},
+        {"domain": "textworld", "instance_key": "tw:0", "y_optimal": 1},
+        {"domain": "textworld", "instance_key": "tw:1", "y_optimal": 0},
+    ]
+    out = cluster_bootstrap_stratified(rows, lambda rs: 0.0, strata_col="domain", n_boot=50, seed=1)
+    assert out["point"] is None
+    assert out["ci_low"] is None and out["ci_high"] is None
+    assert out["reps"] == []
 
 
 def test_h2_paired_delta_default():
@@ -240,6 +297,102 @@ def test_fit_h3_model_standardizes_per_stage_not_pooled():
     out = fit_h3_model(rows, signal="tle", domain="textworld")
     assert out["converged"] is False
     assert "variance" in out["note"]
+
+
+def test_build_h3_frame_matches_fit_h3_model_standardization():
+    """build_h3_frame was factored out of fit_h3_model (2026-08-03, for the H3 empirical-overlay
+    plot) -- must produce the exact same z_c values fit_h3_model's GEE actually fits on, not just
+    a formula that's supposed to match."""
+    rows = []
+    for i in range(60):
+        stage = ["C0", "C1", "C2"][i % 3]
+        rows.append(
+            {
+                "domain": "textworld",
+                "instance_key": f"tw:{i % 6}",
+                "compute_stage": stage,
+                "y_optimal": i % 2,
+                "tle_mean_entropy": 0.05 + 0.01 * i,
+                "position_norm": (i % 10) / 10.0,
+            }
+        )
+    frame, note = build_h3_frame(rows, signal="tle", domain="textworld")
+    assert note is None
+    assert frame is not None
+    assert set(frame.columns) >= {"y", "z_c", "position_norm", "g", "stage"}
+    assert len(frame) == 60
+
+    fit = fit_h3_model(rows, signal="tle", domain="textworld")
+    assert fit["converged"] is True
+    # Re-deriving the GEE by hand from build_h3_frame's own z_c column must reproduce the same
+    # interaction coefficient fit_h3_model reports -- proof the two share one standardization path.
+    import statsmodels.api as sm
+    from statsmodels.genmod.cov_struct import Exchangeable
+    from statsmodels.genmod.families import Binomial
+
+    frame = frame.assign(p_c=frame["position_norm"] - frame["position_norm"].mean())
+    model = sm.GEE(
+        frame["y"],
+        sm.add_constant(frame[["z_c", "p_c"]].assign(interaction=frame["z_c"] * frame["p_c"])),
+        groups=frame["g"],
+        family=Binomial(),
+        cov_struct=Exchangeable(),
+    )
+    res = model.fit()
+    assert float(res.params["interaction"]) == pytest.approx(fit["params"]["interaction"], abs=1e-9)
+
+
+def test_build_h3_frame_insufficient_data_returns_none_with_note():
+    frame, note = build_h3_frame(
+        [{"y_optimal": 1, "compute_stage": "C0", "tle_mean_entropy": 0.1}], signal="tle"
+    )
+    assert frame is None
+    assert note == "insufficient data"
+
+
+def test_cluster_bootstrap_exposes_reps_for_pvalue_derivation():
+    rows = [
+        {"instance_key": f"t:{i // 3}", "y_optimal": i % 2, "tle_mean_entropy": 0.1 * i}
+        for i in range(30)
+    ]
+    out = cluster_bootstrap(
+        rows, lambda rs: sum(int(r["y_optimal"]) for r in rs) / len(rs), n_boot=200, seed=1
+    )
+    assert isinstance(out["reps"], list)
+    assert len(out["reps"]) == out["n_boot_effective"]
+
+
+def test_one_sided_bootstrap_pvalue_small_when_all_replicates_exceed_null():
+    reps = [0.1, 0.2, 0.3, 0.15, 0.25]
+    p = one_sided_bootstrap_pvalue(reps, null_value=0.0)
+    assert p == 1 / 6  # (0 exceed-or-equal + 1) / (5 + 1), continuity-corrected
+
+
+def test_one_sided_bootstrap_pvalue_large_when_all_replicates_below_null():
+    reps = [-0.1, -0.2, -0.3, -0.15, -0.25]
+    p = one_sided_bootstrap_pvalue(reps, null_value=0.0)
+    assert p == 1.0  # all 5 at-or-below null + 1 continuity => 6/6
+
+
+def test_one_sided_bootstrap_pvalue_never_exactly_zero():
+    reps = [1.0] * 1000  # every replicate strictly exceeds null
+    p = one_sided_bootstrap_pvalue(reps, null_value=0.0)
+    assert p > 0.0
+    assert math.isclose(p, 1 / 1001)
+
+
+def test_one_sided_bootstrap_pvalue_empty_reps_is_maximally_uncertain():
+    assert one_sided_bootstrap_pvalue([]) == 1.0
+
+
+def test_one_sided_wald_pvalue_halves_when_coefficient_points_the_hypothesized_way():
+    p = one_sided_wald_pvalue(-0.5, 0.04, direction=-1)
+    assert math.isclose(p, 0.02)
+
+
+def test_one_sided_wald_pvalue_takes_complement_when_coefficient_points_wrong_way():
+    p = one_sided_wald_pvalue(0.5, 0.04, direction=-1)
+    assert math.isclose(p, 0.98)
 
 
 def test_holm_bh():

@@ -19,15 +19,62 @@ def _as_rows(df: Any) -> list[dict[str, Any]]:
 
 
 def _skewness(vals: list[float]) -> float | None:
+    """Population (biased) skewness via ``scipy.stats.skew`` (verified machine-precision-identical
+    to the prior hand-rolled formula, max abs diff 5.6e-16, before this 2026-08-03 swap).
+
+    Guards on "effectively constant" (``np.allclose`` to the first value), not literal
+    ``std == 0``: a near-degenerate bootstrap replicate list (e.g. a construction with zero
+    true instance-to-instance variance, see test_h2_paired_holds_when_ci_bound_clears_threshold)
+    can have a std that is floating-point-nonzero but numerically meaningless, which made
+    scipy's internal moment calculation raise a "catastrophic cancellation" warning here --
+    correctly returning None for a degenerate distribution is more honest than a numerically
+    unstable number scipy itself flags as unreliable.
+    """
     if len(vals) < 3:
         return None
-    m = sum(vals) / len(vals)
-    v = sum((x - m) ** 2 for x in vals) / len(vals)
-    if v <= 0:
+    import numpy as np
+    from scipy.stats import skew
+
+    arr = np.asarray(vals, dtype=float)
+    if np.allclose(arr, arr[0]):
         return None
-    s = math.sqrt(v)
-    m3 = sum((x - m) ** 3 for x in vals) / len(vals)
-    return m3 / (s**3)
+    return float(skew(arr, bias=True))
+
+
+def _summarize_bootstrap_reps(
+    point: float | None,
+    reps: list[float],
+    *,
+    n_boot: int,
+    n_nonfinite: int,
+    ci: tuple[float, float],
+) -> dict[str, Any]:
+    """Shared point/CI/skewness tail logic for ``cluster_bootstrap`` and
+    ``cluster_bootstrap_stratified`` -- percentile CI + skewness from a raw replicate list, so
+    the two resampling strategies don't duplicate this bookkeeping."""
+    if not reps:
+        return {
+            "point": point,
+            "ci_low": None,
+            "ci_high": None,
+            "n_boot": n_boot,
+            "skewness": None,
+            "reps": [],
+        }
+    sorted_reps = sorted(reps)
+    n_eff = len(sorted_reps)
+    lo_i = int(ci[0] * n_eff)
+    hi_i = min(int(ci[1] * n_eff), n_eff - 1)
+    return {
+        "point": float(point) if point is not None else None,
+        "ci_low": float(sorted_reps[lo_i]),
+        "ci_high": float(sorted_reps[hi_i]),
+        "n_boot": n_boot,
+        "n_boot_effective": n_eff,
+        "n_boot_nonfinite": n_nonfinite,
+        "skewness": _skewness(sorted_reps),
+        "reps": sorted_reps,
+    }
 
 
 def cluster_bootstrap(
@@ -50,7 +97,7 @@ def cluster_bootstrap(
         by_cluster[str(r.get(cluster_col, "unknown"))].append(r)
     clusters = list(by_cluster.keys())
     if len(clusters) < 2:
-        return {"point": None, "ci_low": None, "ci_high": None, "n_boot": n_boot, "skewness": None}
+        return _summarize_bootstrap_reps(None, [], n_boot=n_boot, n_nonfinite=0, ci=ci)
     rng = random.Random(seed)
     point = stat_fn(rows)
     reps: list[float] = []
@@ -77,21 +124,85 @@ def cluster_bootstrap(
             n_nonfinite += 1
             continue
         reps.append(v)
-    if not reps:
-        return {"point": point, "ci_low": None, "ci_high": None, "n_boot": n_boot, "skewness": None}
-    reps.sort()
-    n_eff = len(reps)
-    lo_i = int(ci[0] * n_eff)
-    hi_i = min(int(ci[1] * n_eff), n_eff - 1)
-    return {
-        "point": float(point),
-        "ci_low": float(reps[lo_i]),
-        "ci_high": float(reps[hi_i]),
-        "n_boot": n_boot,
-        "n_boot_effective": n_eff,
-        "n_boot_nonfinite": n_nonfinite,
-        "skewness": _skewness(reps),
-    }
+    return _summarize_bootstrap_reps(point, reps, n_boot=n_boot, n_nonfinite=n_nonfinite, ci=ci)
+
+
+def cluster_bootstrap_stratified(
+    df: Any,
+    stat_fn: Callable[[list[dict[str, Any]]], float],
+    *,
+    strata_col: str = "domain",
+    cluster_col: str = "instance_key",
+    n_boot: int = 5000,
+    seed: int = 20260703,
+    ci: tuple[float, float] = (0.05, 0.95),
+) -> dict[str, Any]:
+    """
+    Like ``cluster_bootstrap``, but resamples instance clusters *within each stratum
+    independently* before recombining into one resample per replicate.
+
+    H4's preregistration (verified verbatim in ``chapters/05_methodology.md``, thesis Ch.5 §5.8):
+    "estimated by the cluster bootstrap with instances resampled within each domain." Plain
+    ``cluster_bootstrap`` pools all clusters from every stratum into one flat resampling pool,
+    which does not match that wording -- a single replicate could draw a domain-imbalanced mix
+    of clusters purely by chance. ``stat_fn`` (e.g. ``h4_diff_in_diff``) needs zero changes: it
+    already re-splits the combined rows by domain internally before computing its statistic.
+    """
+    rows = _as_rows(df)
+    by_stratum_cluster: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for r in rows:
+        stratum = str(r.get(strata_col, "unknown"))
+        cluster = str(r.get(cluster_col, "unknown"))
+        by_stratum_cluster[stratum][cluster].append(r)
+
+    strata = list(by_stratum_cluster.keys())
+    cluster_lists = {s: list(by_stratum_cluster[s].keys()) for s in strata}
+    if not strata or any(len(cluster_lists[s]) < 2 for s in strata):
+        return _summarize_bootstrap_reps(None, [], n_boot=n_boot, n_nonfinite=0, ci=ci)
+
+    rng = random.Random(seed)
+    point = stat_fn(rows)
+    reps: list[float] = []
+    n_nonfinite = 0
+    for _ in range(n_boot):
+        boot_rows: list[dict[str, Any]] = []
+        for s in strata:
+            clusters_s = cluster_lists[s]
+            sample_keys = [
+                clusters_s[rng.randrange(len(clusters_s))] for _ in range(len(clusters_s))
+            ]
+            for k in sample_keys:
+                boot_rows.extend(by_stratum_cluster[s][k])
+        try:
+            v = float(stat_fn(boot_rows))
+        except Exception:
+            n_nonfinite += 1
+            continue
+        if not math.isfinite(v):
+            n_nonfinite += 1
+            continue
+        reps.append(v)
+    return _summarize_bootstrap_reps(point, reps, n_boot=n_boot, n_nonfinite=n_nonfinite, ci=ci)
+
+
+def one_sided_bootstrap_pvalue(reps: list[float], *, null_value: float = 0.0) -> float:
+    """One-sided bootstrap p-value for testing "statistic > null_value": the fraction of
+    replicates at or below ``null_value``, with the standard ``(n_exceed + 1) / (n + 1)``
+    continuity correction (Davison & Hinkley 1997) so a p-value is never exactly 0 -- that would
+    misrepresent a finite-resample estimate as an exact certainty and would break Holm's
+    downstream arithmetic (``raw * (m - rank)``, which is degenerate at exactly 0).
+
+    Feeds ``holm()``/``bh()`` a real, monotonic-in-significance quantity from a cluster-bootstrap
+    replicate list -- the CI bound itself is not a p-value and must not be passed to Holm
+    directly.
+    """
+    n = len(reps)
+    if n == 0:
+        return 1.0
+    n_le = sum(1 for r in reps if r <= null_value)
+    return (n_le + 1) / (n + 1)
 
 
 def delta_auroc(
@@ -219,7 +330,8 @@ def h2_paired(
         paired_rows.append(
             {
                 "instance_key": key,
-                "succ_diff": float(bool(p.get("task_success"))) - float(bool(b.get("task_success"))),
+                "succ_diff": float(bool(p.get("task_success")))
+                - float(bool(b.get("task_success"))),
                 "log_tok_diff": math.log(tb) - math.log(tp),
             }
         )
@@ -232,7 +344,10 @@ def h2_paired(
         paired_rows, lambda rs: sum(r["succ_diff"] for r in rs) / len(rs), n_boot=n_boot, seed=seed
     )
     log_boot = cluster_bootstrap(
-        paired_rows, lambda rs: sum(r["log_tok_diff"] for r in rs) / len(rs), n_boot=n_boot, seed=seed
+        paired_rows,
+        lambda rs: sum(r["log_tok_diff"] for r in rs) / len(rs),
+        n_boot=n_boot,
+        seed=seed,
     )
     succ_ci_low = succ_boot["ci_low"]
     log_ci_low = log_boot["ci_low"]
@@ -251,64 +366,66 @@ def h2_paired(
 
 
 def holm(pvals_or_bounds: list[float], family: str = "") -> list[dict[str, Any]]:
-    """Holm step-down adjustment (family A–C).
-
-    Adjusted p-value at rank i is ``max(1, ..., i)`` of ``min(1, raw_(rank) * (m - rank))`` --
-    the running-maximum ("enforce monotonicity") step is required by Holm (1979) so that
-    adjusted p-values never decrease with increasing raw p-value; omitting it (as a prior
-    version of this function did) can silently understate the adjustment for a p-value that
-    is only slightly larger than the next-smaller one, e.g. raw=[0.01, 0.011, 0.5] with m=3
-    must adjust to [0.03, 0.03, 0.5], not [0.03, 0.022, 0.5] (verified against
-    ``statsmodels.stats.multitest.multipletests(method="holm")``).
-    """
+    """Holm (1979) step-down adjustment (families A-E, chapters/05_methodology.md), via
+    ``statsmodels.stats.multitest.multipletests(method="holm")`` -- the established library this
+    repo's own prior hand-rolled version was already being cross-checked against (2026-08-03
+    policy: prefer a citeable library implementation over auditing our own formula/monotonicity
+    logic). Verified identical on the exact case that once caught a real bug here: raw=[0.01,
+    0.011, 0.5] with m=3 adjusts to [0.03, 0.03, 0.5], not [0.03, 0.022, 0.5]."""
     m = len(pvals_or_bounds)
-    order = sorted(range(m), key=lambda i: pvals_or_bounds[i])
-    out: list[dict[str, Any]] = [{}] * m
-    running_max = 0.0
-    for rank, idx in enumerate(order):
-        step_adj = min(1.0, pvals_or_bounds[idx] * (m - rank))
-        running_max = max(running_max, step_adj)
-        out[idx] = {
-            "index": idx,
-            "raw": pvals_or_bounds[idx],
-            "adjusted": running_max,
-            "family": family,
-        }
-    return out
+    if m == 0:
+        return []
+    from statsmodels.stats.multitest import multipletests
+
+    _, adjusted, _, _ = multipletests(pvals_or_bounds, method="holm")
+    return [
+        {"index": i, "raw": pvals_or_bounds[i], "adjusted": float(adjusted[i]), "family": family}
+        for i in range(m)
+    ]
 
 
 def bh(pvals_or_bounds: list[float]) -> list[dict[str, Any]]:
-    """Benjamini–Hochberg FDR adjustment (exploratory level)."""
+    """Benjamini-Hochberg (1995) FDR adjustment (exploratory level), via
+    ``statsmodels.stats.multitest.multipletests(method="fdr_bh")``."""
     m = len(pvals_or_bounds)
-    order = sorted(range(m), key=lambda i: pvals_or_bounds[i])
-    adj = [1.0] * m
-    prev = 1.0
-    for rank in range(m - 1, -1, -1):
-        idx = order[rank]
-        val = min(prev, pvals_or_bounds[idx] * m / (rank + 1))
-        adj[idx] = val
-        prev = val
-    return [{"index": i, "raw": pvals_or_bounds[i], "adjusted": adj[i]} for i in range(m)]
+    if m == 0:
+        return []
+    from statsmodels.stats.multitest import multipletests
+
+    _, adjusted, _, _ = multipletests(pvals_or_bounds, method="fdr_bh")
+    return [
+        {"index": i, "raw": pvals_or_bounds[i], "adjusted": float(adjusted[i])} for i in range(m)
+    ]
 
 
-def fit_h3_model(
-    df: Any,
-    *,
-    signal: str = "tle",
-    domain: str | None = None,
-) -> dict[str, Any]:
+def one_sided_wald_pvalue(coef: float, p_two_sided: float, *, direction: int = -1) -> float:
+    """One-sided p-value for a directional GEE/Wald coefficient test (H3's interaction term).
+
+    A two-sided Wald p-value splits evenly across both tails under the standard symmetric-
+    statistic assumption; halving it gives the one-sided p-value when the estimate points the
+    hypothesized way (``direction=-1`` for "coefficient < 0", the H3 degradation direction), and
+    the complement (``1 - p_two_sided/2``) when it points the wrong way -- a coefficient in the
+    wrong direction can never support a directional hypothesis, however small its two-sided p.
     """
-    GEE: y ~ z_signal * position_norm with exchangeable instance clustering.
+    half = p_two_sided / 2.0
+    points_right_way = coef < 0 if direction < 0 else coef > 0
+    return half if points_right_way else (1.0 - half)
 
-    The signal is z-standardized (mean 0, SD 1) *within each compute_stage* (C0/C1/C2), not
-    pooled across stages -- raw TLE/VC scales are not commensurable across stages (different
-    decoding temperatures and reasoning-token budgets shift each signal's scale independently
-    of the construct being measured), mirroring the allocator's stage-wise ECDF normalization.
-    See docs/adrs.md ADR-006 for the full argument (incl. why this doesn't affect H3
-    significance, only interpretability) and the P0-5 entry in
-    ../metacog-thesis/notes/revision_audit_2026-07.md.
 
-    Fallback: returns error dict if statsmodels GEE fails to converge.
+def build_h3_frame(
+    df: Any, *, signal: str = "tle", domain: str | None = None
+) -> tuple[Any, str | None]:
+    """
+    Filters and stage-wise z-standardizes TLE/VC exactly as ``fit_h3_model`` requires (see its
+    docstring for the "why stage-wise" argument), returned as a pandas DataFrame with columns
+    ``y``, ``z_c`` (stage-wise standardized signal), ``position_norm``, ``g`` (instance_key),
+    ``stage``. Factored out of ``fit_h3_model`` so the H3 empirical-overlay plot
+    (``src/analysis/visualization.py::plot_h3_marginal_effect``) uses *identical* standardization
+    by construction, not just a formula that's supposed to match -- two independently-written
+    "the same" transforms have drifted apart in this codebase before (ADR-006/P0-5).
+
+    Returns ``(frame, None)`` on success or ``(None, note)`` with a diagnostic note on failure
+    (insufficient data, too few clusters, or degenerate within-stage variance).
     """
     rows = _as_rows(df)
     if domain is not None:
@@ -340,26 +457,53 @@ def fit_h3_model(
         groups.append(str(r.get("instance_key", "unknown")))
         stages.append(str(stage))
     if len(y) < 20 or len(set(groups)) < 3:
-        return {"converged": False, "note": "insufficient data"}
+        return None, "insufficient data"
+
+    import pandas as pd
+
+    frame = pd.DataFrame({"y": y, "z": z, "position_norm": pos, "g": groups, "stage": stages})
+    stage_mean = frame.groupby("stage")["z"].transform("mean")
+    stage_std = frame.groupby("stage")["z"].transform("std")
+    if (stage_std == 0).any() or stage_std.isna().any():
+        return None, "zero- or undefined-variance signal within a compute_stage group"
+    frame["z_c"] = (frame["z"] - stage_mean) / stage_std
+    return frame, None
+
+
+def fit_h3_model(
+    df: Any,
+    *,
+    signal: str = "tle",
+    domain: str | None = None,
+) -> dict[str, Any]:
+    """
+    GEE: y ~ z_signal * position_norm with exchangeable instance clustering.
+
+    The signal is z-standardized (mean 0, SD 1) *within each compute_stage* (C0/C1/C2), not
+    pooled across stages -- raw TLE/VC scales are not commensurable across stages (different
+    decoding temperatures and reasoning-token budgets shift each signal's scale independently
+    of the construct being measured), mirroring the allocator's stage-wise ECDF normalization.
+    See docs/adrs.md ADR-006 for the full argument (incl. why this doesn't affect H3
+    significance, only interpretability) and the P0-5 entry in
+    ../metacog-thesis/notes/revision_audit_2026-07.md.
+
+    Standard errors use statsmodels' GEE default ``cov_type="robust"`` (sandwich estimator) --
+    verified via ``inspect.signature(sm.GEE.fit)``, not overridden anywhere in this call. This
+    means a misspecified working correlation (we assume Exchangeable) costs statistical
+    efficiency, not validity: the reported p-values/CIs remain asymptotically correct even if the
+    true within-instance correlation structure isn't exactly exchangeable.
+
+    Fallback: returns error dict if standardization is degenerate or statsmodels GEE fails to
+    converge.
+    """
+    frame, note = build_h3_frame(df, signal=signal, domain=domain)
+    if frame is None:
+        return {"converged": False, "note": note, "signal": signal, "domain": domain}
     try:
-        import pandas as pd
         import statsmodels.api as sm
         from statsmodels.genmod.cov_struct import Exchangeable
         from statsmodels.genmod.families import Binomial
 
-        frame = pd.DataFrame(
-            {"y": y, "z": z, "position_norm": pos, "g": groups, "stage": stages}
-        )
-        stage_mean = frame.groupby("stage")["z"].transform("mean")
-        stage_std = frame.groupby("stage")["z"].transform("std")
-        if (stage_std == 0).any() or stage_std.isna().any():
-            return {
-                "converged": False,
-                "note": "zero- or undefined-variance signal within a compute_stage group",
-                "signal": signal,
-                "domain": domain,
-            }
-        frame["z_c"] = (frame["z"] - stage_mean) / stage_std
         frame["p_c"] = frame["position_norm"] - frame["position_norm"].mean()
         model = sm.GEE(
             frame["y"],

@@ -2,6 +2,136 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-04 — Annahmen-Checks + fehlende Visualisierungen für H1a/H1b/H3 nachgerüstet
+
+**Anlass:** Nutzerfrage, ob wir für die konfirmatorischen Tests (H1a/H1b/H3/H4) die nötigen
+statistischen Annahmen geprüft und alle sinnvollen Visualisierungen erstellt haben. Vier echte
+Lücken identifiziert und geschlossen:
+
+1. **Bootstrap-Verteilungs-Histogramme** (`plot_bootstrap_distribution`,
+   `src/analysis/visualization.py`) — für alle 5 konfirmatorischen Bootstraps (H1a×2, H1b×2, H4×1)
+   jetzt ein Histogramm der Replikat-Verteilung mit Punktschätzer-/CI-Grenzen-/Null-Markierung.
+   Gewonnen aus den Stage-Skripten selbst über einen `on_bootstrap`-Hook (die rohen Replikate
+   werden bewusst nie in die persistierte JSON geschrieben — zu groß, kein Report-Feld — der Hook
+   lässt `main()` trotzdem plotten, ohne den Bootstrap ein zweites Mal zu rechnen oder den
+   No-`reps`-Rückgabevertrag von `run_h1a`/`run_h1b`/`run_h4` zu brechen).
+2. **Reliability-Diagramme für den echten H1b-Kalibrator** (`stage3_h1b_calibration.py`, nutzt die
+   bereits existierende `reliability_diagram`-Funktion) — TLE-mapped und VC/100, je Domäne, auf
+   exakt der Nicht-Holdout-Teilmenge, auf der auch ΔBrier berechnet wird. Ergebnis auf echten Daten
+   (ToH): VC ist massiv überkonfident (vorhergesagt bis 0.9, empirische Trefferquote plateaut bei
+   ~0.3), TLE-mapped bleibt näher an der Diagonale — visuelle Bestätigung, warum ΔBrier so klar zu
+   TLEs Gunsten ausfällt.
+3. **Empirischer Overlay im H3-Marginal-Effekt-Plot** (`plot_h3_marginal_effect`, jetzt mit
+   optionalem `steps`-Parameter) — echte, in Deciles gebinnte Daten (z_c früh/spät) neben der
+   gefitteten Kurve, als Linearität-in-Logit-Modellcheck. Dafür `fit_h3_model`s
+   Stage-weise-Standardisierung in eine geteilte Funktion `build_h3_frame`
+   (`src/analysis/inference.py`) ausgelagert, damit Fit und Empirie-Plot garantiert dieselbe
+   Transformation verwenden (nicht nur zwei Implementierungen derselben Formel, die auseinanderlaufen
+   könnten — genau das Muster, das schon einmal bei ADR-006/P0-5 zum Bug wurde).
+4. **GEE-Kovarianzschätzer verifiziert und dokumentiert:** `sm.GEE.fit()` hat `cov_type="robust"`
+   als Default (per `inspect.signature` geprüft), nirgends überschrieben — eine falsch spezifizierte
+   Working-Correlation (wir nehmen Exchangeable an) kostet also nur Effizienz, nicht Validität.
+   Jetzt explizit in `fit_h3_model`s Docstring festgehalten.
+5. **Missingness-Mechanismus (MNAR) geprüft und als reproduzierbare Tabelle dokumentiert**
+   (`compute_missingness_outcome_check`, Tabelle 9 im Variablen-Codebook) — Steps mit fehlendem
+   TLE/VC haben in **beiden Domänen exakt 0.0% Erfolgsquote** (132 Steps ToH, 1443 TextWorld),
+   gegenüber ~21-23% bei vorhandenem Signal. Kein Zufallsmuster (MCAR), sondern MNAR — mechanistisch
+   erwartet: ein Step ohne geschlossenen `</think>`-Block bzw. ohne parsebare admissible Aktion hat
+   keine committed-action-Tokens, über die TLE überhaupt berechnet werden könnte, und vermutlich
+   auch keinen sinnvollen VC-Folgeaufruf. Die Exklusion dieser Steps aus allen konfirmatorischen
+   Analysen (H1a/H1b/H3) ist daher der beabsichtigte Scope, kein Coverage-Fehler — das war vorher
+   nur implizit im Code (Gate-F-Admissibility-Logik), jetzt explizit dokumentiert.
+
+**Verifikation:** 469 Tests grün. Volle Pipeline (`run_all.py`) neu gegen die echten Daten
+gelaufen — alle konfirmatorischen Zahlen (H1a/H1b/H3/H4, alle Stage-1-Diagnosewerte) **exakt
+identisch** zum Stand vor diesen Änderungen (0 abweichende numerische Felder; reine Additiv-
+Änderung, keine Berechnungslogik verändert). `docs/phase1_analysis_report.md` bettet jetzt alle
+neuen Grafiken sowie das vollständige 9-Tabellen-Variablen-Codebook ein, nicht mehr nur die
+kuratierte Kurzfassung.
+
+## 2026-08-03 — Policy: etablierte Libraries statt Eigenimplementierung; H1a-Holdout-Frage geklärt
+
+**Policy-Entscheidung (Nutzer):** Wo immer eine etablierte, zitierfähige Library-Implementierung
+zu unseren Daten passt, wird sie bevorzugt gegenüber einer eigenen Implementierung — leichter zu
+verteidigen und zu evaluieren als eine Prüfung unserer eigenen Formel-/Tie-Break-Logik. Betrifft
+konkret:
+
+- **`compute_auroc`** (`src/analysis/calibration.py`): von einer handgeschriebenen
+  Mann-Whitney-U-Rangsummen-Implementierung auf `sklearn.metrics.roc_auc_score` umgestellt. Vorher
+  an 200 Zufallsstichproben (inkl. Ties) gegen sklearn verifiziert: max. Abweichung 1.1e-16
+  (Maschinenpräzision) — die alte Implementierung war korrekt, die neue ist es auch, jetzt aber
+  gegen eine zitierfähige Quelle statt gegen unsere eigene Rangberechnung zu verteidigen. Zitat für
+  die Prosa: AUROC = normalisierte Mann-Whitney-U-Statistik (Hanley & McNeil, 1982) — bereits so in
+  `chapters/05_methodology.md` §5.8 zitiert.
+- **`holm`/`bh`** (`src/analysis/inference.py`): von einer handgeschriebenen Step-down/Step-up-
+  Implementierung auf `statsmodels.stats.multitest.multipletests(method="holm"/"fdr_bh")`
+  umgestellt. War vorher schon gegen genau diese Funktion cross-verifiziert (siehe Docstring-
+  Historie); jetzt direkt darauf delegiert statt nur dagegen zu testen. Zitate: Holm (1979) für die
+  Family-A–E-Korrektur, Benjamini & Hochberg (1995) für die explorative FDR-Schicht — beide bereits
+  in `chapters/05_methodology.md` §5.8 zitiert.
+- **`_skewness`** (`src/analysis/inference.py` und `src/analysis/descriptive_stats.py`): auf
+  `scipy.stats.skew(arr, bias=True)` umgestellt (an 100 Zufallsstichproben gegen die alte Formel
+  verifiziert: max. Abweichung 5.6e-16). Dabei einen echten kleinen Robustheitsgewinn mitgenommen:
+  die Degenerationsprüfung prüft jetzt `np.allclose(arr, arr[0])` ("praktisch konstant") statt
+  exaktem `std == 0` — scipy warnte bei einem quasi-konstanten Bootstrap-Replikat-Array (Testfall
+  `test_h2_paired_holds_when_ci_bound_clears_threshold`, exakt null Instanz-zu-Instanz-Varianz) vor
+  "catastrophic cancellation"; die alte Formel hätte an derselben Stelle still einen numerisch
+  bedeutungslosen Wert geliefert, ohne zu warnen.
+- **`_quantile`** (`src/analysis/preanalysis_screen.py`): auf `numpy.percentile` umgestellt. Der
+  Kommentar "dependency-free by design" war ohnehin schon veraltet — das Modul importiert
+  `cluster_bootstrap`/`estimate_icc`, die selbst längst numpy/scipy/statsmodels ziehen.
+- **`requirements.txt`/`pyproject.toml`**: `statsmodels` und `scikit-learn` waren als feste,
+  unbedingte Imports in Kern-Analysecode (`fit_h3_model`, `gee_icc`, `fit_tle_calibrator`, jetzt
+  auch `compute_auroc`) im Einsatz, aber nur in `pyproject.toml`s optionalem `analysis`-Extra
+  deklariert, nicht in `requirements.txt`. Jetzt in beide als harte Kern-Dependencies verschoben.
+
+**Bewusst NICHT umgestellt — ICC (`src/analysis/icc.py`):** `pingouin` steht zwar schon als
+optionale Dependency bereit, passt aber inhaltlich nicht auf unseren Anwendungsfall. Pingouins
+`intraclass_corr` ist für klassische Rater-Reliabilitätsstudien gebaut (K Rater bewerten dieselben
+N Zielobjekte je einmal) — wir haben aber keine "Rater", sondern wiederholte binäre Beobachtungen
+(Steps) pro Instanz mit stark unterschiedlicher Anzahl je Instanz. Eine künstliche "Rater"-Zuordnung
+(z.B. Step-Index innerhalb der Instanz) wäre semantisch bedeutungslos und würde eine
+Reliabilitäts-Frage vortäuschen, die wir gar nicht stellen — wir fragen nach der
+Varianzkomponente durch Clustering, nicht nach Bewerter-Übereinstimmung. `gee_icc` nutzt bereits
+`statsmodels.GEE` (Library); `anova_icc1` bleibt die handgeschriebene Shrout-&-Fleiss-ICC(1)-
+Formel als unabhängiger Cross-Check, weiterhin gegen `gee_icc` auf echten Daten verifiziert (siehe
+Preanalysis-Screen-Report, beide Domänen stimmen überein).
+
+**H1a-Holdout-Frage geklärt (Nutzerfrage):** H1a läuft auf allen 50 Instanzen pro Domäne, nicht nur
+den 45 Nicht-Holdout-Instanzen — das ist beabsichtigt, nicht übersehen. Direkt in
+`chapters/05_methodology.md` §5.8 verifiziert: der H1a-Absatz ("$Q_{\mathrm{disc}}$ ... computed
+per domain ...") enthält keine Holdout-Einschränkung, im Unterschied zu den Absätzen für die
+Schwellenwert-Suche ("estimated on the Phase 1 holdout") und H1b ("fitted on the holdout
+instances"). Der Grund: H1a fitted nichts — AUROC ist eine rangbasierte, parameterfreie Messung
+direkt auf dem (vorzeichenkorrigierten) Rohsignal. Es gibt keine Zirkularitätsgefahr wie bei
+Schwellenwertsuche/Kalibrator (dort wird etwas auf Daten gefittet, das dann evaluiert werden
+soll) — deshalb keine Notwendigkeit, Holdout auszuschließen. `stage2_h1a_discrimination.py` filtert
+entsprechend nicht nach `holdout`, geprüft direkt im Code.
+
+**Volle Suite:** 453 Tests grün nach dem Swap; komplette Pipeline (`run_all.py`) einmal gegen die
+echten Daten neu durchlaufen, alle Stage-Outputs zahlenmäßig identisch zum Stand vor dem Swap
+(reiner Implementierungswechsel, keine Verhaltensänderung — siehe Diff-Verifikation im gleichen
+Arbeitsschritt).
+
+## 2026-07-28 — Kanonischer Phase-1-Datensatz erstmals im Code festgeschrieben
+
+Die realen Phase-1-Daten liegen in zwei Verzeichnissen, weil `phase1_20260722_091125`'s
+TextWorld-Hälfte durch den bereits bekannten Stub-Environment-Bug (Commit `b47e35d`) verunreinigt
+ist (45/50 Instanzen unwinnable, 5.3% Erfolgsrate) und separat in
+`textworld_regen_20260724` (750 valide Episoden, 53.7% Erfolgsrate) neu gesammelt wurde. Diese
+Auswahlregel war bisher **nirgends im Repo dokumentiert**, auch nicht hier im Log — nur in der
+Commit-Message von `b47e35d` selbst.
+
+**Jetzt erstmals im Code festgeschrieben:** `src/analysis/phase1_canonical.py` — kanonischer
+Datensatz = `tower_of_hanoi` aus `phase1_20260722_091125` + `textworld` aus
+`textworld_regen_20260724`, 1500 Episoden gesamt (750+750). `assert_canonical_invariants()` prüft
+das hart (Gesamtzahl, pro Domain, pro Domain×Stage, Holdout-Instanzen pro Domain) und bricht laut
+ab bei jeder Abweichung — direkt gegen die echten Daten verifiziert: 1500 Episoden, alle
+Invarianten grün. `scripts/phase1_analysis/stage0_build_canonical_dataset.py` schreibt daraus ein
+Manifest (`content_hash` über die sortierte Episode-ID-Liste) statt die ~36GB Rohdaten zu
+kopieren; zweimal hintereinander ausgeführt liefert denselben `content_hash` (Idempotenz direkt
+verifiziert). Erster Baustein der Phase-1-Analyse-Pipeline (`feat/phase1-real-analysis`).
+
 ## 2026-07-28 — P0-7 (H2 CI-Grenze statt Punktschätzer) und P1-stat-7 (Prompt-Token-Tracking)
 
 **P0-7:** `h2_paired()` (`src/analysis/inference.py`) entschied bisher über den rohen

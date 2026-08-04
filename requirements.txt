@@ -17,6 +17,11 @@ textworld
 numpy
 pandas
 scipy
+# Used unconditionally by src/analysis/ (GEE models: fit_h3_model, gee_icc, fit_tle_calibrator;
+# multiplicity correction: holm/bh; AUROC: compute_auroc) -- was previously only declared in
+# pyproject.toml's optional "analysis" extra despite being a hard import in core analysis code.
+statsmodels
+scikit-learn
 pyyaml
 python-dotenv>=1.0.0
 matplotlib

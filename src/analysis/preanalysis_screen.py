@@ -10,10 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from src.analysis.calibration import signal_discrimination_report
+from src.analysis.icc import estimate_icc
 from src.analysis.inference import cluster_bootstrap
 
 # Step count below which AUROC is pipeline-smoke only (not a scientific estimate).
 AUROC_INTERPRET_MIN_STEPS = 50
+
+# Number of equal-width position_norm bins for the position x correctness check below.
+N_POSITION_BINS = 10
 
 
 def _variance(vals: list[float]) -> float | None:
@@ -21,6 +25,70 @@ def _variance(vals: list[float]) -> float | None:
         return None
     m = sum(vals) / len(vals)
     return sum((x - m) ** 2 for x in vals) / (len(vals) - 1)
+
+
+def _quantile(sorted_vals: list[float], q: float) -> float:
+    """Linear-interpolation quantile via ``numpy.percentile`` (2026-08-03: prefer the library over
+    a hand-rolled interpolation formula -- this module already imports numpy transitively via
+    ``cluster_bootstrap``/``estimate_icc``, so "dependency-free" no longer described its actual
+    import graph anyway)."""
+    import numpy as np
+
+    return float(np.percentile(sorted_vals, q * 100))
+
+
+def _episode_length_distribution(lengths: list[int]) -> dict[str, Any]:
+    if not lengths:
+        return {"n": 0, "min": None, "q1": None, "median": None, "q3": None, "max": None}
+    s = sorted(float(x) for x in lengths)
+    return {
+        "n": len(s),
+        "min": s[0],
+        "q1": _quantile(s, 0.25),
+        "median": _quantile(s, 0.5),
+        "q3": _quantile(s, 0.75),
+        "max": s[-1],
+    }
+
+
+def _position_correctness_bins(
+    rows: list[dict[str, Any]], *, n_bins: int = N_POSITION_BINS
+) -> dict[str, Any]:
+    """Bin ``position_norm`` (the H3 covariate, already computed by datasets.py -- not the raw
+    step index ``calibration_by_step_position`` bins) into ``n_bins`` equal-width bins and report
+    class balance + empty-cell flags per bin. This is both the "class balance by position" check
+    and the "separation / empty cells in the position x correctness grid" check from the
+    preregistered preanalysis plan -- one contingency table answers both."""
+    bins: list[dict[str, Any]] = []
+    empty_cells: list[int] = []
+    for b in range(n_bins):
+        lo, hi = b / n_bins, (b + 1) / n_bins
+        in_bin = [
+            r
+            for r in rows
+            if r.get("position_norm") is not None
+            and r.get("y_optimal") is not None
+            and (
+                lo <= float(r["position_norm"]) < hi
+                or (b == n_bins - 1 and float(r["position_norm"]) == hi)
+            )
+        ]
+        n = len(in_bin)
+        n_pos = sum(1 for r in in_bin if int(r["y_optimal"]) == 1)
+        is_empty = n == 0
+        if is_empty:
+            empty_cells.append(b)
+        bins.append(
+            {
+                "bin": b,
+                "position_range": [lo, hi],
+                "n": n,
+                "n_optimal": n_pos,
+                "y_optimal_rate": (n_pos / n) if n else None,
+                "empty": is_empty,
+            }
+        )
+    return {"bins": bins, "n_empty_cells": len(empty_cells), "empty_cell_bins": empty_cells}
 
 
 def _discrimination_for_domain(
@@ -99,12 +167,21 @@ def run_preanalysis_screen(
                 seed=1,
             )
             dom_report["bootstrap_skewness_tle_var"] = boot.get("skewness")
+        dom_report["icc"] = estimate_icc(rows, group_key="instance_key", value_key="y_optimal")
+        dom_report["position_correctness"] = _position_correctness_bins(rows)
+        dom_ep_lens = [
+            int(e.get("episode_length_steps") or e.get("steps") or 0)
+            for e in episodes
+            if str(e.get("domain")) == dom
+        ]
+        dom_report["episode_length_distribution"] = _episode_length_distribution(dom_ep_lens)
         screen["by_domain"][dom] = dom_report
 
     ep_lens = [int(e.get("episode_length_steps") or e.get("steps") or 0) for e in episodes]
     screen["episodes"] = {
         "n_episodes": len(episodes),
         "mean_length": (sum(ep_lens) / len(ep_lens)) if ep_lens else None,
+        "length_distribution": _episode_length_distribution(ep_lens),
     }
     return screen
 

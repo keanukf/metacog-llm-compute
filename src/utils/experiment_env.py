@@ -42,7 +42,9 @@ def assert_textworld_games_present(instances: int, config: dict, repo_root: Path
     erroring — which let 45/50 frozen instances run as unwinnable stubs, undetected, for the
     full 2026-07-22 Phase 1 collection (see docs/consistency_log.md).
     """
-    missing = [i for i in range(instances) if resolve_textworld_game_path(i, config, repo_root) is None]
+    missing = [
+        i for i in range(instances) if resolve_textworld_game_path(i, config, repo_root) is None
+    ]
     if missing:
         preview = missing[:10]
         more = "..." if len(missing) > 10 else ""

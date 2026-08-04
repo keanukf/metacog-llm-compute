@@ -13,6 +13,7 @@ Run from the **repository root** unless noted (e.g. `python scripts/experiment/r
 | `textworld` | TextWorld dataset generation and exploration |
 | `dev` | Manual play / smoke tests / diagnostics without a full experiment |
 | `cloud` | RunPod setup or result transfer |
+| `phase1-analysis` | Real Phase 1 confirmatory/exploratory analysis (production, not a rehearsal) |
 
 ## `scripts/experiment/` — production data-collection entry points
 
@@ -76,6 +77,24 @@ Checks run before/around a real run (former Gate C tooling).
 |--------|---------|-------------|--------|
 | [`analysis_pipeline_rehearsal.py`](../scripts/analysis_rehearsal/analysis_pipeline_rehearsal.py) | Analysis dry run: step table → grid-search → policy artifact → `load_policy` → `cluster_bootstrap` on ΔAUROC | End-to-end analysis rehearsal on pilot/C-5 data before real Phase 1 data | `dev` |
 | [`h3_power_simulation.py`](../scripts/analysis_rehearsal/h3_power_simulation.py) | Monte Carlo power simulation for the H3 signal×position_norm interaction: seeds ICC/entropy from pilot data, simulates clustered binary outcomes under the planned Phase 1 design, fits `fit_h3_model` (real GEE) per replicate, reports empirical power vs. true effect size | H3 power check; see `docs/gate_e_h3_power_simulation.md` for the report | `dev` |
+
+## `scripts/phase1_analysis/` — real Phase 1 confirmatory/exploratory analysis pipeline
+
+Each stage is independently runnable and idempotent (fixed seed, deterministic `stat_fn`s); a thin
+`run_all.py` chains them for full-pipeline reproduction. See `docs/phase1_analysis_report.md` for
+the archived results once the pipeline has been run against the real data.
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`stage0_build_canonical_dataset.py`](../scripts/phase1_analysis/stage0_build_canonical_dataset.py) | Selects `tower_of_hanoi` from `phase1_20260722_091125` + `textworld` from `textworld_regen_20260724` (see `src/analysis/phase1_canonical.py`), asserts frozen-design invariants, writes a content-hashed manifest every later stage reads through | First stage; run before any of the below | `phase1-analysis` |
+| [`stage1_preanalysis_screen.py`](../scripts/phase1_analysis/stage1_preanalysis_screen.py) | Signal variance/VC degeneration, cluster counts, class balance by domain and position (with empty-cell flag), episode-length quartiles, real ICC (`src/analysis/icc.py`) -- diagnostic, doesn't block later stages. Also renders a full per-variable APA-7-styled descriptive codebook (`src/analysis/descriptive_stats.py`, pooled + per-compute-stage) and distribution/whisker-plot figures (`src/analysis/visualization.py::plot_signal_histograms`/`plot_signal_boxplots`/`plot_episode_length_boxplot`) | Before trusting any Stage 2+ confirmatory number | `phase1-analysis` |
+| [`stage2_h1a_discrimination.py`](../scripts/phase1_analysis/stage2_h1a_discrimination.py) | H1a per domain: ΔAUROC(TLE,VC) via `cluster_bootstrap`/`delta_auroc`, Holm family A; cross-checked per domain against the independent descriptive `compare_signal_calibration` path. Also renders a bootstrap-replicate-distribution histogram per domain (`plot_bootstrap_distribution`) -- the percentile-CI assumption check | H1a confirmatory result | `phase1-analysis` |
+| [`stage3_h1b_calibration.py`](../scripts/phase1_analysis/stage3_h1b_calibration.py) | H1b per domain: fits `fit_tle_calibrator` on holdout steps, evaluates ΔBrier(TLE-mapped, VC/100) on non-holdout steps via `cluster_bootstrap`, Holm family D. Also renders bootstrap-distribution histograms and TLE-mapped/VC reliability diagrams (on the same non-holdout evaluation subset) per domain | H1b confirmatory result | `phase1-analysis` |
+| [`stage4_h3_temporal.py`](../scripts/phase1_analysis/stage4_h3_temporal.py) | H3 per domain per signal via `fit_h3_model`; textworld TLE+VC Holm family E (confirmatory), tower_of_hanoi exploratory only. Standard errors use statsmodels' GEE `cov_type="robust"` default | H3 confirmatory + exploratory result | `phase1-analysis` |
+| [`stage5_h4_domain_modulation.py`](../scripts/phase1_analysis/stage5_h4_domain_modulation.py) | H4 single test: diff-in-diff of ΔAUROC(ToH)-ΔAUROC(TextWorld) via `cluster_bootstrap_stratified` (instances resampled within each domain, not pooled), Holm family C. Also renders a bootstrap-distribution histogram | H4 confirmatory result | `phase1-analysis` |
+| [`stage6_visualizations.py`](../scripts/phase1_analysis/stage6_visualizations.py) | Renders `plot_auroc_comparison_bars`/`plot_h3_marginal_effect` (`src/analysis/visualization.py`) from the Stage 0/2/4 JSON+manifest output; the H3 marginal-effect plot now overlays real binned empirical data (via `build_h3_frame`) alongside the fitted curve as a linearity-in-logit model-fit check | Before Stage 7 | `phase1-analysis` |
+| [`stage7_generate_report.py`](../scripts/phase1_analysis/stage7_generate_report.py) | Renders `docs/phase1_analysis_report.md` from every prior stage's JSON output, embeds the full Stage 1 variable codebook (all 9 tables), and copies every stage's figures (1/2/3/5/6, wherever a `figures_manifest.json` exists) into the committed `docs/figures/phase1_analysis/` | Last stage; produces the archived deliverable | `phase1-analysis` |
+| [`run_all.py`](../scripts/phase1_analysis/run_all.py) | Thin sequential orchestrator chaining Stages 0-7, stops on first non-zero exit | One-shot full-pipeline reproduction | `phase1-analysis` |
 
 ## `scripts/run_readiness/` — budget, run-hygiene, resume, and output-quality checks
 

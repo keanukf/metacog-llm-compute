@@ -84,6 +84,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.analysis.datasets import load_run_dataset  # noqa: E402
+from src.analysis.icc import anova_icc1, gee_icc  # noqa: E402
 from src.analysis.inference import fit_h3_model  # noqa: E402
 
 DOMAINS = ("textworld", "tower_of_hanoi")
@@ -143,71 +144,11 @@ def load_toh_frozen_corridor_lengths(run_dir: Path, num_disks: int) -> list[int]
     return lengths
 
 
-def _anova_icc1(rows: list[dict[str, Any]], group_key: str, value_key: str) -> float | None:
-    """Classical one-way-ANOVA ICC(1) on a 0/1 outcome (cross-check for the GEE-based ICC)."""
-    by_group: dict[str, list[float]] = {}
-    for r in rows:
-        v = r.get(value_key)
-        if v is None:
-            continue
-        by_group.setdefault(str(r.get(group_key)), []).append(float(v))
-    k = len(by_group)
-    if k < 2:
-        return None
-    ns = np.array([len(v) for v in by_group.values()], dtype=float)
-    means = np.array([float(np.mean(v)) for v in by_group.values()], dtype=float)
-    all_vals = np.array([v for vs in by_group.values() for v in vs], dtype=float)
-    grand_mean = float(all_vals.mean())
-    n_total = float(ns.sum())
-    n0 = (n_total - float((ns**2).sum()) / n_total) / (k - 1)
-    msb = float((ns * (means - grand_mean) ** 2).sum()) / (k - 1)
-    within_ss = 0.0
-    for v in by_group.values():
-        arr = np.array(v, dtype=float)
-        within_ss += float(((arr - arr.mean()) ** 2).sum())
-    dof_w = n_total - k
-    if dof_w <= 0 or n0 <= 1:
-        return None
-    msw = within_ss / dof_w
-    denom = msb + (n0 - 1) * msw
-    if denom == 0:
-        return None
-    return (msb - msw) / denom
-
-
-def _gee_icc(rows: list[dict[str, Any]], group_key: str, value_key: str) -> float | None:
-    """Intercept-only GEE (Exchangeable, Binomial) -- ``dep_params`` is the working-correlation
-    ICC, i.e. exactly the clustering parameter the H3 confirmatory GEE analysis itself relies
-    on (methodologically matched, not just a generic ICC estimator)."""
-    import pandas as pd
-    import statsmodels.api as sm
-    from statsmodels.genmod.cov_struct import Exchangeable
-    from statsmodels.genmod.families import Binomial
-
-    y, g = [], []
-    for r in rows:
-        v = r.get(value_key)
-        if v is None:
-            continue
-        y.append(float(v))
-        g.append(str(r.get(group_key)))
-    if len(y) < 20 or len(set(g)) < 3:
-        return None
-    frame = pd.DataFrame({"y": y, "g": g})
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            model = sm.GEE(
-                frame["y"],
-                sm.add_constant(pd.Series(np.zeros(len(frame)), index=frame.index, name="dummy")),
-                groups=frame["g"],
-                family=Binomial(),
-                cov_struct=Exchangeable(),
-            )
-            res = model.fit()
-        return float(res.cov_struct.dep_params)
-    except Exception:
-        return None
+# _anova_icc1 / _gee_icc used to be defined here; lifted 2026-07-28 into the shared, public,
+# independently-tested src/analysis/icc.py (revision_audit P1-stat-8) so the real Stage 1
+# preanalysis screen can use the exact same estimators, not a second reimplementation.
+_anova_icc1 = anova_icc1
+_gee_icc = gee_icc
 
 
 def compute_pilot_seed_stats(run_dir: Path) -> dict[str, DomainPilotStats]:
