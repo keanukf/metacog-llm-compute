@@ -33,6 +33,14 @@ _MINIMAL_STEP_KEYS = frozenset(
         "lm_calls",
         "lm_calls_this_step",
         "correctness",
+        # Phase 2 adaptive-allocation decision provenance (2026-08-04) -- the continuous score a
+        # policy-driven decision actually used, not just the discrete compute_stage it collapsed
+        # to. Same rationale as prompt_tokens' compact-storage gap (ADR-008): compute it correctly
+        # in memory and then silently strip it before it reaches disk is worse than never
+        # computing it at all.
+        "allocator_uncertainty_score",
+        "allocator_theta1",
+        "allocator_theta2",
     }
 )
 
