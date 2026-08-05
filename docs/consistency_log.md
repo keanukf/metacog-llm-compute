@@ -2,6 +2,59 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-05 — Phase 2 gestaffelt: Stage 1 (H2-Power-first) statt aller 6 Bedingungen auf einmal
+
+**Anlass:** Nach dem H2-Power-Befund (Eintrag unten: ~37-46% bei runs_per_condition=5) Nutzerfrage,
+ob es sinnvoller ist, statt aller 6 Bedingungen gleichzeitig mit unzureichender Power zuerst gezielt
+die für H2 tatsächlich relevanten Bedingungen mit ausreichender Power zu sammeln.
+
+**Geprüft, mit echten Zahlen, nicht nur die Grundidee übernommen:**
+1. **Reines Umschichten (Phase-1-Always-C2 unverändert wiederverwenden, nur adaptive Runs erhöhen)
+   funktioniert nicht** — Sweep bei fixer Baseline (5 Runs) und variabler Policy-Seite (5-30 Runs)
+   zeigt ein Plateau bei ~50-65% Power, weil die feste Präzision der Baseline zum limitierenden
+   Faktor wird, egal wie viele zusätzliche adaptive Runs man sammelt.
+2. **Beide Arme müssen gemeinsam skalieren.** Symmetrischer Sweep (Always-C2 UND adaptive Policy
+   gemeinsam von 5 auf 10/15/20/30 Runs erhöht, n=50 Instanzen, ICC/Erfolgsraten/Tokenstats real
+   aus Phase 1 kalibriert): Power steigt von ~36-44% (5 Runs) über ~72-83% (15 Runs) auf ~80-89%
+   (20 Runs) — bei allen drei geprüften Token-Verhältnis-Szenarien praktisch identisch (die
+   Token-Superiority-Komponente ist immer bei Power=1.000 gesättigt, bindet also nie; nur die
+   Success-Non-Inferiority-Komponente ist der Flaschenhals).
+3. **Bei n=15 (höhere Präzision nachgerechnet, 1500 Replikate statt 400, ±2 Prozentpunkte 95%-
+   MC-CI):** textworld 73,5% Power, tower_of_hanoi 80,3% Power — stabil über alle drei
+   Token-Ratio-Szenarien. Als ausreichend akzeptiert.
+4. **Realistischer Zeitaufwand** (nicht aus dem Smoke-Test grob abgelesen, sondern aus den echten
+   Phase-1-Episode-Timestamps rekonstruiert — Sessions mit >20 Min Lücke als Pausen rausgerechnet,
+   reine aktive Rechenzeit: 1500 kanonische Episoden in 44,6h, textworld 43,8 Ep/h, tower_of_hanoi
+   27,3 Ep/h, beide bei gemischter C0/C1/C2-Last unter N=32): hochgerechnet auf isolierte
+   Strategie-Blöcke (Always-C2 allein: textworld ~50 Ep/h, ToH ~20 Ep/h; adaptive TLE/VC über das
+   reale Token-Verhältnis aus dem Smoke-Test geschätzt, ~150/~59 Ep/h — Schätzung, nicht direkt
+   gemessen, da Phase 1 diese Strategien nie fuhr) ergibt n=15 für die drei H2-relevanten
+   Bedingungen (adaptive_tle, adaptive_vc, always_c2, beide Domains) ~89 aktive Stunden ≈ 3,7 Tage
+   — innerhalb der vom Nutzer gesetzten Grenze (bevorzugt <4 Tage, hart <6 Tage, Start Mittwoch-
+   abend).
+
+**Entscheidung (Nutzer, 2026-08-05):** Phase 2 gestaffelt, nicht alle 6 Bedingungen auf einmal:
+
+- **Stage 1 (jetzt):** `adaptive_tle`, `adaptive_vc`, `always_c2` bei `runs_per_condition=15`
+  (`configs/phase2_stage1_h2_power.yaml`) — 4500 Episoden, liefert den ausreichend gepowerten
+  konfirmatorischen H2-Test.
+- **Always-C0 und Always-C1** werden **nicht** neu gesammelt — Phase 1 hat beide bereits vollständig
+  (je 250 Episoden/Domain, gleiches eingefrorenes Manifest, gleiches Modell/Backend/GPU, keine
+  relevanten Harness-Änderungen seitdem verifiziert). Always-C1 dient als explorativer
+  Vergleichspunkt (kein Teil der konfirmatorischen H2-Paarung), Always-C0 als deskriptive
+  Pareto-Untergrenze — für beide Zwecke ist Wiederverwendung unproblematisch, anders als für
+  Always-C2 (das *ist* Teil der gepaarten H2-Statistik, siehe Punkt 1 oben, warum das dort nicht
+  funktioniert).
+- **`random` und `eager_style` verschoben auf eine spätere Stage 2**, sobald Zeit ist (kein Teil der
+  H2-Paarung, exploratorischer/RQ4-Wert) — mit `--resume` gegen denselben Checkpoint-Ordner, sobald
+  Stage 1 abgeschlossen ist; keine Sonderbehandlung im Code nötig (Resume erkennt bereits
+  vorhandene Episoden über die Episode-ID, unabhängig davon, mit welcher Config sie erzeugt
+  wurden).
+
+**Verifikation:** `configs/phase2_stage1_h2_power.yaml` gegen die reale Merge-Logik geprüft (4500
+Episoden, `policy_artifact` korrekt vererbt), `build_phase2_worklist`/`group_jobs_by_strategy`
+liefern korrekt 3 zusammenhängende Blöcke à 1500 Episoden.
+
 ## 2026-08-05 — H2-Power-Simulation nachgeholt; dabei echten `h2_paired`-Bug gefunden und gefixt
 
 **Anlass:** Für H3 (Phase 1) gab es bereits eine echte Monte-Carlo-Power-Simulation vor der
