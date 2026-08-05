@@ -2,6 +2,69 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-05 — H2-Power-Simulation nachgeholt; dabei echten `h2_paired`-Bug gefunden und gefixt
+
+**Anlass:** Für H3 (Phase 1) gab es bereits eine echte Monte-Carlo-Power-Simulation vor der
+Datenerhebung (`docs/gate_e_h3_power_simulation.md`). Für H2 (Phase 2, konfirmatorische Hypothese:
+adaptive Policy non-inferior auf Success-Rate + superior auf log(Tokens) vs. Always-C2) gab es das
+nie — nur eine generische Cohen's-d=0.5-Faustformel (`blueprints/thesis_design.md:319`, "~34
+Instanzen nötig, 50 vorhanden"), die die Methodik selbst als "floor rather than an estimate"
+bezeichnet. Nutzerfrage vor dem Phase-2-Start: brauchen wir mit 50 Instanzen/Domain wirklich genug
+Power?
+
+**Neu gebaut:** `scripts/analysis_rehearsal/h2_power_simulation.py` (analog zu
+`h3_power_simulation.py`) — kalibriert an der echten Phase-1-ICC (episode-level, geclustert nach
+Instanz, **nicht** die step-level H3-ICC): textworld ICC(GEE)=0.205, tower_of_hanoi ICC(GEE)=0.504.
+Token-Verhältnis-Szenarien verankert am echten Smoke-Test von gestern (adaptive_tle=62369 vs.
+always_c2=194713 Tokens, ~3.1x). Simuliert die tatsächliche Phase-2-Stichprobengröße (n Instanzen ×
+5 Runs) über die echte `cluster_bootstrap`-Funktion mit denselben Statistik-/Schwellenwert-
+Definitionen wie `h2_paired`.
+
+**Befund:**
+- Der Token-Superiority-Teil ist in jeder simulierten Zelle bei Power=1.000 gesättigt — der reale
+  Token-Unterschied ist so groß, dass er nie der limitierende Faktor ist.
+- Die Success-Non-Inferiority-Komponente liegt bei n=50/Domain (aktuelles Design) nur bei ~37-46%
+  Power — selbst im günstigsten Fall (adaptive matcht Always-C2 exakt, keine Marge nötig). Bei
+  n=34 (die Floor-Zahl) ist es sogar noch schlechter (~27-36%), bei n=25 ähnlich. n=50 ist bereits
+  die beste erschwingliche Option — kleiner zu gehen verschlechtert die Power weiter, nicht besser.
+- Ursache: nur 5 Runs/Instanz geben hohe Bernoulli-Varianz pro Instanz relativ zur engen δ=0.05-
+  Marge; mehr Instanzen helfen nur mild (n=25→50 verschiebt Power um ~5-15 Prozentpunkte).
+
+**Konsequenz für heute:** n=50/Domain bleibt wie geplant — Verkleinern hilft nicht, Vergrößern ist
+heute nicht umsetzbar (fixes GPU-Budget, einmalige Sammlung). **Wird als explizite Limitation in
+der Methodik dokumentiert** (analog zur bereits dokumentierten H3-Power-Einschränkung): selbst wenn
+adaptive die Success-Rate von Always-C2 exakt trifft, besteht real eine ~55-65%-Chance, dass der
+konfirmatorische Bootstrap Non-Inferiority *nicht* bestätigt — ein Null-Ergebnis bei H2 darf später
+nicht als "adaptive ist schlechter" fehlgelesen werden, wenn es eigentlich "unterpowert, um Parität
+zu erkennen" bedeutet.
+
+**Nebenbefund, wichtiger als die Power-Zahlen selbst:** Die Simulation testete `h2_paired`
+(`src/analysis/inference.py`) direkt gegen synthetische Mehrfach-Runs und fand einen echten Bug —
+noch bevor irgendwelche echten Phase-2-Daten existierten, die dadurch hätten verfälscht werden
+können. `h2_paired` baute sein `by_inst`-Dict als `dict[strategy] = episode` (ein Eintrag pro
+Strategie und Instanz) statt als Liste — bei Produktionsdaten mit `runs_per_condition=5` hätte
+jeder neue Run den vorherigen für dieselbe (Domain, Instanz, Strategie)-Zelle überschrieben, sodass
+am Ende nur der zuletzt verarbeitete von 5 Runs in den konfirmatorischen H2-Test eingeflossen wäre
+— die anderen 4 Runs wären stillschweigend verworfen worden. Kein Unit-Test hatte das je
+aufgedeckt, weil alle bisherigen `h2_paired`-Tests implizit mit `runs_per_condition=1` konstruiert
+waren.
+
+**Gefixt (noch am selben Tag, vor Phase-2-Start):** `h2_paired` mittelt jetzt Success-Rate und
+Tokens über alle Runs pro (Domain, Instanz, Strategie)-Zelle, bevor gepaart wird — bei
+`runs_per_condition=1` (alle bisherigen Tests) verhaltensidentisch zu vorher (Mittelwert über einen
+Wert = dieser Wert). Neuer Regressionstest:
+`tests/analysis/test_inference.py::test_h2_paired_averages_all_runs_not_just_the_last`
+(3 Runs/Strategie, bewusst alternierender Erfolg, damit ein reiner "letzter Run gewinnt"-Bug
+garantiert eine falsche Zahl liefern würde). Die Power-Simulation selbst war von diesem Bug nicht
+betroffen — sie hatte `h2_paired` bewusst nicht direkt aufgerufen, sondern schon vorher richtig
+über die Instanzen gemittelte Zeilen an `cluster_bootstrap` übergeben (siehe Skript-Docstring,
+Abschnitt 4) — die Power-Zahlen oben sind also unverändert gültig.
+
+**Verifikation:** 482 Tests grün, ruff/mypy sauber (mypy-Restfehler nur in unberührtem
+`h3_power_simulation.py`). Volle Simulation: 1000 Replikate × 2000 Bootstrap-Iterationen,
+44 Design-Zellen, 264s Laufzeit, Rohdaten in `data/results/gate_e_h2_power/
+h2_power_simulation.json` (gitignored).
+
 ## 2026-08-04 — Phase-2-Strategieblöcke: sequentielle statt interleaved Ausführung
 
 **Anlass:** Der reale GPU-Smoke-Test (Punch-List-Punkt 6) lief mit der bisherigen Job-Reihenfolge

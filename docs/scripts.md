@@ -77,6 +77,7 @@ Checks run before/around a real run (former Gate C tooling).
 |--------|---------|-------------|--------|
 | [`analysis_pipeline_rehearsal.py`](../scripts/analysis_rehearsal/analysis_pipeline_rehearsal.py) | Analysis dry run: step table → grid-search → policy artifact → `load_policy` → `cluster_bootstrap` on ΔAUROC | End-to-end analysis rehearsal on pilot/C-5 data before real Phase 1 data | `dev` |
 | [`h3_power_simulation.py`](../scripts/analysis_rehearsal/h3_power_simulation.py) | Monte Carlo power simulation for the H3 signal×position_norm interaction: seeds ICC/entropy from pilot data, simulates clustered binary outcomes under the planned Phase 1 design, fits `fit_h3_model` (real GEE) per replicate, reports empirical power vs. true effect size | H3 power check; see `docs/gate_e_h3_power_simulation.md` for the report | `dev` |
+| [`h2_power_simulation.py`](../scripts/analysis_rehearsal/h2_power_simulation.py) | Monte Carlo power simulation for H2 (adaptive non-inferiority + log-token superiority vs. Always-C2): seeds episode-level ICC/success-rate/token stats from real canonical Phase 1 data, token-ratio scenarios anchored to a real GPU smoke test, simulates the planned Phase 2 design (n instances × 5 runs) via `cluster_bootstrap` with `h2_paired`'s real statistic/threshold definitions | H2 power check, run same-day before the one-shot Phase 2 collection; found and triggered the `h2_paired` run-averaging fix (`docs/consistency_log.md` 2026-08-05) | `dev` |
 
 ## `scripts/phase1_analysis/` — real Phase 1 confirmatory/exploratory analysis pipeline
 
