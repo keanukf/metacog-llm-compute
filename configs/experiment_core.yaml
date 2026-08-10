@@ -78,7 +78,9 @@ logging:
   debug_view_tail_chars: 800
 
 tracing:
-  langfuse_enabled: true
+  langfuse_enabled: false  # disabled 2026-08-10: Langfuse quota exhausted mid-run (403 Forbidden
+  # on every export for the rest of the run); purely additive observability, no effect on collected
+  # episode data (src/utils/tracing.py: no-op when disabled). Re-enable once quota/plan is sorted.
 
 # Compute stage C1 (single reasoning call).
 c1:

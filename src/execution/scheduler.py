@@ -159,11 +159,17 @@ class EpisodeScheduler:
 
             for job in jobs:
                 futures[pool.submit(_wrapped, job)] = job
-            for fut in as_completed(futures):
+            for fut in as_completed(list(futures)):
+                # Pop (not read) so the completed Future -- and the large episode result
+                # payload it retains until dereferenced -- is released immediately rather
+                # than held for the lifetime of the whole block. Retaining every Futures
+                # result dict for a 1000+-episode block accumulates unbounded memory
+                # proportional to episodes completed so far (observed as steady growth
+                # toward the container cgroup limit over a long Phase 2 always_c2 run).
+                job = futures.pop(fut)
                 try:
                     outcome = fut.result()
                 except Exception as exc:
-                    job = futures[fut]
                     outcome = {
                         "status": "failed",
                         "episode_id": job.episode_id,

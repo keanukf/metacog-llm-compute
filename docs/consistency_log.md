@@ -2,6 +2,108 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-10 — Phase 2 Stage 1 abgebrochen: always_c2/tower_of_hanoi bleibt bei 12/50 Instanzen (explorativ)
+
+**Zweck:** Sauberer Abschlussbericht für die Phase-2-Stage-1-Sammlung (`data/results/phase2/
+phase2_stage1_20260805_UTC/`, Pod `phase2-stage1-h2power`, gestartet 2026-08-05). Nach ca. 5 Tagen
+Laufzeit und einem OOM-Problem, das ab 2026-08-09 ~02:04 UTC (78h in den Lauf) auftrat und trotz
+mehrerer Fixes nicht vollständig gelöst werden konnte, hat der Nutzer am 2026-08-10 entschieden, die
+Sammlung für `always_c2`/`tower_of_hanoi` an dieser Stelle abzubrechen — Budget/Zeit (Start Mittwoch
+2026-08-05, jetzt Montag, ~24h ganz ohne Episoden-Fortschritt trotz laufender Kosten) sind nicht mehr
+tragbar für weiteres Abwarten auf eine unsichere Lösung.
+
+**Finaler Datenstand (vollständig, nicht mehr laufend):**
+
+| Zelle | n | Status |
+|---|---|---|
+| `adaptive_tle` × textworld | 750/750 | vollständig, 50/50 Instanzen |
+| `adaptive_tle` × tower_of_hanoi | 750/750 | vollständig, 50/50 Instanzen |
+| `adaptive_vc` × textworld | 750/750 | vollständig, 50/50 Instanzen |
+| `adaptive_vc` × tower_of_hanoi | 750/750 | vollständig, 50/50 Instanzen |
+| `always_c2` × textworld | 750/750 | vollständig, 50/50 Instanzen |
+| `always_c2` × tower_of_hanoi | **183/750** | **unvollständig — 12/50 Instanzen voll (15/15 Runs), 1 Instanz teilweise (3/15), 37 Instanzen unberührt** |
+
+**Konsequenz für die Analyse:** H2 (Adaptive vs. Always-C2 Non-Inferiority) ist für textworld
+konfirmatorisch auswertbar wie geplant (volle 50-Instanzen-Stichprobe auf beiden Armen). Für
+tower_of_hanoi ist der Always-C2-Vergleichsarm nur auf 12 von 50 Instanzen vollständig — die
+H2-ToH-Auswertung muss auf **explorativ** herabgestuft werden (reduzierte, nicht die präregistrierte
+Power). Das betroffene Analyseskript/die Thesis-Prosa müssen das entsprechend kennzeichnen, sobald
+die Analyse geschrieben wird — nicht Teil dieses Log-Eintrags, aber hier vermerkt als offener
+Folgepunkt.
+
+**Timeline und Ursachenkette (chronologisch, für die Nachvollziehbarkeit):**
+
+1. **2026-08-05 bis 2026-08-09 ~02:00 UTC (78h):** Lauf stabil, keine Speicherprobleme. `adaptive_tle`,
+   `adaptive_vc` (beide Domänen, volle 3000 Episoden) und `always_c2`/textworld (750 Episoden)
+   liefen komplikationsfrei durch.
+2. **2026-08-09 02:04 UTC — erster OOM-Kill.** Container-Cgroup-Speicherlimit (~56GB) erstmals
+   erreicht (`oom_kill` 0→1), Prozess vom Kernel beendet. Auto-Stop-Mechanismus des Wrapper-Skripts
+   schlug zusätzlich fehl (RunPod-API-Konfiguration fehlte innerhalb des Pods) — Pod lief ~25 Min.
+   ungenutzt weiter, bevor der Fail-Fast-Monitor das gemeldet hat.
+3. **2026-08-09, im Tagesverlauf — wiederkehrendes Muster erkannt.** Nach dem Neustart wuchs der
+   Speicher viel schneller erneut ans Limit (~95-115 Min. statt 78h) — insgesamt **17 kontrollierte/
+   unkontrollierte Neustarts** zwischen 2026-08-09 02:04 UTC und 2026-08-10, alle per SIGTERM +
+   `--resume`, kein Datenverlust (Checkpointing pro Episode atomar, jede fertige Episode ist eine
+   eigene Datei).
+4. **2026-08-09 15:35 UTC — Instanzen 10/12/14 hängen fest.** Ab diesem Zeitpunkt: keine einzige neue
+   `always_c2`/ToH-Episode mehr abgeschlossen, über **~24h und alle folgenden Neustarts hinweg**.
+   Bestätigt aktiv (nicht hängend) über frische `trace_ep_*.jsonl`-Zeitstempel bei jedem Check.
+   Manifest-Vergleich (`data/tasks/tower_of_hanoi/difficulty_manifest.json`) zeigte: Instanzen 10, 12,
+   14 haben `optimal_steps` (14, 15, 11) identisch zu bereits **erfolgreich abgeschlossenen**
+   Instanzen (0, 7, 5) — reine Aufgabenschwierigkeit scheidet damit als Erklärung aus.
+5. **Fix-Versuch 1 (2026-08-10, Commit auf Pod, hier repliziert) — `EpisodeScheduler`-Future-Leck.**
+   `src/execution/scheduler.py`, ThreadPoolExecutor-Zweig: abgeschlossene `Future`-Objekte wurden nie
+   aus dem `futures`-Dict entfernt, ihr Ergebnis (komplette Episode inkl. Step-Details, bei ToH
+   `always_c2` ⌀ ~220k Tokens) blieb dadurch referenziert und im Speicher. **Fix:**
+   `job = futures.pop(fut)` statt `futures[fut]` in der `as_completed`-Schleife (echte, saubere
+   Verbesserung, unabhängig vom Rest — bleibt im Code). **Ergebnis: nicht die (alleinige) Ursache** —
+   nach Neustart mit dem Fix wuchs der Speicher weiterhin in 64 Min. auf 35,8GB, **obwohl in diesem
+   Fenster keine einzige Episode abgeschlossen wurde** (der Fix kann also gar nicht gegriffen haben).
+6. **Fix-Versuch 2 — Langfuse-Tracing deaktiviert.** Log zeigte durchgehend `Failed to export span
+   batch code: 403, reason: Forbidden` über die gesamte Laufzeit — Nutzer bestätigte später, dass das
+   Langfuse-Kontingent erschöpft war. Verdacht: interner Export-Puffer wächst unbegrenzt, da
+   fehlgeschlagene Batches nie geleert werden. `langfuse_enabled: false` gesetzt (rein additive
+   Observability, kein Effekt auf Episodendaten — **Fix bleibt im Code**). **Ergebnis: reale, aber
+   unzureichende Verbesserung** — Wachstumsrate sank von ~20GB/h auf ~12-13GB/h, blieb aber linear
+   positiv statt abzuflachen.
+7. **Fix-Versuch 3 — Parallelität 32→8 reduziert — ⚠️ methodisch fehlerhaft, zurückgenommen.**
+   Hypothese: Spitzenspeicherbedarf gleichzeitig laufender Episoden (`top_logprobs=20` ×
+   `c2.n_samples=3` × ⌀ ~220k Tokens/Episode × bis zu 32 parallele Episoden) überschreitet legitim
+   (nicht als Leck) die 56GB-Grenze, bevor auch nur eine Episode fertig wird — bestätigt durch
+   Speicherwachstum trotz null Abschlüssen über mehrere Stunden. **Auf dem Pod fälschlich
+   `max_concurrent_episodes: 32 → 8` gesetzt**, ohne Zugriff auf die lokale `CLAUDE.md`, die explizit
+   dokumentiert: *"N=32 ... frozen after the Gate C-1 scoped waiver — N=16/24/32 all failed at first
+   and this was a deliberate, user-approved waiver, not a bug to 'fix' by lowering N"* — niedrigere
+   Werte wurden bereits früher getestet und sind bei der Batch-Invarianz-Prüfung durchgefallen. Diese
+   Änderung war also nicht nur unzureichend wirksam (nur ~30% niedrigere Wachstumsrate statt der
+   erwarteten ~4×, vermutlich weil das Wachstum eher an kumulierter LM-Call-Menge über Zeit hängt als
+   an gleichzeitiger Parallelität), sondern hätte bei tatsächlichen Abschlüssen unter N=8
+   möglicherweise die Batch-Invarianz-Garantie verletzt. **Glücklicherweise ist während der ~50 Min.
+   mit N=8 (2026-08-10 08:33-09:23 UTC) keine einzige Episode abgeschlossen worden** — es sind also
+   keine unter fragwürdigen Bedingungen gesammelten Daten in den Datensatz gelangt.
+   **Korrektur: `max_concurrent_episodes` wieder auf 32 zurückgesetzt**, N=8-Versuch nicht im Code
+   belassen.
+8. **2026-08-10 — Abbruchentscheidung.** Mit allen drei Fix-Versuchen ausgeschöpft (zwei echte, aber
+   unzureichende Verbesserungen; ein methodisch zurückgenommener Versuch) und weiterhin ~24h ganz
+   ohne Episoden-Fortschritt auf den drei betroffenen Instanzen, hat der Nutzer entschieden: Pod
+   stoppen, `always_c2`/tower_of_hanoi bei 12/50 vollständigen Instanzen belassen, H2-ToH-Auswertung
+   auf explorativ herabstufen, keine weiteren Kosten für ungewisse Lösung.
+
+**Pod-Status:** `phase2-stage1-h2power` (`4tbs8e8ca11st2`) gestoppt (nicht gelöscht) am 2026-08-10 via
+`runpodctl stop pod` — Netzwerk-Volume und Container-Disk (inkl. der 3 oben genannten Commits, die
+vom Pod aus wegen eines schreibgeschützten Deploy-Keys nicht gepusht werden konnten) bleiben
+erhalten, falls später etwas daraus abgerufen werden muss.
+
+**Nicht als DV-Ausschluss dokumentiert:** die fehlenden 38 ToH-`always_c2`-Instanzen (37 unberührt +
+1 teilweise) sind **kein** methodischer Ausschluss über den Quarantäne-Mechanismus
+(`src/utils/run_resilience.py`, bewusst auf `env_assertion`/`label_error` beschränkt, siehe
+Docstring von `tests/utils/test_run_resilience.py`) — es handelt sich um schlicht nicht gesammelte
+Daten wegen einer operativen Budget-/Zeit-Grenze, dokumentiert hier, nicht als Post-hoc-
+Exklusionskriterium im Datensatz selbst.
+
+**Testsuite:** `tests/execution/test_execution_scheduler.py` (2/2), `tests/utils/
+test_run_resilience.py` (voller Satz) — grün nach dem Scheduler-Fix.
+
 ## 2026-08-05 — Phase 2 gestaffelt: Stage 1 (H2-Power-first) statt aller 6 Bedingungen auf einmal
 
 **Anlass:** Nach dem H2-Power-Befund (Eintrag unten: ~37-46% bei runs_per_condition=5) Nutzerfrage,
