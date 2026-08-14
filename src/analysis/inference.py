@@ -365,6 +365,19 @@ def h2_paired(
     )
     succ_ci_low = succ_boot["ci_low"]
     log_ci_low = log_boot["ci_low"]
+    # One-sided bootstrap p-values for each component test (thesis §5.8 Family B / Holm input).
+    # H2 is a compound "non-inferiority AND superiority" (intersection-union) claim, so its
+    # family-level p-value is the max of the two component p-values (Berger, 1982 IUT
+    # principle): the compound claim is only as strong as its weaker component, and the CI
+    # bound itself is not a p-value (see one_sided_bootstrap_pvalue docstring).
+    non_inf_pvalue = (
+        one_sided_bootstrap_pvalue(succ_boot["reps"], null_value=-delta)
+        if succ_boot["reps"]
+        else 1.0
+    )
+    superiority_pvalue = (
+        one_sided_bootstrap_pvalue(log_boot["reps"], null_value=0.0) if log_boot["reps"] else 1.0
+    )
     return {
         "n_pairs": len(paired_rows),
         "delta": delta,
@@ -376,6 +389,9 @@ def h2_paired(
         "log_token_ci_high": log_boot["ci_high"],
         "non_inferiority_holds": succ_ci_low is not None and succ_ci_low > -delta,
         "token_superiority_holds": log_ci_low is not None and log_ci_low > 0,
+        "non_inferiority_pvalue": non_inf_pvalue,
+        "token_superiority_pvalue": superiority_pvalue,
+        "family_pvalue": max(non_inf_pvalue, superiority_pvalue),
     }
 
 
