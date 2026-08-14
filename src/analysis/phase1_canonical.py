@@ -195,6 +195,14 @@ TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES: frozenset[int] = TEXTWORLD_TRUE_HOLDO
     4,
 }
 
+# Historical only -- the actual (wrong) instance set the regen collection's embedded ``holdout``
+# field encoded, i.e. what the deployed Phase 2 TextWorld allocator was really fitted from. Not
+# used by any production analysis; exists solely so
+# scripts/phase2_prep/threshold_sensitivity_analysis.py can reconstruct "what the deployed policy
+# actually was" from code rather than from hand-copied numbers, to quantify how far the deployed
+# thresholds differ from the ones the true holdout would have produced.
+TEXTWORLD_DEPLOYED_WRONG_HOLDOUT_INSTANCES_HISTORICAL: frozenset[int] = frozenset({0, 1, 2, 3, 4})
+
 
 def apply_textworld_holdout_correction(
     rows: list[dict[str, Any]], instance_set: frozenset[int]

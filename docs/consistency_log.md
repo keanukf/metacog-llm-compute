@@ -2,6 +2,58 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-14 — Threshold-Sensitivitätsanalyse: wie stark hat der Holdout-Bug den deployten TextWorld-Allocator tatsächlich verändert
+
+**Zweck:** Nachlieferung der in Kapitel 5 §5.9 versprochenen, aber nie gelieferten "reported
+sensitivity analysis around the selected thresholds" (Begründung dort: fünf Holdout-Instanzen sind
+eine kleine, varianzanfällige Stichprobe für die Schwellenwertwahl). Der TextWorld-Holdout-Bug
+(Eintrag unmittelbar unten) liefert dafür einen realen, bereits eingetretenen Fall statt eines
+hypothetischen: "deployte" Schwellenwerte (gefittet auf die falschen fünf Instanzen) vs.
+"korrigierte" Schwellenwerte (gefittet auf die präregistrierten fünf) lassen sich direkt vergleichen.
+
+**Neues Skript:** `scripts/phase2_prep/threshold_sensitivity_analysis.py` (+ Test
+`tests/scripts/test_threshold_sensitivity_analysis.py`, 3 Tests, grün). Rekonstruiert beide
+Konfigurationen aus den rohen Phase-1-Daten über dieselbe `grid_search_thresholds()`-Funktion, die
+auch der echte Threshold-Artefakt-Build nutzt — nichts ist von Hand aus einem früheren Lauf
+übernommen. Neue Konstante `TEXTWORLD_DEPLOYED_WRONG_HOLDOUT_INSTANCES_HISTORICAL = {0,1,2,3,4}`
+in `src/analysis/phase1_canonical.py`, explizit als "nur für diese Rekonstruktion, sonst nirgends
+verwenden" markiert. Kostet keine neue GPU-Zeit — arbeitet ausschließlich mit bereits vorhandenen
+Daten. Output: `data/results/phase2_analysis/threshold_sensitivity/textworld_sensitivity.json`.
+
+**Zwei Vergleiche:**
+
+1. **Proxy-Objective-Gap** — wo landet das deployte Paar auf dem korrekt ausgewerteten
+   Pareto-Front (beide Paare liegen auf demselben 0,1–0,9-Raster, daher direktes Nachschlagen statt
+   erneuter Suche)?
+2. **Realized-Routing-Gap** — die tatsächlich beobachteten Phase-2-TextWorld-Signalwerte (aus den
+   echten `adaptive_tle`/`adaptive_vc`-Episoden) noch einmal durch beide Policies geroutet: wie
+   unterschiedlich hätten sich die beiden Konfigurationen in der Praxis tatsächlich verhalten?
+
+**Ergebnis — deutlich gravierender als die reinen Theta-Zahlen vermuten lassen:**
+
+| Signal | deployt (θ1/θ2) | korrigiert (θ1/θ2) | Proxy-Erfolg deployt vs. korrigiert (auf korrektem Holdout ausgewertet) | Realisiertes Routing deployt (C0/C1/C2) | Realisiertes Routing korrigiert (C0/C1/C2) |
+|---|---|---|---|---|---|
+| TLE | 0,70/0,80 | 0,10/0,90 | 0,174 vs. 0,292 | 75,5% / 10,7% / 13,8% | 30,6% / 62,7% / 6,7% |
+| VC | 0,80/0,90 | 0,10/0,90 | 0,130 vs. 0,271 | **97,7% / 0,0% / 2,3%** | 9,8% / 88,0% / 2,3% |
+
+Für VC ist der Befund eindeutig: die deployte Policy hat in TextWorld **97,7% aller Schritte auf C0
+(Direktinferenz) geroutet** — praktisch ununterscheidbar von Always-C0 (Table 7.3:
+Always-C0-Erfolgsrate .239, `adaptive_vc`-Erfolgsrate .296). Die schwache Performance von
+`$\pi_{\mathrm{VC}}$` in TextWorld (Kapitel 7) ist damit zu einem erheblichen Teil ein Artefakt
+dieses spezifischen Threshold-Fitting-Fehlers, nicht (nur) ein Beleg dafür, dass VC als Signal für
+Allokation ungeeignet ist — die korrekt gefittete Policy hätte 88% der Schritte auf C1 eskaliert,
+ein fundamental anderes Verhalten. Für TLE ist der Effekt in dieselbe Richtung, aber schwächer
+ausgeprägt (deployt eskaliert deutlich seltener als korrigiert, aber nicht fast nie).
+
+**Einordnung, nicht überinterpretieren:** das ändert nichts an den in Kapitel 7 berichteten
+H2-Zahlen — die wurden korrekt auf Basis der tatsächlich gelaufenen (deployten) Episoden berechnet,
+und genau das war immer die richtige Auswertung dessen, was tatsächlich passiert ist. Was sich
+ändert, ist die *Interpretation*: der TextWorld-VC-Befund ist weniger eine Aussage über
+"Verbalized Confidence als Allokationssignal" im Allgemeinen und mehr eine Aussage über "diese eine,
+durch einen Daten-Labeling-Fehler fast auf Always-C0 kollabierte VC-Policy" im Speziellen. Diese
+Differenzierung gehört in die Diskussion (Kapitel 8 §8.1/§8.4), noch nicht dort eingearbeitet —
+zurückgestellt, bis der Nutzer mit der übrigen Prosa nachgezogen hat.
+
 ## 2026-08-14 — TextWorld-Holdout-Inkonsistenz zwischen Phase 1 und Phase 2: Befund, Root Cause, Fix
 
 **Zweck:** Beim Schreiben des explorativen Always-C0/Always-C1-Vergleichs (Stage 2,
