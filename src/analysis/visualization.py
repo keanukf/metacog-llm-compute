@@ -563,8 +563,16 @@ def plot_h2_pareto(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     fig, ax = plt.subplots(figsize=(6.2, 4.6))
-    colors = {"policy": "tab:blue", "baseline": "tab:red"}
-    role_by_label = {lab: ("baseline" if "always_c2" in lab else "policy") for lab in arms}
+    # Fixed colors for the known spectrum arms so repeated plots stay visually consistent;
+    # anything else (e.g. a custom label) falls back to matplotlib's default cycle.
+    known_colors = {
+        "always_c0": "tab:gray",
+        "always_c1": "tab:orange",
+        "adaptive_tle": "tab:green",
+        "adaptive_vc": "tab:blue",
+        "always_c2": "tab:red",
+    }
+    cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", ["tab:purple"])
     for label, s in arms.items():
         x = s.get("tokens_mean")
         y = s.get("success_mean")
@@ -578,7 +586,7 @@ def plot_h2_pareto(
         ylo, yhi = s.get("success_ci_low"), s.get("success_ci_high")
         if ylo is not None and yhi is not None:
             yerr = [[max(0.0, y - ylo)], [max(0.0, yhi - y)]]
-        color = colors[role_by_label[label]]
+        color = known_colors.get(label, cycle[hash(label) % len(cycle)])
         ax.errorbar(
             [x],
             [y],

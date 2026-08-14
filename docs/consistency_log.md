@@ -2,6 +2,115 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-14 — TextWorld-Holdout-Inkonsistenz zwischen Phase 1 und Phase 2: Befund, Root Cause, Fix
+
+**Zweck:** Beim Schreiben des explorativen Always-C0/Always-C1-Vergleichs (Stage 2,
+`scripts/phase2_analysis/stage2_c0_c1_reference.py`) fiel eine Diskrepanz auf: das Skript lieferte für
+TextWorld $N=41$ gepaarte Instanzen statt der erwarteten $45$ (= $50$ minus den 5 präregistrierten
+Holdout-Instanzen). Auf explizite Anweisung des Nutzers ("Das musst du unbedingt ganz genau
+untersuchen ... du musst dir ganz sicher sein") wurde die Ursache mit Primärdaten (nicht Spekulation)
+vollständig zurückverfolgt: Git-Historie des Manifests, direkte JSON-Inspektion aller drei
+Rohdatenquellen, Code-Inspektion jedes Skripts, das das `holdout`-Feld konsumiert.
+
+**Befund (mit harten Belegen, nicht Vermutung):**
+
+- Das Manifest (`data/tasks/textworld/difficulty_manifest.json`, `git log --follow`: ein einziger
+  Commit `e34853b`, Gate D, 2026-07-18) war **immer korrekt**: `holdout_policy: mod-10`, Holdout =
+  Instanzen `{0, 10, 20, 30, 40}`.
+- Die ursprüngliche Phase-1-Sammlung (`data/results/phase1/phase1_20260722_091125/`) hatte für
+  TextWorld korrekte `holdout`-Labels (übereinstimmend mit dem Manifest) — aber dieser Ordner ist für
+  TextWorld ungültig (45/50 Spiel-Dateien fehlten zur Laufzeit, `src/analysis/phase1_canonical.py`
+  verwendet aus diesem Ordner nur `tower_of_hanoi`).
+- Die kanonische TextWorld-Quelle, die Regen-Sammlung (`data/results/phase1/
+  textworld_regen_20260724/`), hat **falsche** `holdout`-Labels: empirisch verifiziert (direkte
+  JSON-Inspektion aller 750 Episoden) als `holdout=True` für Instanzen `{0,1,2,3,4}` (die ersten
+  fünf, nicht mod-10) statt `{0,10,20,30,40}`. Herkunft: `run_metadata.json` dieser Sammlung verweist
+  auf `configs/dev/textworld_regen_real.yaml`, eine nie committete Dev-Config — nicht mehr
+  rekonstruierbar, welcher konkrete Codepfad die falsche Split-Logik erzeugt hat.
+- Phase 2 (`data/results/phase2/phase2_stage1_20260805_UTC/`) hat **korrekte** `holdout`-Labels
+  (`{0,10,20,30,40}`, verifiziert über alle 2250 TextWorld-Episoden) — Phase 2 lief später, gegen den
+  zu dem Zeitpunkt bereits korrekten Manifest-Stand.
+
+**Downstream-Wirkung, präzise abgegrenzt (nicht die pauschale "ganze Phase 2 kontaminiert"-Befürchtung
+des Nutzers):**
+
+- `scripts/phase2_prep/build_threshold_artifact.py` fittet die Allocator-Schwellenwerte auf den
+  `holdout=True`-Steps (bewusstes Design: der reservierte Holdout-Anteil wird zum Fitten verwendet,
+  nicht zum Evaluieren — siehe `write_threshold_artifact`/`grid_search_thresholds`). Unter den
+  falschen Regen-Labels wurden die Schwellenwerte also auf Instanzen `{0,1,2,3,4}` gefittet statt auf
+  die präregistrierten `{0,10,20,30,40}`.
+- Instanzen `{10,20,30,40}` wurden dadurch **nicht** zum Fitten verwendet (unter den falschen Labels
+  als `holdout=False` markiert) — verschwendete, aber nicht kontaminierende Abweichung: diese vier
+  Instanzen sind unter beiden Label-Schemata konsistent von der Phase-2-Konfirmatorik ausgeschlossen.
+  Instanz `0` ist unter beiden Schemata `holdout=True` — ebenfalls sauber, konsistent gefittet UND
+  konsistent ausgeschlossen.
+- Die eigentliche Zirkularität betrifft genau **vier Instanzen, `{1,2,3,4}`**: unter den falschen
+  Regen-Labels wurden sie zum Fitten der deployten Allocator-Schwellenwerte verwendet; unter dem
+  korrekten Manifest sind sie **nicht** Holdout und wurden daher korrekt in Phase 2s konfirmatorischer
+  H2-Stichprobe ($N=45$) mitgeführt — Fitting-Instanz und Evaluations-Instanz überlappen für diese
+  vier.
+- H1a, H3, H4 sind unberührt (kein Holdout-Gebrauch, verifiziert per `grep` in
+  `scripts/phase1_analysis/stage4_h3_temporal.py`, `stage5_h4_domain_modulation.py`). H1b
+  (`stage3_h1b_calibration.py`) ist betroffen, aber **nicht zirkulär** — Fit-Set und Eval-Set blieben
+  unter den falschen Labels disjunkt, nur eben die falschen fünf Instanzen statt der
+  präregistrierten. Tower of Hanoi ist in jeder Hinsicht unberührt (Manifest und eingebettetes Feld
+  stimmen dort überein).
+
+**Fix (Nutzer-Freigabe: "Ja, mach das bitte so."), umgesetzt 2026-08-14:**
+
+- Neue Korrektur-Utility `src/analysis/phase1_canonical.py::apply_textworld_holdout_correction()` mit
+  zwei benannten Instanzmengen: `TEXTWORLD_TRUE_HOLDOUT_INSTANCES = {0,10,20,30,40}` (für
+  Fitting-Kontexte: Threshold-Artefakt, H1b-Kalibrator) und
+  `TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES = {0,1,2,3,4,10,20,30,40}` (Vereinigung, für
+  Evaluations-Kontexte der bereits deployten Phase-2-Policy: H2, C0/C1-Spektrum-Referenz) — entfernt
+  die Fit/Eval-Überlappung, indem die 4 kontaminierten Instanzen zusätzlich zu den 5 echten Holdout-
+  Instanzen ausgeschlossen werden. Überschreibt das `holdout`-Feld pro Zeile anhand der `instance`-ID,
+  nur für `domain == "textworld"`; Tower of Hanoi unangetastet.
+- Verdrahtet in allen vier Konsumenten: `build_threshold_artifact.py` (TRUE-Set),
+  `stage3_h1b_calibration.py` (TRUE-Set), `stage1_h2_adaptive_allocation.py` (CONFIRMATORY-Set, Phase-
+  2-Episoden), `stage2_c0_c1_reference.py` (CONFIRMATORY-Set, Phase-1- **und** Phase-2-Episoden vor dem
+  Pooling).
+- Testsuite-Kollision behoben: `tests/scripts/test_build_threshold_artifact.py` verwendete
+  Instanz-IDs `0-9`, die zufällig mit den echten Produktions-IDs kollidierten und dadurch nach der
+  Korrektur ein falsches Testergebnis erzeugten — Fixture umgestellt auf explizite IDs aus
+  `TEXTWORLD_TRUE_HOLDOUT_INSTANCES` für die Holdout-Gruppe und einen kollisionsfreien Offset-Bereich
+  (`1000+`) für die Pool-Gruppe. Volle Suite danach wieder grün (482 passed).
+- Alle vier betroffenen Analysen neu gerechnet: Threshold-Artefakt (`data/results/phase1/
+  threshold_artifact.json`), H1b (`data/results/phase1_analysis/stage3/h1b_calibration.json`), H2
+  (`data/results/phase2_analysis/stage1/h2_adaptive_allocation.json`), C0/C1-Referenz
+  (`data/results/phase2_analysis/stage2/c0_c1_reference.json`); alle zugehörigen Figuren mit
+  regeneriert. Tower-of-Hanoi-Zahlen in allen vier Outputs bitweise identisch zum Stand vor dem Fix
+  (Sanity-Check: der Fix rührt ausschließlich TextWorld an).
+
+**Ergebnis der Neuberechnung — qualitativer Befund unverändert, Zahlen korrigiert:**
+
+| Analyse | Vorher (falscher Holdout) | Nachher (korrigiert) |
+|---|---|---|
+| Threshold-Artefakt TextWorld TLE | $\theta_1=0.70, \theta_2=0.80$ | $\theta_1=0.10, \theta_2=0.90$ |
+| Threshold-Artefakt TextWorld VC | $\theta_1=0.80, \theta_2=0.90$ | $\theta_1=0.10, \theta_2=0.90$ |
+| H1b TextWorld ΔBrier | $-0.100$ $[-0.113,-0.088]$, $n_{\text{holdout}}=2398$ | $-0.111$ $[-0.124,-0.098]$, $n_{\text{holdout}}=2228$ — hält weiterhin |
+| H2 TextWorld $\pi_{\mathrm{TLE}}$ | $N=45$, $\Delta P=-0.156$ | $N=41$, $\Delta P=-0.193$ — Non-Inferiority weiterhin klar verfehlt, Superiority weiterhin gehalten |
+| H2 TextWorld $\pi_{\mathrm{VC}}$ | $N=45$, $\Delta P=-0.388$ | $N=41$, $\Delta P=-0.411$ — dito |
+
+**Wichtige, nicht durch den Fix behebbare Restlimitation:** der Ausschluss der 9 Instanzen entfernt
+die statistische Zirkularität aus der konfirmatorischen H2-Auswertung, ändert aber nichts daran, dass
+die tatsächlich in Phase 2 **deployte** Policy mit den falsch gefitteten (0.70/0.80 bzw. 0.80/0.90)
+statt den korrekten (0.10/0.90) Schwellenwerten gelaufen ist — die bereits gesammelten
+`adaptive_tle`/`adaptive_vc`-Episoden für TextWorld lassen sich nicht rückwirkend auf die korrekten
+Schwellenwerte umrechnen. Eine Neusammlung unter korrigierten Schwellenwerten wurde aus denselben
+Kosten-/Zeitgründen nicht angestoßen, die auch den ToH-Always-C2-Abbruch vom 2026-08-10 begründet
+haben. Diese Einschränkung ist explizit in der Thesis-Prosa offengelegt (`metacog-thesis`,
+Kapitel-7-Epigraph, Kapitel 8 §8.5) — das H2-TextWorld-Ergebnis ist konfirmatorisch für die
+tatsächlich deployte Policy bei $N=41$, nicht für die in Kapitel 5 spezifizierte Policy bei $N=50$.
+
+**Zusätzlich nachgeholt:** die vom Nutzer am selben Tag freigegebene ("Ja, arbeite das ein, bitte")
+Always-C0/Always-C1-Spektrum-Integration in die Thesis-Prosa war zum Zeitpunkt der Holdout-Entdeckung
+noch nicht geschrieben (nur der Code/die Daten existierten) — jetzt mit den korrigierten Zahlen als
+neuer §7.3 in `07_results_adaptive_allocation.md` nachgetragen, inkl. eines neuen, durch die
+Spektrum-Daten gestützten Arguments in Kapitel 8 §8.1 (ToH: `adaptive_tle` verbraucht praktisch
+identisch viele Tokens wie Always-C1, bleibt aber 9.8 Punkte hinter dessen Erfolgsrate zurück — spricht
+eher für "eskaliert auf den falschen Schritten" als für "eskaliert zu selten").
+
 ## 2026-08-10 — Phase 2 Stage 1 abgebrochen: always_c2/tower_of_hanoi bleibt bei 12/50 Instanzen (explorativ)
 
 **Zweck:** Sauberer Abschlussbericht für die Phase-2-Stage-1-Sammlung (`data/results/phase2/

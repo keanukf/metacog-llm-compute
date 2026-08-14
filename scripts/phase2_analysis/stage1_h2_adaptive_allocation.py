@@ -12,7 +12,14 @@ Collection status (docs/consistency_log.md, 2026-08-10 entry): always_c2/tower_o
 aborted at 12/50 instances complete (1 partial, 37 untouched) after an OOM-driven collection
 problem that repeated fix attempts did not fully resolve. textworld is complete for all six
 strategies. Consequently:
-  - textworld: full N=50 confirmatory comparison, both policies, Holm-corrected as Family B.
+  - textworld: N=41 confirmatory comparison (of the preregistered 50), both policies,
+    Holm-corrected as Family B. N=41, not 45, because of a second, independent data issue
+    (docs/consistency_log.md, 2026-08-14 entry): the deployed adaptive-allocator thresholds were
+    fit on a non-preregistered holdout split (instances 0-4, not the manifest's mod-10 holdout),
+    so 4 instances (1-4) that legitimately are not part of the *true* holdout would otherwise
+    still overlap the *fitting* sample -- excluded here via
+    ``TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES`` (src/analysis/phase1_canonical.py) on top of the
+    5 true holdout instances.
   - tower_of_hanoi: run and reported for transparency, but on a reduced, non-preregistered N
     (n_pairs typically 12-13, not 50) -- EXPLORATORY ONLY per the abort decision, not part of
     Family B's Holm correction and not to be read as a confirmatory H2 result.
@@ -37,6 +44,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.analysis.datasets import load_run_dataset  # noqa: E402
 from src.analysis.inference import cluster_bootstrap, h2_paired, holm  # noqa: E402
+from src.analysis.phase1_canonical import (  # noqa: E402
+    TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES,
+    apply_textworld_holdout_correction,
+)
 
 POLICIES = ("adaptive_tle", "adaptive_vc")
 BASELINE = "always_c2"
@@ -188,6 +199,7 @@ def main() -> int:
         return 1
 
     ds = load_run_dataset(checkpoint_dir)
+    apply_textworld_holdout_correction(ds.episodes, TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES)
     result = run_h2(ds.episodes, n_boot=args.n_boot, seed=args.seed, delta=args.delta)
 
     out_path = REPO_ROOT / args.output if not Path(args.output).is_absolute() else Path(args.output)

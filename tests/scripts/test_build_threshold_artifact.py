@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from scripts.phase2_prep import build_threshold_artifact
+from src.analysis.phase1_canonical import TEXTWORLD_TRUE_HOLDOUT_INSTANCES
 
 DOMAIN = "textworld"
 
@@ -59,9 +60,17 @@ def _build_manifest(tmp_path: Path, *, n_holdout_instances: int, n_pool_instance
     source_dir.mkdir()
     entries = []
     stages = ("C0", "C1", "C2")
-    inst = 0
-    for holdout, n in ((True, n_holdout_instances), (False, n_pool_instances)):
-        for _ in range(n):
+    # build_threshold_artifact.py applies the real holdout correction for this domain
+    # (src/analysis/phase1_canonical.py: TEXTWORLD_TRUE_HOLDOUT_INSTANCES = {0,10,20,30,40}),
+    # overwriting `holdout` by instance ID regardless of what this fixture writes -- so the
+    # holdout group must be drawn from that real set, and the pool group must be offset well
+    # clear of it (and of TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES' extra {1,2,3,4}) to keep the
+    # two groups from colliding after correction.
+    assert n_holdout_instances <= len(TEXTWORLD_TRUE_HOLDOUT_INSTANCES)
+    holdout_ids = sorted(TEXTWORLD_TRUE_HOLDOUT_INSTANCES)[:n_holdout_instances]
+    pool_ids = list(range(1000, 1000 + n_pool_instances))
+    for holdout, ids in ((True, holdout_ids), (False, pool_ids)):
+        for inst in ids:
             for stage in stages:
                 ep_id = f"ep_{DOMAIN}_{inst}_{stage}_0"
                 _write_episode_with_steps(
@@ -75,7 +84,6 @@ def _build_manifest(tmp_path: Path, *, n_holdout_instances: int, n_pool_instance
                 entries.append(
                     {"episode_id": ep_id, "domain": DOMAIN, "source_dir": str(source_dir)}
                 )
-            inst += 1
 
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(

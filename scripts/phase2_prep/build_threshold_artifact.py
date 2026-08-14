@@ -30,7 +30,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.analysis.phase1_canonical import load_canonical_dataset_from_manifest  # noqa: E402
+from src.analysis.phase1_canonical import (  # noqa: E402
+    TEXTWORLD_TRUE_HOLDOUT_INSTANCES,
+    apply_textworld_holdout_correction,
+    load_canonical_dataset_from_manifest,
+)
 from src.analysis.thresholds import write_threshold_artifact  # noqa: E402
 from src.utils.logging_utils import try_git_commit  # noqa: E402
 
@@ -57,6 +61,7 @@ def main() -> int:
         return 1
 
     ds = load_canonical_dataset_from_manifest(manifest_path)
+    apply_textworld_holdout_correction(ds.steps, TEXTWORLD_TRUE_HOLDOUT_INSTANCES)
     holdout_steps = [r for r in ds.steps if bool(r.get("holdout"))]
     if not holdout_steps:
         print(

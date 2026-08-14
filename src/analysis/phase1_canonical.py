@@ -167,3 +167,47 @@ def load_canonical_dataset_from_manifest(manifest_path: str | Path) -> Canonical
             source_map.setdefault(str(e.get("domain")), source_dir)
 
     return CanonicalDataset(episodes=episodes, steps=steps, sources=source_map)
+
+
+# --- TextWorld holdout-label correction (docs/consistency_log.md, 2026-08-14 entry) -----------
+#
+# The canonical Phase 1 TextWorld source (``textworld_regen_20260724``) stamped every episode's
+# ``holdout`` field from an uncommitted, non-preregistered instance split -- confirmed empirically
+# to be {0,1,2,3,4} (the first 5 instance IDs) rather than the frozen manifest's mod-10 policy
+# ({0,10,20,30,40}, ``data/tasks/textworld/difficulty_manifest.json``, git-stable since Gate D).
+# Tower of Hanoi is unaffected (its manifest and its episodes' embedded ``holdout`` field agree).
+# Every consumer of a ``holdout`` field on TextWorld rows -- Phase 1 (steps) or Phase 2 (episodes)
+# -- must apply exactly one of the two corrections below before using it; nothing may trust the
+# embedded field for this domain unmodified.
+TEXTWORLD_TRUE_HOLDOUT_INSTANCES: frozenset[int] = frozenset({0, 10, 20, 30, 40})
+
+# Phase 2's threshold artifact was fit on the wrong regen-embedded holdout ({0,1,2,3,4}), so
+# instances 1-4 were used to fit the deployed adaptive-allocator thresholds *and*, under the
+# correct manifest split, are not part of the true holdout -- they legitimately entered Phase 2's
+# confirmatory evaluation sample too. That overlap is a real fit/eval circularity for exactly
+# those 4 instances (0 is unaffected: both splits agree it is holdout). Any confirmatory or
+# exploratory statistic that evaluates the *deployed* Phase 2 policy (H2, the C0/C1 spectrum
+# reference) must exclude this larger union, not just the true 5, to remove the overlap.
+TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES: frozenset[int] = TEXTWORLD_TRUE_HOLDOUT_INSTANCES | {
+    1,
+    2,
+    3,
+    4,
+}
+
+
+def apply_textworld_holdout_correction(
+    rows: list[dict[str, Any]], instance_set: frozenset[int]
+) -> list[dict[str, Any]]:
+    """Overwrite ``holdout`` in place on every TextWorld row (step or episode) to
+    ``instance in instance_set``; rows for other domains pass through untouched. Mutates and
+    returns ``rows`` for chaining. Use ``TEXTWORLD_TRUE_HOLDOUT_INSTANCES`` when fitting something
+    against Phase 1 data (threshold artifact, H1b calibrator) and
+    ``TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES`` when evaluating the already-deployed Phase 2
+    policy (H2, the C0/C1 spectrum reference) -- see the module-level note above for why these
+    differ.
+    """
+    for r in rows:
+        if str(r.get("domain")) == "textworld":
+            r["holdout"] = int(r.get("instance")) in instance_set
+    return rows

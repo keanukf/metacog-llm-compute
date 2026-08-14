@@ -34,7 +34,11 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.analysis.calibration import compute_brier, fit_tle_calibrator, vc_to_prob  # noqa: E402
 from src.analysis.inference import cluster_bootstrap, holm, one_sided_bootstrap_pvalue  # noqa: E402
-from src.analysis.phase1_canonical import load_canonical_dataset_from_manifest  # noqa: E402
+from src.analysis.phase1_canonical import (  # noqa: E402
+    TEXTWORLD_TRUE_HOLDOUT_INSTANCES,
+    apply_textworld_holdout_correction,
+    load_canonical_dataset_from_manifest,
+)
 
 DOMAINS = ("tower_of_hanoi", "textworld")
 
@@ -200,6 +204,7 @@ def main() -> int:
         written_figures[f"reliability_vc_{dom}"] = str(vc_path)
 
     ds = load_canonical_dataset_from_manifest(manifest_path)
+    apply_textworld_holdout_correction(ds.steps, TEXTWORLD_TRUE_HOLDOUT_INSTANCES)
     result = run_h1b(
         ds.steps,
         n_boot=args.n_boot,
