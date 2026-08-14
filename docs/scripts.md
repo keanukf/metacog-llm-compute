@@ -14,6 +14,7 @@ Run from the **repository root** unless noted (e.g. `python scripts/experiment/r
 | `dev` | Manual play / smoke tests / diagnostics without a full experiment |
 | `cloud` | RunPod setup or result transfer |
 | `phase1-analysis` | Real Phase 1 confirmatory/exploratory analysis (production, not a rehearsal) |
+| `phase2-analysis` | Real Phase 2 confirmatory/exploratory analysis (production, not a rehearsal) |
 
 ## `scripts/experiment/` — production data-collection entry points
 
@@ -102,6 +103,14 @@ the archived results once the pipeline has been run against the real data.
 | Script | Purpose | When to use | Status |
 |--------|---------|-------------|--------|
 | [`build_threshold_artifact.py`](../scripts/phase2_prep/build_threshold_artifact.py) | Grid-searches TLE/VC allocator thresholds (theta1/theta2, `step_level_proxy_v1`) against the real Phase 1 holdout data via the Stage 0 canonical manifest, writes the frozen policy artifact `adaptive_tle`/`adaptive_vc`/`eager_style` require; warns (not fatal) on a degenerate theta1>=theta2 policy | Once, before starting real Phase 2 collection | `phase1-analysis` |
+| [`threshold_sensitivity_analysis.py`](../scripts/phase2_prep/threshold_sensitivity_analysis.py) | Thesis §5.9 threshold-sensitivity analysis (never delivered until the TextWorld holdout-labeling incident gave a concrete case to run it on, `docs/consistency_log.md` 2026-08-14 entries): reconstructs the deployed (wrong-holdout-fitted) vs. corrected TextWorld thresholds from raw Phase 1 data via `grid_search_thresholds`, compares them on the correctly-evaluated proxy objective and on realized C0/C1/C2 routing over the actual observed Phase 2 signal values | After the holdout correction, for the record / for Ch.8 interpretation | `phase2-analysis` |
+
+## `scripts/phase2_analysis/` — real Phase 2 confirmatory/exploratory analysis
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`stage1_h2_adaptive_allocation.py`](../scripts/phase2_analysis/stage1_h2_adaptive_allocation.py) | H2: per (policy, domain) episode-success non-inferiority + log-token superiority against Always-C2, paired cluster bootstrap, Holm family B (textworld only — tower_of_hanoi is exploratory-reduced-N, see script docstring). Applies `TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES` before pairing (holdout-labeling correction, `docs/consistency_log.md` 2026-08-14) | After real Phase 2 collection | `phase2-analysis` |
+| [`stage2_c0_c1_reference.py`](../scripts/phase2_analysis/stage2_c0_c1_reference.py) | Exploratory Always-C0/Always-C1 reference: pools Phase 1's fixed-stage cells (reused, not re-collected — see script docstring for why C2 alone was re-collected) with Phase 2's adaptive/Always-C2 episodes into a five-arm compute-success spectrum per domain, plus pairwise adaptive-vs-C0/C1 contrasts. No delta rule, no Holm correction | After Stage 1 | `phase2-analysis` |
 
 ## `scripts/run_readiness/` — budget, run-hygiene, resume, and output-quality checks
 
