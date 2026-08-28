@@ -62,6 +62,7 @@ def main() -> int:
         ("Stage 13 (descriptive statistics)", _stage_cmd("descriptive_statistics.py")),
         ("Stage 14 (corrected H1a/H4 figures)", _stage_cmd("regen_corrected_h1a_h4_figures.py")),
         ("Stage 15 (ECE report)", _stage_cmd("ece_report.py")),
+        ("Stage 16 (TextWorld action entropy)", _stage_cmd("textworld_action_entropy.py")),
     ]
 
     for label, cmd in stages:
