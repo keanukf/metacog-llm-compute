@@ -81,18 +81,51 @@ def summarise(stamps: list[dt.datetime]) -> dict:
     }
 
 
+def _stamps_discarded_textworld() -> list[dt.datetime]:
+    """The TextWorld half of the 2026-07-22 run, discarded and re-collected.
+
+    Real compute was spent on it. Whether it belongs in the reported footprint
+    depends on whether the figure answers "what did the analysed data cost" or
+    "what did this study cost to run"; both are emitted so either can be cited.
+    """
+    src = ROOT / "data/results/phase1/phase1_20260722_091125"
+    out = []
+    for f in src.glob("trace_ep_textworld_*.jsonl"):
+        try:
+            first = json.loads(f.open().readline())
+        except Exception:
+            continue
+        if first.get("timestamp_utc"):
+            out.append(_parse(first["timestamp_utc"]))
+    return out
+
+
 def main() -> int:
-    result = {"phase1": summarise(_stamps_phase1()), "phase2": summarise(_stamps_phase2())}
+    canonical = _stamps_phase1()
+    discarded = _stamps_discarded_textworld()
+    result = {
+        "phase1_canonical_only": summarise(canonical),
+        "phase1_including_discarded_run": summarise(canonical + discarded),
+        "discarded_textworld_run": summarise(discarded),
+        "phase2": summarise(_stamps_phase2()),
+    }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(result, indent=2))
+    tot = (result["phase1_including_discarded_run"]["active_hours"]
+           + result["phase2"]["active_hours"])
+    result["study_total_active_hours"] = round(tot, 1)
     for phase, d in result.items():
+        if not isinstance(d, dict):
+            continue
         if d.get("active_hours") is None:
             print(f"{phase}: {d['n_episodes']} episodes, insufficient timestamps")
             continue
         print(f"{phase}: {d['n_episodes']} episodes, {d['active_hours']} active hours "
               f"({d['wall_clock_hours']} h wall clock), "
               f"{d['episodes_per_active_hour']} episodes/h")
-    print(f"\nwrote {OUT.relative_to(ROOT)}")
+    print(f"\nstudy total (all compute actually spent): "
+          f"{result['study_total_active_hours']} active hours")
+    print(f"wrote {OUT.relative_to(ROOT)}")
     return 0
 
 
