@@ -61,6 +61,7 @@ def main() -> int:
         ("Stage 12 (calibrator stability, A10)", _stage_cmd("a10_calibrator_stability.py")),
         ("Stage 13 (descriptive statistics)", _stage_cmd("descriptive_statistics.py")),
         ("Stage 14 (corrected H1a/H4 figures)", _stage_cmd("regen_corrected_h1a_h4_figures.py")),
+        ("Stage 15 (ECE report)", _stage_cmd("ece_report.py")),
     ]
 
     for label, cmd in stages:
