@@ -97,8 +97,8 @@ def main():
 
     report = {
         "purpose": (
-            "Per-signal within-stage AUROC for TLE and VC. Supplies the quantity Chapter 8 "
-            "asserts (each signal above chance within every compute stage), which the "
+            "Per-signal within-stage AUROC for TLE and VC. Supplies the quantity Chapter 8 needs, "
+            "namely whether each signal clears chance within each compute stage, which the "
             "difference-based H1a analysis does not report."
         ),
         "n_boot": n_boot,
