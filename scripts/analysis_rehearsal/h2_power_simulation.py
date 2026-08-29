@@ -143,6 +143,7 @@ DELTA_MARGIN = (
     0.05  # H2's preregistered non-inferiority margin (chapters/05_methodology.md sec 5.6)
 )
 N_RUNS = 5  # phase2.runs_per_condition, configs/experiment_core.yaml
+N_RUNS_GRID = (5,)  # default: the design value only; --n-runs-grid sweeps it (Table A6)
 
 # External anchor, not derivable from any file in this repo: yesterday's 36-episode real-hardware
 # GPU smoke test (6 episodes/strategy -- too small to trust precisely, hence also testing 2.0x and
@@ -290,12 +291,15 @@ class DesignCell:
     token_cv: float
     delta_margin: float
     rationale: str
+    n_runs_baseline: int | None = None  # None = symmetric; int = baseline frozen at that size
 
 
 def build_design_cells(
     real_stats: dict[str, DomainRealStats],
     *,
     n_instances_grid: tuple[int, ...] = N_INSTANCES_GRID,
+    n_runs_grid: tuple[int, ...] = N_RUNS_GRID,
+    n_runs_baseline: int | None = None,
     adaptive_delta_p: float = 0.0,
 ) -> list[DesignCell]:
     cells: list[DesignCell] = []
@@ -314,11 +318,13 @@ def build_design_cells(
             sigma_b2 = _latent_icc_to_sigma_b2(icc if icc is not None else 0.05)
             for ratio_name, ratio in TOKEN_RATIO_SCENARIOS.items():
                 for n_inst in n_instances_grid:
+                  for n_runs in n_runs_grid:
                     cells.append(
                         DesignCell(
                             domain=dom,
                             n_instances=n_inst,
-                            n_runs=N_RUNS,
+                            n_runs=n_runs,
+                            n_runs_baseline=n_runs_baseline,
                             success_scenario=scen_name,
                             baseline_success_p=p,
                             icc_source=icc_source,
@@ -373,9 +379,10 @@ def _simulate_paired_rows(cell: DesignCell, rng: np.random.Generator) -> list[di
         p_base = 1.0 / (1.0 + math.exp(-(logit_base_p + b_i)))
         p_policy = min(0.999, max(0.001, p_base + cell.adaptive_delta_p))
 
-        succ_base = rng.random(cell.n_runs) < p_base
+        n_base = cell.n_runs_baseline if cell.n_runs_baseline is not None else cell.n_runs
+        succ_base = rng.random(n_base) < p_base
         succ_policy = rng.random(cell.n_runs) < p_policy
-        tok_base = np.exp(rng.normal(mu_base, sigma_ln, cell.n_runs))
+        tok_base = np.exp(rng.normal(mu_base, sigma_ln, n_base))
         tok_policy = np.exp(rng.normal(mu_policy, sigma_ln, cell.n_runs))
 
         rows.append(
@@ -439,7 +446,9 @@ def _run_one_replicate(task: dict[str, Any]) -> dict[str, Any]:
 def _cell_key(cell: DesignCell) -> str:
     return (
         f"{cell.domain}/{cell.success_scenario}/{cell.token_ratio_scenario}/"
-        f"n{cell.n_instances}/dp{cell.adaptive_delta_p:+.2f}"
+        f"n{cell.n_instances}/r{cell.n_runs}"
+        + (f"b{cell.n_runs_baseline}" if cell.n_runs_baseline is not None else "")
+        + f"/dp{cell.adaptive_delta_p:+.2f}"
     )
 
 
@@ -473,11 +482,24 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--out", default="data/results/gate_e_h2_power/h2_power_simulation.json")
+    parser.add_argument(
+        "--n-runs-grid",
+        default="5",
+        help="comma-separated runs-per-condition values to sweep (Table A6 uses 5,15,20)",
+    )
+    parser.add_argument(
+        "--asymmetric-baseline-runs",
+        type=int,
+        default=0,
+        help="if set, also run cells with the baseline arm frozen at this many runs while the "
+             "policy side scales over --n-runs-grid (reproduces the plateau finding)",
+    )
     parser.add_argument("--n-reps", type=int, default=1000)
     parser.add_argument("--n-boot", type=int, default=2000)
     parser.add_argument("--workers", type=int, default=7)
     parser.add_argument("--seed", type=int, default=20260805)
     args = parser.parse_args()
+    n_runs_grid = tuple(int(x) for x in str(args.n_runs_grid).split(",") if x.strip())
 
     out_path = REPO_ROOT / args.out if not Path(args.out).is_absolute() else Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -505,20 +527,40 @@ def main() -> None:
     )
 
     print("\n=== Main grid: adaptive_delta_p=0.0 (exact parity, the load-bearing NI case) ===")
-    main_cells = build_design_cells(real_stats, adaptive_delta_p=0.0)
+    main_cells = build_design_cells(real_stats, n_runs_grid=n_runs_grid, adaptive_delta_p=0.0)
     print(f"{len(main_cells)} cells x {args.n_reps} reps x n_boot={args.n_boot}")
 
     print("\n=== Supplementary: adaptive_delta_p=+0.02 (slight superiority) at n=50 only ===")
-    sens_cells = build_design_cells(real_stats, n_instances_grid=(50,), adaptive_delta_p=0.02)
+    sens_cells = build_design_cells(
+        real_stats, n_instances_grid=(50,), n_runs_grid=n_runs_grid, adaptive_delta_p=0.02
+    )
     # Restrict the sensitivity grid to the "good" token ratio (the token axis is not the point
     # of this supplementary check).
     sens_cells = [c for c in sens_cells if c.token_ratio_scenario == "good_smoke_test_ratio"]
 
     print("\n=== Sanity check: adaptive_delta_p=-0.10 (adaptive substantially worse) at n=50 ===")
-    sanity_cells = build_design_cells(real_stats, n_instances_grid=(50,), adaptive_delta_p=-0.10)
+    sanity_cells = build_design_cells(
+        real_stats, n_instances_grid=(50,), n_runs_grid=n_runs_grid, adaptive_delta_p=-0.10
+    )
     sanity_cells = [c for c in sanity_cells if c.token_ratio_scenario == "good_smoke_test_ratio"]
 
-    all_cells = main_cells + sens_cells + sanity_cells
+    asym_cells: list[DesignCell] = []
+    if args.asymmetric_baseline_runs:
+        print(
+            f"\n=== Asymmetric: baseline frozen at {args.asymmetric_baseline_runs} runs, "
+            "policy side scaled (Table A6's plateau finding) ==="
+        )
+        for n_runs in n_runs_grid:
+            cs = build_design_cells(
+                real_stats,
+                n_instances_grid=(50,),
+                n_runs_grid=(n_runs,),
+                n_runs_baseline=args.asymmetric_baseline_runs,
+                adaptive_delta_p=0.0,
+            )
+            asym_cells += [c for c in cs if c.token_ratio_scenario == "good_smoke_test_ratio"]
+
+    all_cells = main_cells + sens_cells + sanity_cells + asym_cells
     print(f"\nTotal cells (all grids): {len(all_cells)}")
 
     t0 = time.time()
@@ -558,6 +600,8 @@ def main() -> None:
         ),
         "delta_margin": DELTA_MARGIN,
         "n_runs_per_condition": N_RUNS,
+        "n_runs_grid": list(n_runs_grid),
+        "asymmetric_baseline_runs": args.asymmetric_baseline_runs or None,
         "n_instances_grid": list(N_INSTANCES_GRID),
         "token_ratio_scenarios": TOKEN_RATIO_SCENARIOS,
         "smoke_test_anchor": {
@@ -586,9 +630,11 @@ def main() -> None:
             for ratio_name in ("good_smoke_test_ratio", "conservative_1.5x"):
                 line = f"{dom:15s} {scen:15s} {ratio_name:22s} "
                 for n_inst in N_INSTANCES_GRID:
-                    key = f"{dom}/{scen}/{ratio_name}/n{n_inst}/dp+0.00"
+                  for n_runs in n_runs_grid:
+                    key = f"{dom}/{scen}/{ratio_name}/n{n_inst}/r{n_runs}/dp+0.00"
                     p = results.get(key, {}).get("power_h2_holds")
-                    line += f" n={n_inst}:{p:.2f}" if p is not None else f" n={n_inst}:NA"
+                    lbl = f"n={n_inst},r={n_runs}"
+                    line += f" {lbl}:{p:.2f}" if p is not None else f" {lbl}:NA"
                 print(line)
 
 
