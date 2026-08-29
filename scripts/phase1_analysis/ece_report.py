@@ -52,7 +52,8 @@ def main() -> int:
     for dom in sorted({r["domain"] for r in ds.steps}):
         dsteps = [r for r in ds.steps if r["domain"] == dom
                   and (r.get("tle") or {}).get("mean_entropy") is not None
-                  and r.get("vc") is not None]
+                  and r.get("vc") is not None
+                  and r.get("y_optimal") is not None]
         hold = [r for r in dsteps if bool(r.get("holdout"))]
         evalset = [r for r in dsteps if not bool(r.get("holdout"))]
 
