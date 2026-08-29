@@ -64,6 +64,7 @@ def main() -> int:
         ("Stage 15 (ECE report)", _stage_cmd("ece_report.py")),
         ("Stage 16 (TextWorld action entropy)", _stage_cmd("textworld_action_entropy.py")),
         ("Stage 17 (signal autocorrelation)", _stage_cmd("signal_autocorrelation.py")),
+    ("Stage 18 (per-signal within-stage AUROC, A10)", _stage_cmd("per_signal_stage_auroc.py")),
     ]
 
     for label, cmd in stages:
