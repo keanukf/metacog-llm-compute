@@ -14,6 +14,7 @@ Run from repo root:
 """
 from __future__ import annotations
 
+import json
 import math
 import sys
 from pathlib import Path
@@ -40,6 +41,7 @@ DOMS = ("tower_of_hanoi", "textworld")
 STG = ("C0", "C1", "C2")
 NB = 5000
 SEED = 20260703
+OUT = "data/results/phase1_analysis/stage_stratified_sensitivity.json"
 
 
 def _paired_n(rows, s):
@@ -109,6 +111,13 @@ def main():
     apply_textworld_holdout_correction(ds.steps, TEXTWORLD_TRUE_HOLDOUT_INSTANCES)
     steps = ds.steps
 
+    report = {"n_boot": NB, "seed": SEED,
+              "note": ("Stage-stratified re-analysis of H1a and H4. The stratified column carries the "
+                       "verdict the thesis reports; the pooled column is the confounded reference also "
+                       "persisted by stage2/h1a_discrimination.json and stage5/h4_domain_modulation.json, "
+                       "whose decision_holds fields refer to that pooled estimand and not to the "
+                       "stratified one."),
+              "h1a": {}, "h4": {}}
     print("H1a  (delta_auroc = AUROC(TLE) - AUROC(VC); decision ci_low > 0; Holm family A)")
     pv_str = []
     for dom in DOMS:
@@ -117,6 +126,12 @@ def main():
         bs = cluster_bootstrap(dr, strat_dauroc, n_boot=NB, seed=SEED)
         bf = cluster_bootstrap(dr, stage_only_auroc, n_boot=NB, seed=SEED)
         pv_str.append(one_sided_bootstrap_pvalue(bs["reps"], null_value=0.0))
+        report["h1a"][dom] = {
+            "pooled": {k: bp[k] for k in ("point", "ci_low", "ci_high")},
+            "stratified": {k: bs[k] for k in ("point", "ci_low", "ci_high")},
+            "stage_only_auroc": {k: bf[k] for k in ("point", "ci_low", "ci_high")},
+            "decision_holds_stratified": bool(bs["ci_low"] is not None and bs["ci_low"] > 0),
+        }
         print(f"\n  {dom}")
         print(
             f"    POOLED      dAUROC = {bp['point']:+.4f}  [{bp['ci_low']:+.4f}, {bp['ci_high']:+.4f}]"
@@ -132,15 +147,23 @@ def main():
     hs = holm(pv_str, family="A")
     for i, dom in enumerate(DOMS):
         print(f"    Holm(strat) {dom}: p_raw={pv_str[i]:.4f} adj={hs[i]['adjusted']:.4f}")
+        report["h1a"][dom]["holm_adjusted_stratified"] = hs[i]["adjusted"]
 
     print("\nH4  DiD (ToH - TextWorld); stratified resampling within domain; decision ci_low > 0")
     for name, fn in (("POOLED", delta_auroc), ("STRATIFIED", strat_dauroc)):
         b = cluster_bootstrap_stratified(steps, h4(fn), n_boot=NB, seed=SEED)
         p = one_sided_bootstrap_pvalue(b["reps"], null_value=0.0)
+        report["h4"][name.lower()] = {**{k: b[k] for k in ("point", "ci_low", "ci_high")}, "p": p,
+                                      "decision_holds": bool(b["ci_low"] is not None and b["ci_low"] > 0)}
         print(
             f"  {name:10} DiD = {b['point']:+.4f}  [{b['ci_low']:+.4f}, {b['ci_high']:+.4f}]"
             f"  holds={b['ci_low'] is not None and b['ci_low'] > 0}  p={p:.4f}"
         )
+    out = REPO_ROOT / OUT
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w") as f:
+        json.dump(report, f, indent=2)
+    print(f"\nWrote {out}")
     return 0
 
 
