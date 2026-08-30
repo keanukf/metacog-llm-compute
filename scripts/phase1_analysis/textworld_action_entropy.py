@@ -22,6 +22,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "data/results/phase1_analysis/stage0/canonical_manifest.json"
 OUT = ROOT / "data/results/phase1_analysis/textworld_action_entropy.json"
+def _median_vc(group):
+    """Median verbalized confidence over the steps of one verb, or None if none carry a value."""
+    vals = [float(g["vc"]) for g in group if g.get("vc") is not None]
+    return st.median(vals) if vals else None
+
+
 MIN_N = 50  # verbs rarer than this are pooled into "other"
 
 
@@ -47,6 +53,7 @@ def main() -> int:
                 "verb": str(action).strip().lower().split()[0],
                 "entropy": float(entropy),
                 "optimal": d.get("correctness") == "optimal",
+                "vc": d.get("vc"),
                 "stage": d.get("compute_stage"),
             })
 
@@ -67,6 +74,7 @@ def main() -> int:
             "mean_entropy": st.fmean(e),
             "median_entropy": st.median(e),
             "max_entropy": max(e),
+            "median_vc": _median_vc(group),
             "optimal_rate": sum(g["optimal"] for g in group) / len(group),
         })
     if pooled:
@@ -75,6 +83,7 @@ def main() -> int:
             "verb": f"(other, <{MIN_N} steps each)", "n": len(pooled),
             "mean_entropy": st.fmean(e), "median_entropy": st.median(e),
             "max_entropy": max(e),
+            "median_vc": _median_vc(pooled),
             "optimal_rate": sum(g["optimal"] for g in pooled) / len(pooled),
         })
     rows.sort(key=lambda r: -r["mean_entropy"])
