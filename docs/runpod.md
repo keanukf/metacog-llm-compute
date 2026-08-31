@@ -491,7 +491,7 @@ python scripts/instrument_validation/verify_backend_parity.py --backend server \
 
 ### Instrument validation session (5090 pod)
 
-After connecting Cursor via SSH Remote to `/workspace/metacog-llm-compute`:
+After connecting to the pod over SSH at `/workspace/metacog-llm-compute`:
 
 **Order matters:** pick production `max_concurrent_episodes` from measured throughput *before* backend parity (batch invariance must use the N you will run in Phase 1).
 
@@ -582,6 +582,6 @@ Run this sequence when validating infrastructure before committing GPU budget to
 8. **Download** (local machine, pod running): `./scripts/cloud/shell/download_runpod_results.sh --tcp … [--run pilot_…]`
 9. **Audit** (local): `python scripts/pilot_analysis/audit_pilot_signals.py data/results/runpod_pilot/pilot_…`
 
-**Pass criteria for this smoke:** `pilot_sanity.json` has `has_logprobs: true`; `audit_pilot_signals` shows C0 `tle_rate >= 0.95`; VC rate `>= 0.80` under the **`experiment_core.yaml` VC contract** (`followup_max_tokens: 4`); C1 handoff gate shows low unparsed rate with thinking ON; C2 traces use `self_consistency_majority_vote` when `compute_stages` includes C2. Gate 1 itself still requires a dedicated 20-episode C0 parseability run per domain (see `blueprints/thesis_dependency_map.html`).
+**Pass criteria for this smoke:** `pilot_sanity.json` has `has_logprobs: true`; `audit_pilot_signals` shows C0 `tle_rate >= 0.95`; VC rate `>= 0.80` under the **`experiment_core.yaml` VC contract** (`followup_max_tokens: 4`); C1 handoff gate shows low unparsed rate with thinking ON; C2 traces use `self_consistency_majority_vote` when `compute_stages` includes C2. Gate 1 itself still requires a dedicated 20-episode C0 parseability run per domain.
 
 Then run analysis locally (e.g. ECE on `pilot_calibration.json` via `src/analysis/calibration.py`).

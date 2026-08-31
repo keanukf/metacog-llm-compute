@@ -60,8 +60,8 @@
     stages independent of the underlying construct. Pooling the standardization across stages lets
     a stage-driven scale difference masquerade as signal.
   - **Consistent with the allocator's own normalization.** The Phase 2 allocator normalizes TLE/VC
-    stage-wise (per-stage ECDF, not pooled) for exactly this reason (see `CLAUDE.md` terminology
-    cheat sheet — pooled-ECDF is explicitly a rejected legacy pattern there). Standardizing the H3
+    stage-wise (per-stage ECDF, not pooled) for exactly this reason; pooled-ECDF is a rejected
+    legacy pattern. Standardizing the H3
     confirmatory model pooled-across-stage while the allocator itself is stage-wise would be
     internally inconsistent between two parts of the same thesis.
   - **GEE significance is invariant to this choice, only interpretation changes.** Rescaling a

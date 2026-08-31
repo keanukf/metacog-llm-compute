@@ -3,8 +3,8 @@
 Load-bearing for measurement integrity: TLE is defined over the *committed action* tokens, so which
 span counts as "the action" is a dependent-variable question, not a formatting one. This parser is
 allowed to affect only whether an action the model *already intended* gets recognized -- it must
-never change which action is chosen, and never inject domain hints (the project-wide "red line"; see
-CLAUDE.md). Hence the strict cascade of ``parse_method`` values, tried in order of trust:
+never change which action is chosen, and never inject domain hints (the project-wide "red line").
+Hence the strict cascade of ``parse_method`` values, tried in order of trust:
 ``lmstudio_command_tag`` (explicit <command> wrapper) -> ``post_think`` (first real line after the
 final </think>, the preregistered target) -> ``legacy_action_prefix`` (an "ACTION:" line) ->
 ``first_line_fallback`` -> ``embedded_action_fallback`` (last resort, mining a command mention out of
