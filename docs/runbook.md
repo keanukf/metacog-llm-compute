@@ -47,11 +47,3 @@ Use `requirements.txt` as the pinned cloud install source. Full steps: [`docs/ru
 | `data/results/` | Pilot and experiment outputs (`pilot_*`, `ep_*.json`, checkpoints) | Typically gitignored run artifacts |
 
 Pilot runs default to timestamped subfolders under `--output-dir` (e.g. `data/results/pilot_20250520_143022/`). See [`docs/artifact_schema.md`](artifact_schema.md) for JSON field contracts.
-
-## Local notes (Cursor plans)
-
-`.cursor/` is **gitignored** (IDE/agent plans stay local). If historical plan files were removed
-from your working tree after a merge, restore them from git history with `git checkout <old-ref> --
-.cursor/plans/` (the one-off `restore_cursor_plans.sh` helper was removed in the 2026-07-21 refactor).
-
-Plans are not pushed to remote; `git pull` will not delete restored files while they remain untracked and ignored.

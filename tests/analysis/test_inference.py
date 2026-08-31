@@ -208,6 +208,50 @@ def test_h2_paired_holds_when_ci_bound_clears_threshold():
     assert r["log_token_ci_low"] is not None and r["log_token_ci_low"] > 0
 
 
+def test_h2_paired_averages_all_runs_not_just_the_last():
+    """Regression: found by the H2 power simulation (docs/consistency_log.md 2026-08-05) before
+    any real Phase 2 data existed. Production runs_per_condition=5 gives 5 episodes per
+    (domain, instance, strategy) cell -- an earlier version of h2_paired kept only the last one
+    seen (dict overwrite), silently discarding 4 of 5 runs. Construction: one instance, 3 runs
+    per strategy, deliberately alternating success so the mean (2/3 success) differs from
+    whichever single run would happen to be last -- catches both the success and token
+    aggregation, not just a reordering-insensitive case.
+    """
+    episodes = []
+    # policy: succeeds on runs 0,1, fails on run 2 (last) -- mean success = 2/3
+    for run, succ in enumerate([True, True, False]):
+        episodes.append(
+            {
+                "domain": "tw",
+                "instance": 0,
+                "strategy": "adaptive_tle",
+                "run": run,
+                "task_success": succ,
+                "total_tokens_generated": 100 + run,  # 100, 101, 102 -> mean 101
+                "holdout": False,
+            }
+        )
+    # baseline: fails on runs 0,1, succeeds on run 2 (last) -- mean success = 1/3
+    for run, succ in enumerate([False, False, True]):
+        episodes.append(
+            {
+                "domain": "tw",
+                "instance": 0,
+                "strategy": "always_c2",
+                "run": run,
+                "task_success": succ,
+                "total_tokens_generated": 200 + run,  # 200, 201, 202 -> mean 201
+                "holdout": False,
+            }
+        )
+    r = h2_paired(episodes, delta=0.05)
+    assert r["n_pairs"] == 1
+    # If only the last run survived: policy=False, baseline=True -> succ_diff would be -1.0.
+    # Correct (averaged over all 3 runs): 2/3 - 1/3 = 1/3.
+    assert r["mean_success_diff"] == pytest.approx(2 / 3 - 1 / 3)
+    assert r["mean_log_token_diff"] == pytest.approx(math.log(201) - math.log(101))
+
+
 def test_h4_diff_in_diff_sign_matches_preregistered_direction():
     """Regression: h4_diff_in_diff must return
     [AUROC_TLE - AUROC_VC]_ToH - [AUROC_TLE - AUROC_VC]_TextWorld, matching thesis H_{1,4}

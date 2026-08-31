@@ -60,8 +60,8 @@
     stages independent of the underlying construct. Pooling the standardization across stages lets
     a stage-driven scale difference masquerade as signal.
   - **Consistent with the allocator's own normalization.** The Phase 2 allocator normalizes TLE/VC
-    stage-wise (per-stage ECDF, not pooled) for exactly this reason (see `CLAUDE.md` terminology
-    cheat sheet — pooled-ECDF is explicitly a rejected legacy pattern there). Standardizing the H3
+    stage-wise (per-stage ECDF, not pooled) for exactly this reason; pooled-ECDF is a rejected
+    legacy pattern. Standardizing the H3
     confirmatory model pooled-across-stage while the allocator itself is stage-wise would be
     internally inconsistent between two parts of the same thesis.
   - **GEE significance is invariant to this choice, only interpretation changes.** Rescaling a
@@ -175,3 +175,72 @@
   compact-storage allowlist gap). Full suite green (387 tests) after 6 pre-existing tests were
   updated for the new (backward-compatible) arity — see commit for the list.
 - **Date:** 2026-07-28.
+
+## ADR-009: Pareto tie-break for allocator threshold selection — knee point, not minimum tokens
+
+- **Decision:** `grid_search_thresholds` (`src/analysis/thresholds.py`) now resolves ties on the
+  success/token Pareto front via a knee-point selection (`_select_knee_point`: maximize
+  min-max-normalized `success_proxy - token_proxy` within the front, tie-broken toward lower
+  token cost for a 2-point front) instead of the originally preregistered rule (thesis §5.4:
+  "resolved by the most token-efficient point on that front"), which was implemented literally as
+  minimum absolute `token_proxy`.
+- **Context:** this is an internal working-discipline preregistration, not an external
+  institutional requirement (confirmed with the user, 2026-08-04) — deviating is acceptable when
+  it demonstrably serves the thesis's scientific content better, provided it is justified and
+  documented, which is the purpose of this entry. The deviation does **not** touch any
+  preregistered confirmatory decision rule for H1a/H1b/H2/H3/H4 (Holm families, CI-bound
+  directions, the H2 non-inferiority margin) — it only changes how the *input artifact* (the
+  frozen allocator thresholds) is constructed from Phase 1 holdout data, before any Phase 2
+  hypothesis test runs.
+- **Why the original rule fails in practice:** run against the real Phase 1 canonical dataset
+  (2026-08-04, first real run of `scripts/phase2_prep/build_threshold_artifact.py`), minimum-
+  absolute-tokens selected `theta1=0.8, theta2=0.9` in **all four** domain x signal cells —
+  collapsing the adaptive policy to near-Always-C0 everywhere, including tower_of_hanoi, where
+  H1a already established TLE discriminates strongly. On that cell's Pareto front, the selected
+  point reached only `success_proxy=0.1405`, while the front's best point reached `0.3268` (more
+  than double) for roughly 3x the token cost — a large amount of real, exploitable signal
+  quality left on the table purely because the tie-break rule ignores success entirely once a
+  candidate is non-dominated. A near-Always-C0 adaptive policy would be a weak, largely
+  uninformative test of H2's central "adaptive step-level allocation" claim, independent of
+  whether TLE/VC are good signals — undermining the thesis's core empirical contribution for a
+  reason unrelated to the signals' actual quality.
+- **Why "success/token ratio" (the obvious first alternative) was tried and rejected:** maximizing
+  `success_proxy / token_proxy` on the same real Pareto fronts selected the **exact same**
+  degenerate extreme point as minimum-tokens in every one of the four cells — not a real
+  efficiency measure, just cost-minimization by another name, because a very small `token_proxy`
+  denominator dominates the ratio regardless of the numerator. Verified numerically before
+  choosing the knee point, not assumed.
+- **Why the knee point specifically:** a standard, parameter-free multi-objective selection method
+  (maximum normalized distance toward the ideal "high success, low cost" corner) — no arbitrary
+  weighting between the two axes to justify, unlike e.g. a manually-chosen linear combination.
+  Verified to behave as intended on the real data: it moves substantially toward higher-success
+  points exactly where the Pareto front has real curvature to exploit (tower_of_hanoi:
+  `tle_mean_entropy` theta1/theta2 move from (0.8, 0.9) to (0.1, 0.9), success_proxy 0.1405 ->
+  0.3228; `vc` from (0.8, 0.9) to (0.6, 0.9), success_proxy 0.1466 -> 0.2071), while staying close
+  to the old selection where the front is nearly flat (textworld, where H1a found TLE does not
+  discriminate well: `tle_mean_entropy` theta1/theta2 move only from (0.8, 0.9) to (0.7, 0.8),
+  success_proxy 0.1765 -> 0.1785; `vc`'s front has only 2 points and correctly falls back to
+  (0.8, 0.9) unchanged, see the 2-point tie-break note below). This cross-domain pattern is itself
+  a coherent internal-consistency check against H1a's already-confirmed discrimination result,
+  not a coincidence.
+- **2-point-front tie-break bug caught before shipping:** `_select_knee_point`'s normalized score
+  is mathematically undefined (both extreme points score exactly 0) whenever the Pareto front has
+  exactly 2 points, since Pareto non-domination forces the higher-success point to also have
+  weakly-higher cost, making the two points' normalized coordinates exactly (1,1) and (0,0) by
+  construction. An early version silently picked whichever point came first in iteration order
+  (lower `theta1`, arbitrary from the caller's perspective) — caught by a regression test
+  (`test_select_knee_point_stays_near_cheapest_when_front_is_flat`) before this artifact was
+  finalized, not discovered by accident. Fixed with an explicit secondary tie-break toward lower
+  token cost.
+- **Provenance:** the artifact JSON now carries `"selection_rule": "knee_point_normalized_tradeoff"`
+  per signal (`build_policy_artifact`), so any reader of the artifact itself (not just this ADR)
+  can see which tie-break rule actually produced the thresholds it contains.
+- **Thesis prose impact:** `chapters/05_methodology.md` §5.4's "resolved by the most token-
+  efficient point on that front" sentence needs a small revision to describe the knee-point rule
+  and cite this deviation explicitly — flagged for the prose-writing session
+  (`../metacog-thesis/notes/phase1_results_handover_2026-08-04.md`, not made directly in this
+  repo since the prose lives in the sibling repo).
+- **Tests:** `tests/analysis/test_thresholds_grid.py` — 3 new (`_select_knee_point` picks a
+  balanced interior point on a front with real curvature, falls back to the cheap point on a flat
+  front, single-candidate-front no-op). 477 tests green, ruff/mypy clean.
+- **Date:** 2026-08-04.

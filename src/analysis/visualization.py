@@ -534,6 +534,85 @@ def plot_episode_length_boxplot(
     return {"boxplot_episode_length": str(p)}
 
 
+def plot_h2_pareto(
+    arms: dict[str, dict[str, float | None]],
+    output_dir: str | Path,
+    *,
+    name: str,
+    title: str | None = None,
+) -> dict[str, str]:
+    """
+    H2 Pareto plot: success rate (y) vs. output tokens (x, log scale) per arm, with a bootstrap
+    CI cross on both axes (thesis §5.8: "displayed as a Pareto plot of success against output
+    tokens with confidence intervals on both axes").
+
+    ``arms`` maps an arm label (e.g. "adaptive_tle", "always_c2") to a dict with keys
+    ``tokens_mean``, ``tokens_ci_low``, ``tokens_ci_high``, ``success_mean``, ``success_ci_low``,
+    ``success_ci_high`` -- absolute per-arm statistics, not the paired difference that
+    ``h2_paired`` returns (the difference is what the confirmatory decision rests on; the
+    absolute values are what the plot needs to be readable as a trade-off).
+    """
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except Exception:
+        return {}
+    if not arms:
+        return {}
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(6.2, 4.6))
+    # Fixed colors for the known spectrum arms so repeated plots stay visually consistent;
+    # anything else (e.g. a custom label) falls back to matplotlib's default cycle.
+    known_colors = {
+        "always_c0": "tab:gray",
+        "always_c1": "tab:orange",
+        "adaptive_tle": "tab:green",
+        "adaptive_vc": "tab:blue",
+        "always_c2": "tab:red",
+    }
+    cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", ["tab:purple"])
+    for label, s in arms.items():
+        x = s.get("tokens_mean")
+        y = s.get("success_mean")
+        if x is None or y is None:
+            continue
+        xerr = None
+        xlo, xhi = s.get("tokens_ci_low"), s.get("tokens_ci_high")
+        if xlo is not None and xhi is not None:
+            xerr = [[max(0.0, x - xlo)], [max(0.0, xhi - x)]]
+        yerr = None
+        ylo, yhi = s.get("success_ci_low"), s.get("success_ci_high")
+        if ylo is not None and yhi is not None:
+            yerr = [[max(0.0, y - ylo)], [max(0.0, yhi - y)]]
+        color = known_colors.get(label, cycle[hash(label) % len(cycle)])
+        ax.errorbar(
+            [x],
+            [y],
+            xerr=xerr,
+            yerr=yerr,
+            fmt="o",
+            markersize=8,
+            color=color,
+            capsize=4,
+            label=label,
+        )
+    ax.set_xscale("log")
+    ax.set_xlabel("Mean output tokens per episode (log scale)")
+    ax.set_ylabel("Success rate")
+    ax.set_ylim(-0.02, 1.02)
+    ax.grid(True, alpha=0.3, which="both")
+    if title:
+        ax.set_title(title)
+    ax.legend(loc="best", fontsize=9, frameon=False)
+    fig.tight_layout()
+    p = output_dir / f"h2_pareto_{name}.png"
+    fig.savefig(p, dpi=160)
+    plt.close(fig)
+    return {f"h2_pareto_{name}": str(p)}
+
+
 def plot_bootstrap_distribution(
     reps: list[float],
     output_dir: str | Path,

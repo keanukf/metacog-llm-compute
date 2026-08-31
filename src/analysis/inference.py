@@ -310,28 +310,42 @@ def h2_paired(
     Both ``succ_diff`` (policy success − baseline success) and ``log_tok_diff`` (log baseline
     tokens − log policy tokens) are oriented so that *larger is better*; both decision rules
     therefore use the **lower** CI bound.
+
+    Phase 2 collects ``runs_per_condition`` (5 in production) episodes per (domain, instance,
+    strategy) cell. Every run for a cell is averaged into one (mean success rate, mean tokens)
+    summary *before* pairing -- an earlier version kept a single ``dict[strategy] = episode``
+    entry per cell, so each later run silently overwrote the previous one and only the last of
+    the 5 runs ever reached the paired comparison (found via the H2 power simulation,
+    docs/consistency_log.md 2026-08-05, before any real Phase 2 data existed to be corrupted by
+    it). With ``runs_per_condition=1`` (all existing unit tests) this is a no-op: averaging one
+    value returns that value.
     """
-    by_inst: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    by_inst: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
     for ep in episodes:
         if bool(ep.get("holdout")):
             continue
         key = f"{ep.get('domain')}:{ep.get('instance')}"
         strat = str(ep.get("strategy", ""))
-        by_inst[key][strat] = ep
+        by_inst[key][strat].append(ep)
+
+    def _mean_success(runs: list[dict[str, Any]]) -> float:
+        return sum(float(bool(r.get("task_success"))) for r in runs) / len(runs)
+
+    def _mean_tokens(runs: list[dict[str, Any]]) -> float:
+        return sum(max(1.0, float(r.get("total_tokens_generated") or 1)) for r in runs) / len(runs)
 
     paired_rows: list[dict[str, Any]] = []
     for key, m in by_inst.items():
         if policy_strategy not in m or baseline not in m:
             continue
-        p = m[policy_strategy]
-        b = m[baseline]
-        tp = max(1.0, float(p.get("total_tokens_generated") or 1))
-        tb = max(1.0, float(b.get("total_tokens_generated") or 1))
+        p_runs = m[policy_strategy]
+        b_runs = m[baseline]
+        tp = _mean_tokens(p_runs)
+        tb = _mean_tokens(b_runs)
         paired_rows.append(
             {
                 "instance_key": key,
-                "succ_diff": float(bool(p.get("task_success")))
-                - float(bool(b.get("task_success"))),
+                "succ_diff": _mean_success(p_runs) - _mean_success(b_runs),
                 "log_tok_diff": math.log(tb) - math.log(tp),
             }
         )
@@ -351,6 +365,19 @@ def h2_paired(
     )
     succ_ci_low = succ_boot["ci_low"]
     log_ci_low = log_boot["ci_low"]
+    # One-sided bootstrap p-values for each component test (thesis §5.8 Family B / Holm input).
+    # H2 is a compound "non-inferiority AND superiority" (intersection-union) claim, so its
+    # family-level p-value is the max of the two component p-values (Berger, 1982 IUT
+    # principle): the compound claim is only as strong as its weaker component, and the CI
+    # bound itself is not a p-value (see one_sided_bootstrap_pvalue docstring).
+    non_inf_pvalue = (
+        one_sided_bootstrap_pvalue(succ_boot["reps"], null_value=-delta)
+        if succ_boot["reps"]
+        else 1.0
+    )
+    superiority_pvalue = (
+        one_sided_bootstrap_pvalue(log_boot["reps"], null_value=0.0) if log_boot["reps"] else 1.0
+    )
     return {
         "n_pairs": len(paired_rows),
         "delta": delta,
@@ -362,6 +389,9 @@ def h2_paired(
         "log_token_ci_high": log_boot["ci_high"],
         "non_inferiority_holds": succ_ci_low is not None and succ_ci_low > -delta,
         "token_superiority_holds": log_ci_low is not None and log_ci_low > 0,
+        "non_inferiority_pvalue": non_inf_pvalue,
+        "token_superiority_pvalue": superiority_pvalue,
+        "family_pvalue": max(non_inf_pvalue, superiority_pvalue),
     }
 
 

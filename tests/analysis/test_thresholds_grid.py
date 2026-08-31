@@ -11,11 +11,48 @@ from __future__ import annotations
 
 from src.analysis.thresholds import (
     _match_proxy,
+    _select_knee_point,
     build_ecdf_ref,
     build_ecdf_ref_by_stage,
     grid_search_thresholds,
 )
 from src.utils.logging_utils import compact_episode_for_storage
+
+
+def test_select_knee_point_picks_balanced_tradeoff_not_cheapest_extreme():
+    """2026-08-04, ADR-009: the preregistered tie-break (minimum absolute tokens) always picks the
+    single cheapest Pareto point regardless of how much success it sacrifices -- verified on real
+    Phase 1 data to collapse the adaptive policy to near-Always-C0 even where the signal clearly
+    helps (tower_of_hanoi). The knee point must instead choose an interior, balanced point when the
+    front has real curvature (large success gains available for a moderate cost increase)."""
+    front = [
+        {"theta1": 0.1, "theta2": 0.2, "success_proxy": 0.32, "token_proxy": 9_000_000},
+        {"theta1": 0.3, "theta2": 0.5, "success_proxy": 0.30, "token_proxy": 5_500_000},
+        {"theta1": 0.6, "theta2": 0.8, "success_proxy": 0.22, "token_proxy": 3_600_000},
+        {"theta1": 0.8, "theta2": 0.9, "success_proxy": 0.14, "token_proxy": 2_100_000},
+    ]
+    knee = _select_knee_point(front)
+    # Must not degenerate to the cheapest-tokens extreme (0.8, 0.9) -- that's the exact behavior
+    # being replaced.
+    assert (knee["theta1"], knee["theta2"]) != (0.8, 0.9)
+
+
+def test_select_knee_point_stays_near_cheapest_when_front_is_flat():
+    """When success barely varies across the front (little signal to exploit -- the real
+    textworld case), the knee point should land close to the cheap end anyway, since there's no
+    real success to trade cost for. Confirms the knee point isn't just "always pick a pricier
+    point" -- it tracks how much curvature is actually on the front."""
+    front = [
+        {"theta1": 0.1, "theta2": 0.2, "success_proxy": 0.184, "token_proxy": 10_000_000},
+        {"theta1": 0.8, "theta2": 0.9, "success_proxy": 0.177, "token_proxy": 1_700_000},
+    ]
+    knee = _select_knee_point(front)
+    assert (knee["theta1"], knee["theta2"]) == (0.8, 0.9)
+
+
+def test_select_knee_point_single_candidate_front():
+    front = [{"theta1": 0.5, "theta2": 0.6, "success_proxy": 0.2, "token_proxy": 1_000_000}]
+    assert _select_knee_point(front) is front[0]
 
 
 def test_build_ecdf_ref_by_stage_from_holdout():

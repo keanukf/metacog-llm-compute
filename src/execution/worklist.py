@@ -77,9 +77,15 @@ def build_phase2_worklist(
     )
     runs = int(phase2.get("runs_per_condition", 5))
     jobs: list[EpisodeJob] = []
-    for domain in domains:
-        for inst in range(instances_per_domain):
-            for strategy in strategies:
+    # Strategy is the outermost loop (not domain/instance) so that build_phase2_worklist's own
+    # output is already strategy-major -- group_jobs_by_strategy() below relies on same-strategy
+    # jobs being contiguous. This keeps concurrent execution stage-homogeneous per block, matching
+    # the only batch composition the Gate C-1 TLE invariance probe actually validated (see
+    # docs/consistency_log.md 2026-08-04 "Phase-2-Strategieblöcke"); interleaving strategies at
+    # different compute-stage temperatures concurrently was never tested.
+    for strategy in strategies:
+        for domain in domains:
+            for inst in range(instances_per_domain):
                 for run in range(runs):
                     ep_id = f"ep_{domain}_{inst}_{strategy}_{run}"
                     if ep_id in completed or ep_id in quarantined:
@@ -95,6 +101,24 @@ def build_phase2_worklist(
                         )
                     )
     return jobs
+
+
+def group_jobs_by_strategy(jobs: list[EpisodeJob]) -> list[list[EpisodeJob]]:
+    """Partition a strategy-major-ordered job list into contiguous per-strategy blocks.
+
+    Preserves first-seen order; assumes same-strategy jobs are already contiguous (true for
+    ``build_phase2_worklist``'s output). Used to run each block through the scheduler to
+    completion before starting the next, so no two strategies' jobs are ever concurrently
+    in-flight together.
+    """
+    groups: list[list[EpisodeJob]] = []
+    current_strategy: str | None = None
+    for job in jobs:
+        if not groups or job.strategy != current_strategy:
+            groups.append([])
+            current_strategy = job.strategy
+        groups[-1].append(job)
+    return groups
 
 
 def expected_episode_ids(jobs: list[EpisodeJob]) -> list[str]:

@@ -35,8 +35,10 @@ phase1:
 phase2:
   domains: ["textworld", "tower_of_hanoi"]
   instances_per_domain: 50
-  # Required for adaptive_tle, adaptive_vc, eager_style (hard-fail if missing).
-  # policy_artifact: "data/results/phase1/threshold_artifact.json"
+  # Required for adaptive_tle, adaptive_vc, eager_style (hard-fail if missing). Built by
+  # scripts/phase2_prep/build_threshold_artifact.py against the real Phase 1 canonical dataset
+  # (see docs/consistency_log.md 2026-08-04 entry, docs/adrs.md ADR-009 for the selection rule).
+  policy_artifact: "data/results/phase1/threshold_artifact.json"
   strategies:
     - adaptive_tle
     - adaptive_vc
@@ -59,10 +61,12 @@ paths:
 logging:
   # off | action_window | full — production: action_window (TLE reanalysis without reasoning bloat)
   logprob_sidecar_mode: action_window
-  # Full reasoning sidecars — non-holdout only (mod-10 holdout: 0,10,20,30,40)
-  logprob_sidecar_full_instances:
-    textworld: [1, 2, 3]
-    tower_of_hanoi: [1, 2, 3]
+  # Full reasoning sidecars intentionally OFF for Phase 2 (see docs/consistency_log.md 2026-08-04
+  # "Full reasoning logprob sidecars dropped for Phase 2"). Phase 1 already collected this subset
+  # (data/results/phase1/, 6 non-holdout instances x 3 stages x 5 runs, still on disk) and no
+  # implemented or preregistered analysis reads reasoning-token logprobs -- re-collecting it in
+  # Phase 2 would only add multi-hundred-GB storage risk to a one-shot run for no analytical gain.
+  logprob_sidecar_full_instances: {}
   logprob_export_format: json
   logprob_subdir: logprobs
   save_vc_distributions: false
@@ -74,7 +78,9 @@ logging:
   debug_view_tail_chars: 800
 
 tracing:
-  langfuse_enabled: true
+  langfuse_enabled: false  # disabled 2026-08-10: Langfuse quota exhausted mid-run (403 Forbidden
+  # on every export for the rest of the run); purely additive observability, no effect on collected
+  # episode data (src/utils/tracing.py: no-op when disabled). Re-enable once quota/plan is sorted.
 
 # Compute stage C1 (single reasoning call).
 c1:

@@ -5,8 +5,11 @@ This is where the frozen adaptive allocator is *fitted*: ``grid_search_threshold
 ``build_policy_artifact`` search the (theta1 < theta2) pair on the Phase-1 holdout (5 instances per
 domain) against the ``step_level_proxy_v1`` objective -- per-stage ECDF normalization of the signal,
 stage-matched against Phase-1 cell outcomes with an exact->mean-over-runs->nearest-position fallback
-cascade, then the token-cheapest point on the success/token Pareto front. It also fits an optional
-Platt calibrator (p(optimal) = sigmoid(a*x+b)) for RQ1 reporting.
+cascade, then a knee-point selection on the success/token Pareto front (see ``_select_knee_point``
+docstring for why this deviates from the originally preregistered "most token-efficient" =
+minimum-absolute-tokens tie-break, and ``docs/adrs.md`` ADR-009 for the full empirical justification
+against real Phase 1 data). It also fits an optional Platt calibrator (p(optimal) = sigmoid(a*x+b))
+for RQ1 reporting.
 
 Two paths coexist: the production ``grid_search`` path (used when holdout flags are present) and a
 legacy quantile fallback (``derive_stage_thresholds``) for artifacts with no holdout metadata.
@@ -443,6 +446,49 @@ def _pareto_nondominated(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return nd
 
 
+def _select_knee_point(front: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Select the balanced-trade-off ("knee") point on a success/token Pareto front: the candidate
+    maximizing (normalized success - normalized token cost), min-max normalized within the front
+    so both axes are weighted equally with no extra free parameter to justify.
+
+    Deviates from the originally preregistered tie-break ("most token-efficient point on the
+    front", literally implemented as minimum absolute token_proxy) -- see ADR-009
+    (``docs/adrs.md``) for the full justification. Short version: on the real Phase 1 holdout
+    data, minimum-absolute-tokens always selects the single cheapest Pareto point regardless of
+    domain (theta1=0.8, theta2=0.9 in all four domain x signal cells), which collapses the
+    adaptive policy to near-Always-C0 -- including in tower_of_hanoi, where TLE is known to
+    discriminate strongly (H1a holds there) and the Pareto front's best point reaches more than
+    double the success proxy for a moderate token increase. A "success/token ratio" alternative
+    was also tested and rejected: it selects the *same* degenerate extreme point in every cell,
+    because a very small token_proxy denominator dominates the ratio regardless of the numerator
+    -- not a real efficiency measure, just cost-minimization by another name. The knee point is a
+    standard, parameter-free multi-objective selection method (maximum normalized distance toward
+    the ideal corner) that instead tracks how informative the signal actually is: it stays close
+    to the old selection where the Pareto front is nearly flat (textworld, where H1a found TLE
+    doesn't discriminate well) and moves substantially toward higher-success points where the
+    front has real structure to exploit (tower_of_hanoi).
+    """
+    succs = [p["success_proxy"] for p in front]
+    toks = [p["token_proxy"] for p in front]
+    s_min, s_max = min(succs), max(succs)
+    t_min, t_max = min(toks), max(toks)
+
+    def _score(p: dict[str, Any]) -> float:
+        s_norm = (p["success_proxy"] - s_min) / (s_max - s_min) if s_max > s_min else 0.0
+        t_norm = (p["token_proxy"] - t_min) / (t_max - t_min) if t_max > t_min else 0.0
+        return s_norm - t_norm
+
+    # A front with exactly 2 points is a mathematical degenerate case for this score: Pareto
+    # non-domination forces the higher-success point to also have (weakly) higher cost, so the
+    # two points' normalized (s_norm, t_norm) pairs are always exactly (1, 1) and (0, 0) -- both
+    # score to 0, an unbreakable tie by construction, not a coding oversight. Break it toward the
+    # cheaper point: with only two candidate operating points and no real interior trade-off to
+    # exploit (this is exactly what happens on a near-flat front, e.g. textworld's real Phase 1
+    # data, where the signal barely discriminates), preferring economy is the defensible default.
+    return max(front, key=lambda p: (_score(p), -p["token_proxy"]))
+
+
 def grid_search_thresholds(
     holdout_steps: list[dict],
     phase1_pool_rows: list[dict],
@@ -527,7 +573,7 @@ def grid_search_thresholds(
     if not front:
         best = candidates[0] if candidates else None
     else:
-        best = min(front, key=lambda x: (x["token_proxy"], -x["success_proxy"]))
+        best = _select_knee_point(front)
     return {
         "signal": signal,
         "theta1": best["theta1"] if best else None,
@@ -536,6 +582,8 @@ def grid_search_thresholds(
         "direction": direction,
         "grid_table": grid_table,
         "objective_definition": OBJECTIVE_DEFINITION,
+        # 2026-08-04, ADR-009: deviates from the preregistered minimum-token tie-break.
+        "selection_rule": "knee_point_normalized_tradeoff",
         "selected": best,
         "pareto_front": front,
     }
@@ -595,7 +643,9 @@ def build_policy_artifact(
                         "direction",
                         "grid_table",
                         "objective_definition",
+                        "selection_rule",
                     )
+                    if k in gs
                 },
                 "calibrator": platt_fit,
                 "platt_fit": "holdout",

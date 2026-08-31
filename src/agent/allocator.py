@@ -20,7 +20,13 @@ STRATEGIES = ("adaptive_tle", "adaptive_vc", "always_c0", "always_c2", "random",
 _POLICY_STRATEGIES = frozenset({"adaptive_tle", "adaptive_vc"})
 
 
-def _raw_signal_value(signal: dict[str, Any] | None, strategy: str) -> float | None:
+def raw_signal_value(signal: dict[str, Any] | None, strategy: str) -> float | None:
+    """Extract the raw TLE/VC value ``allocate()`` would feed into a policy lookup for this
+    strategy. Public (not ``_``-prefixed) so callers that need the same extraction for their own
+    diagnostics -- e.g. ``base_agent.py`` logging the policy's continuous ``uncertainty_score``
+    alongside the discrete stage decision, thesis Ch.7.4 -- reuse this instead of re-deriving it,
+    which would risk the two independently drifting apart (see ADR-006/P0-5 for why that's a real
+    failure mode in this codebase, not a hypothetical one)."""
     if not signal:
         return None
     if strategy in ("adaptive_tle", "eager_style"):
@@ -94,14 +100,14 @@ def allocate(
             return "C0"
         if episode_fixed_stage is not None:
             return episode_fixed_stage
-        raw = _raw_signal_value(signal, strategy)
+        raw = raw_signal_value(signal, strategy)
         if raw is not None and policy is not None:
             return policy.stage(raw, source_stage=source_stage)
         if raw is not None:
             return _pilot_threshold_stage(raw, strategy)
         return "C0"
     if strategy in _POLICY_STRATEGIES:
-        raw = _raw_signal_value(signal, strategy)
+        raw = raw_signal_value(signal, strategy)
         if raw is None:
             return "C0"
         if policy is not None:
@@ -124,7 +130,7 @@ def eager_fixed_stage_from_signal(
     policy: FrozenPolicy | None = None,
 ) -> str | None:
     """Map step-0 signal to episodenfixed stage for ``eager_style`` (Table 5.1)."""
-    raw = _raw_signal_value(signal, "eager_style")
+    raw = raw_signal_value(signal, "eager_style")
     if raw is None:
         return None
     if policy is not None:

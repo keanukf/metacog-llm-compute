@@ -33,6 +33,14 @@ _MINIMAL_STEP_KEYS = frozenset(
         "lm_calls",
         "lm_calls_this_step",
         "correctness",
+        # Phase 2 adaptive-allocation decision provenance (2026-08-04) -- the continuous score a
+        # policy-driven decision actually used, not just the discrete compute_stage it collapsed
+        # to. Same rationale as prompt_tokens' compact-storage gap (ADR-008): compute it correctly
+        # in memory and then silently strip it before it reaches disk is worse than never
+        # computing it at all.
+        "allocator_uncertainty_score",
+        "allocator_theta1",
+        "allocator_theta2",
     }
 )
 
@@ -140,12 +148,12 @@ def _iso_utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _sha256_file(path: str | Path) -> str:
+def sha256_file(path: str | Path) -> str:
     data = Path(path).read_bytes()
     return hashlib.sha256(data).hexdigest()
 
 
-def _try_git_commit(repo_root: str | Path) -> str | None:
+def try_git_commit(repo_root: str | Path) -> str | None:
     try:
         out = subprocess.check_output(
             ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
@@ -200,11 +208,11 @@ def write_run_metadata(
         "run_id": str(uuid.uuid4()),
         "script": str(script),
         "config_path": str(config_path),
-        "config_hash": _sha256_file(config_path),
+        "config_hash": sha256_file(config_path),
         "model_name": str(model_name),
         "model_dtype": str(model_dtype),
         "pilot_mode": str(pilot_mode),
-        "git_commit": _try_git_commit(repo_root),
+        "git_commit": try_git_commit(repo_root),
         "timestamp_start_utc": _iso_utc_now(),
         "python_version": sys.version.split()[0],
         "hostname": socket.gethostname(),

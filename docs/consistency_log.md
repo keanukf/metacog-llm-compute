@@ -2,6 +2,506 @@
 
 Durchlaufendes Verifikationslog für Thesis–Code-Abgleich. Neue Einträge mit Datum oben anfügen.
 
+## 2026-08-14 — Threshold-Sensitivitätsanalyse: wie stark hat der Holdout-Bug den deployten TextWorld-Allocator tatsächlich verändert
+
+**Zweck:** Nachlieferung der in Kapitel 5 §5.9 versprochenen, aber nie gelieferten "reported
+sensitivity analysis around the selected thresholds" (Begründung dort: fünf Holdout-Instanzen sind
+eine kleine, varianzanfällige Stichprobe für die Schwellenwertwahl). Der TextWorld-Holdout-Bug
+(Eintrag unmittelbar unten) liefert dafür einen realen, bereits eingetretenen Fall statt eines
+hypothetischen: "deployte" Schwellenwerte (gefittet auf die falschen fünf Instanzen) vs.
+"korrigierte" Schwellenwerte (gefittet auf die präregistrierten fünf) lassen sich direkt vergleichen.
+
+**Neues Skript:** `scripts/phase2_prep/threshold_sensitivity_analysis.py` (+ Test
+`tests/scripts/test_threshold_sensitivity_analysis.py`, 3 Tests, grün). Rekonstruiert beide
+Konfigurationen aus den rohen Phase-1-Daten über dieselbe `grid_search_thresholds()`-Funktion, die
+auch der echte Threshold-Artefakt-Build nutzt — nichts ist von Hand aus einem früheren Lauf
+übernommen. Neue Konstante `TEXTWORLD_DEPLOYED_WRONG_HOLDOUT_INSTANCES_HISTORICAL = {0,1,2,3,4}`
+in `src/analysis/phase1_canonical.py`, explizit als "nur für diese Rekonstruktion, sonst nirgends
+verwenden" markiert. Kostet keine neue GPU-Zeit — arbeitet ausschließlich mit bereits vorhandenen
+Daten. Output: `data/results/phase2_analysis/threshold_sensitivity/textworld_sensitivity.json`.
+
+**Zwei Vergleiche:**
+
+1. **Proxy-Objective-Gap** — wo landet das deployte Paar auf dem korrekt ausgewerteten
+   Pareto-Front (beide Paare liegen auf demselben 0,1–0,9-Raster, daher direktes Nachschlagen statt
+   erneuter Suche)?
+2. **Realized-Routing-Gap** — die tatsächlich beobachteten Phase-2-TextWorld-Signalwerte (aus den
+   echten `adaptive_tle`/`adaptive_vc`-Episoden) noch einmal durch beide Policies geroutet: wie
+   unterschiedlich hätten sich die beiden Konfigurationen in der Praxis tatsächlich verhalten?
+
+**Ergebnis — deutlich gravierender als die reinen Theta-Zahlen vermuten lassen:**
+
+| Signal | deployt (θ1/θ2) | korrigiert (θ1/θ2) | Proxy-Erfolg deployt vs. korrigiert (auf korrektem Holdout ausgewertet) | Realisiertes Routing deployt (C0/C1/C2) | Realisiertes Routing korrigiert (C0/C1/C2) |
+|---|---|---|---|---|---|
+| TLE | 0,70/0,80 | 0,10/0,90 | 0,174 vs. 0,292 | 75,5% / 10,7% / 13,8% | 30,6% / 62,7% / 6,7% |
+| VC | 0,80/0,90 | 0,10/0,90 | 0,130 vs. 0,271 | **97,7% / 0,0% / 2,3%** | 9,8% / 88,0% / 2,3% |
+
+Für VC ist der Befund eindeutig: die deployte Policy hat in TextWorld **97,7% aller Schritte auf C0
+(Direktinferenz) geroutet** — praktisch ununterscheidbar von Always-C0 (Table 7.3:
+Always-C0-Erfolgsrate .239, `adaptive_vc`-Erfolgsrate .296). Die schwache Performance von
+`$\pi_{\mathrm{VC}}$` in TextWorld (Kapitel 7) ist damit zu einem erheblichen Teil ein Artefakt
+dieses spezifischen Threshold-Fitting-Fehlers, nicht (nur) ein Beleg dafür, dass VC als Signal für
+Allokation ungeeignet ist — die korrekt gefittete Policy hätte 88% der Schritte auf C1 eskaliert,
+ein fundamental anderes Verhalten. Für TLE ist der Effekt in dieselbe Richtung, aber schwächer
+ausgeprägt (deployt eskaliert deutlich seltener als korrigiert, aber nicht fast nie).
+
+**Einordnung, nicht überinterpretieren:** das ändert nichts an den in Kapitel 7 berichteten
+H2-Zahlen — die wurden korrekt auf Basis der tatsächlich gelaufenen (deployten) Episoden berechnet,
+und genau das war immer die richtige Auswertung dessen, was tatsächlich passiert ist. Was sich
+ändert, ist die *Interpretation*: der TextWorld-VC-Befund ist weniger eine Aussage über
+"Verbalized Confidence als Allokationssignal" im Allgemeinen und mehr eine Aussage über "diese eine,
+durch einen Daten-Labeling-Fehler fast auf Always-C0 kollabierte VC-Policy" im Speziellen. Diese
+Differenzierung gehört in die Diskussion (Kapitel 8 §8.1/§8.4), noch nicht dort eingearbeitet —
+zurückgestellt, bis der Nutzer mit der übrigen Prosa nachgezogen hat.
+
+## 2026-08-14 — TextWorld-Holdout-Inkonsistenz zwischen Phase 1 und Phase 2: Befund, Root Cause, Fix
+
+**Zweck:** Beim Schreiben des explorativen Always-C0/Always-C1-Vergleichs (Stage 2,
+`scripts/phase2_analysis/stage2_c0_c1_reference.py`) fiel eine Diskrepanz auf: das Skript lieferte für
+TextWorld $N=41$ gepaarte Instanzen statt der erwarteten $45$ (= $50$ minus den 5 präregistrierten
+Holdout-Instanzen). Auf explizite Anweisung des Nutzers ("Das musst du unbedingt ganz genau
+untersuchen ... du musst dir ganz sicher sein") wurde die Ursache mit Primärdaten (nicht Spekulation)
+vollständig zurückverfolgt: Git-Historie des Manifests, direkte JSON-Inspektion aller drei
+Rohdatenquellen, Code-Inspektion jedes Skripts, das das `holdout`-Feld konsumiert.
+
+**Befund (mit harten Belegen, nicht Vermutung):**
+
+- Das Manifest (`data/tasks/textworld/difficulty_manifest.json`, `git log --follow`: ein einziger
+  Commit `e34853b`, Gate D, 2026-07-18) war **immer korrekt**: `holdout_policy: mod-10`, Holdout =
+  Instanzen `{0, 10, 20, 30, 40}`.
+- Die ursprüngliche Phase-1-Sammlung (`data/results/phase1/phase1_20260722_091125/`) hatte für
+  TextWorld korrekte `holdout`-Labels (übereinstimmend mit dem Manifest) — aber dieser Ordner ist für
+  TextWorld ungültig (45/50 Spiel-Dateien fehlten zur Laufzeit, `src/analysis/phase1_canonical.py`
+  verwendet aus diesem Ordner nur `tower_of_hanoi`).
+- Die kanonische TextWorld-Quelle, die Regen-Sammlung (`data/results/phase1/
+  textworld_regen_20260724/`), hat **falsche** `holdout`-Labels: empirisch verifiziert (direkte
+  JSON-Inspektion aller 750 Episoden) als `holdout=True` für Instanzen `{0,1,2,3,4}` (die ersten
+  fünf, nicht mod-10) statt `{0,10,20,30,40}`. Herkunft: `run_metadata.json` dieser Sammlung verweist
+  auf `configs/dev/textworld_regen_real.yaml`, eine nie committete Dev-Config — nicht mehr
+  rekonstruierbar, welcher konkrete Codepfad die falsche Split-Logik erzeugt hat.
+- Phase 2 (`data/results/phase2/phase2_stage1_20260805_UTC/`) hat **korrekte** `holdout`-Labels
+  (`{0,10,20,30,40}`, verifiziert über alle 2250 TextWorld-Episoden) — Phase 2 lief später, gegen den
+  zu dem Zeitpunkt bereits korrekten Manifest-Stand.
+
+**Downstream-Wirkung, präzise abgegrenzt (nicht die pauschale "ganze Phase 2 kontaminiert"-Befürchtung
+des Nutzers):**
+
+- `scripts/phase2_prep/build_threshold_artifact.py` fittet die Allocator-Schwellenwerte auf den
+  `holdout=True`-Steps (bewusstes Design: der reservierte Holdout-Anteil wird zum Fitten verwendet,
+  nicht zum Evaluieren — siehe `write_threshold_artifact`/`grid_search_thresholds`). Unter den
+  falschen Regen-Labels wurden die Schwellenwerte also auf Instanzen `{0,1,2,3,4}` gefittet statt auf
+  die präregistrierten `{0,10,20,30,40}`.
+- Instanzen `{10,20,30,40}` wurden dadurch **nicht** zum Fitten verwendet (unter den falschen Labels
+  als `holdout=False` markiert) — verschwendete, aber nicht kontaminierende Abweichung: diese vier
+  Instanzen sind unter beiden Label-Schemata konsistent von der Phase-2-Konfirmatorik ausgeschlossen.
+  Instanz `0` ist unter beiden Schemata `holdout=True` — ebenfalls sauber, konsistent gefittet UND
+  konsistent ausgeschlossen.
+- Die eigentliche Zirkularität betrifft genau **vier Instanzen, `{1,2,3,4}`**: unter den falschen
+  Regen-Labels wurden sie zum Fitten der deployten Allocator-Schwellenwerte verwendet; unter dem
+  korrekten Manifest sind sie **nicht** Holdout und wurden daher korrekt in Phase 2s konfirmatorischer
+  H2-Stichprobe ($N=45$) mitgeführt — Fitting-Instanz und Evaluations-Instanz überlappen für diese
+  vier.
+- H1a, H3, H4 sind unberührt (kein Holdout-Gebrauch, verifiziert per `grep` in
+  `scripts/phase1_analysis/stage4_h3_temporal.py`, `stage5_h4_domain_modulation.py`). H1b
+  (`stage3_h1b_calibration.py`) ist betroffen, aber **nicht zirkulär** — Fit-Set und Eval-Set blieben
+  unter den falschen Labels disjunkt, nur eben die falschen fünf Instanzen statt der
+  präregistrierten. Tower of Hanoi ist in jeder Hinsicht unberührt (Manifest und eingebettetes Feld
+  stimmen dort überein).
+
+**Fix (Nutzer-Freigabe: "Ja, mach das bitte so."), umgesetzt 2026-08-14:**
+
+- Neue Korrektur-Utility `src/analysis/phase1_canonical.py::apply_textworld_holdout_correction()` mit
+  zwei benannten Instanzmengen: `TEXTWORLD_TRUE_HOLDOUT_INSTANCES = {0,10,20,30,40}` (für
+  Fitting-Kontexte: Threshold-Artefakt, H1b-Kalibrator) und
+  `TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES = {0,1,2,3,4,10,20,30,40}` (Vereinigung, für
+  Evaluations-Kontexte der bereits deployten Phase-2-Policy: H2, C0/C1-Spektrum-Referenz) — entfernt
+  die Fit/Eval-Überlappung, indem die 4 kontaminierten Instanzen zusätzlich zu den 5 echten Holdout-
+  Instanzen ausgeschlossen werden. Überschreibt das `holdout`-Feld pro Zeile anhand der `instance`-ID,
+  nur für `domain == "textworld"`; Tower of Hanoi unangetastet.
+- Verdrahtet in allen vier Konsumenten: `build_threshold_artifact.py` (TRUE-Set),
+  `stage3_h1b_calibration.py` (TRUE-Set), `stage1_h2_adaptive_allocation.py` (CONFIRMATORY-Set, Phase-
+  2-Episoden), `stage2_c0_c1_reference.py` (CONFIRMATORY-Set, Phase-1- **und** Phase-2-Episoden vor dem
+  Pooling).
+- Testsuite-Kollision behoben: `tests/scripts/test_build_threshold_artifact.py` verwendete
+  Instanz-IDs `0-9`, die zufällig mit den echten Produktions-IDs kollidierten und dadurch nach der
+  Korrektur ein falsches Testergebnis erzeugten — Fixture umgestellt auf explizite IDs aus
+  `TEXTWORLD_TRUE_HOLDOUT_INSTANCES` für die Holdout-Gruppe und einen kollisionsfreien Offset-Bereich
+  (`1000+`) für die Pool-Gruppe. Volle Suite danach wieder grün (482 passed).
+- Alle vier betroffenen Analysen neu gerechnet: Threshold-Artefakt (`data/results/phase1/
+  threshold_artifact.json`), H1b (`data/results/phase1_analysis/stage3/h1b_calibration.json`), H2
+  (`data/results/phase2_analysis/stage1/h2_adaptive_allocation.json`), C0/C1-Referenz
+  (`data/results/phase2_analysis/stage2/c0_c1_reference.json`); alle zugehörigen Figuren mit
+  regeneriert. Tower-of-Hanoi-Zahlen in allen vier Outputs bitweise identisch zum Stand vor dem Fix
+  (Sanity-Check: der Fix rührt ausschließlich TextWorld an).
+
+**Ergebnis der Neuberechnung — qualitativer Befund unverändert, Zahlen korrigiert:**
+
+| Analyse | Vorher (falscher Holdout) | Nachher (korrigiert) |
+|---|---|---|
+| Threshold-Artefakt TextWorld TLE | $\theta_1=0.70, \theta_2=0.80$ | $\theta_1=0.10, \theta_2=0.90$ |
+| Threshold-Artefakt TextWorld VC | $\theta_1=0.80, \theta_2=0.90$ | $\theta_1=0.10, \theta_2=0.90$ |
+| H1b TextWorld ΔBrier | $-0.100$ $[-0.113,-0.088]$, $n_{\text{holdout}}=2398$ | $-0.111$ $[-0.124,-0.098]$, $n_{\text{holdout}}=2228$ — hält weiterhin |
+| H2 TextWorld $\pi_{\mathrm{TLE}}$ | $N=45$, $\Delta P=-0.156$ | $N=41$, $\Delta P=-0.193$ — Non-Inferiority weiterhin klar verfehlt, Superiority weiterhin gehalten |
+| H2 TextWorld $\pi_{\mathrm{VC}}$ | $N=45$, $\Delta P=-0.388$ | $N=41$, $\Delta P=-0.411$ — dito |
+
+**Wichtige, nicht durch den Fix behebbare Restlimitation:** der Ausschluss der 9 Instanzen entfernt
+die statistische Zirkularität aus der konfirmatorischen H2-Auswertung, ändert aber nichts daran, dass
+die tatsächlich in Phase 2 **deployte** Policy mit den falsch gefitteten (0.70/0.80 bzw. 0.80/0.90)
+statt den korrekten (0.10/0.90) Schwellenwerten gelaufen ist — die bereits gesammelten
+`adaptive_tle`/`adaptive_vc`-Episoden für TextWorld lassen sich nicht rückwirkend auf die korrekten
+Schwellenwerte umrechnen. Eine Neusammlung unter korrigierten Schwellenwerten wurde aus denselben
+Kosten-/Zeitgründen nicht angestoßen, die auch den ToH-Always-C2-Abbruch vom 2026-08-10 begründet
+haben. Diese Einschränkung ist explizit in der Thesis-Prosa offengelegt (`metacog-thesis`,
+Kapitel-7-Epigraph, Kapitel 8 §8.5) — das H2-TextWorld-Ergebnis ist konfirmatorisch für die
+tatsächlich deployte Policy bei $N=41$, nicht für die in Kapitel 5 spezifizierte Policy bei $N=50$.
+
+**Zusätzlich nachgeholt:** die vom Nutzer am selben Tag freigegebene ("Ja, arbeite das ein, bitte")
+Always-C0/Always-C1-Spektrum-Integration in die Thesis-Prosa war zum Zeitpunkt der Holdout-Entdeckung
+noch nicht geschrieben (nur der Code/die Daten existierten) — jetzt mit den korrigierten Zahlen als
+neuer §7.3 in `07_results_adaptive_allocation.md` nachgetragen, inkl. eines neuen, durch die
+Spektrum-Daten gestützten Arguments in Kapitel 8 §8.1 (ToH: `adaptive_tle` verbraucht praktisch
+identisch viele Tokens wie Always-C1, bleibt aber 9.8 Punkte hinter dessen Erfolgsrate zurück — spricht
+eher für "eskaliert auf den falschen Schritten" als für "eskaliert zu selten").
+
+## 2026-08-10 — Phase 2 Stage 1 abgebrochen: always_c2/tower_of_hanoi bleibt bei 12/50 Instanzen (explorativ)
+
+**Zweck:** Sauberer Abschlussbericht für die Phase-2-Stage-1-Sammlung (`data/results/phase2/
+phase2_stage1_20260805_UTC/`, Pod `phase2-stage1-h2power`, gestartet 2026-08-05). Nach ca. 5 Tagen
+Laufzeit und einem OOM-Problem, das ab 2026-08-09 ~02:04 UTC (78h in den Lauf) auftrat und trotz
+mehrerer Fixes nicht vollständig gelöst werden konnte, hat der Nutzer am 2026-08-10 entschieden, die
+Sammlung für `always_c2`/`tower_of_hanoi` an dieser Stelle abzubrechen — Budget/Zeit (Start Mittwoch
+2026-08-05, jetzt Montag, ~24h ganz ohne Episoden-Fortschritt trotz laufender Kosten) sind nicht mehr
+tragbar für weiteres Abwarten auf eine unsichere Lösung.
+
+**Finaler Datenstand (vollständig, nicht mehr laufend):**
+
+| Zelle | n | Status |
+|---|---|---|
+| `adaptive_tle` × textworld | 750/750 | vollständig, 50/50 Instanzen |
+| `adaptive_tle` × tower_of_hanoi | 750/750 | vollständig, 50/50 Instanzen |
+| `adaptive_vc` × textworld | 750/750 | vollständig, 50/50 Instanzen |
+| `adaptive_vc` × tower_of_hanoi | 750/750 | vollständig, 50/50 Instanzen |
+| `always_c2` × textworld | 750/750 | vollständig, 50/50 Instanzen |
+| `always_c2` × tower_of_hanoi | **183/750** | **unvollständig — 12/50 Instanzen voll (15/15 Runs), 1 Instanz teilweise (3/15), 37 Instanzen unberührt** |
+
+**Konsequenz für die Analyse:** H2 (Adaptive vs. Always-C2 Non-Inferiority) ist für textworld
+konfirmatorisch auswertbar wie geplant (volle 50-Instanzen-Stichprobe auf beiden Armen). Für
+tower_of_hanoi ist der Always-C2-Vergleichsarm nur auf 12 von 50 Instanzen vollständig — die
+H2-ToH-Auswertung muss auf **explorativ** herabgestuft werden (reduzierte, nicht die präregistrierte
+Power). Das betroffene Analyseskript/die Thesis-Prosa müssen das entsprechend kennzeichnen, sobald
+die Analyse geschrieben wird — nicht Teil dieses Log-Eintrags, aber hier vermerkt als offener
+Folgepunkt.
+
+**Timeline und Ursachenkette (chronologisch, für die Nachvollziehbarkeit):**
+
+1. **2026-08-05 bis 2026-08-09 ~02:00 UTC (78h):** Lauf stabil, keine Speicherprobleme. `adaptive_tle`,
+   `adaptive_vc` (beide Domänen, volle 3000 Episoden) und `always_c2`/textworld (750 Episoden)
+   liefen komplikationsfrei durch.
+2. **2026-08-09 02:04 UTC — erster OOM-Kill.** Container-Cgroup-Speicherlimit (~56GB) erstmals
+   erreicht (`oom_kill` 0→1), Prozess vom Kernel beendet. Auto-Stop-Mechanismus des Wrapper-Skripts
+   schlug zusätzlich fehl (RunPod-API-Konfiguration fehlte innerhalb des Pods) — Pod lief ~25 Min.
+   ungenutzt weiter, bevor der Fail-Fast-Monitor das gemeldet hat.
+3. **2026-08-09, im Tagesverlauf — wiederkehrendes Muster erkannt.** Nach dem Neustart wuchs der
+   Speicher viel schneller erneut ans Limit (~95-115 Min. statt 78h) — insgesamt **17 kontrollierte/
+   unkontrollierte Neustarts** zwischen 2026-08-09 02:04 UTC und 2026-08-10, alle per SIGTERM +
+   `--resume`, kein Datenverlust (Checkpointing pro Episode atomar, jede fertige Episode ist eine
+   eigene Datei).
+4. **2026-08-09 15:35 UTC — Instanzen 10/12/14 hängen fest.** Ab diesem Zeitpunkt: keine einzige neue
+   `always_c2`/ToH-Episode mehr abgeschlossen, über **~24h und alle folgenden Neustarts hinweg**.
+   Bestätigt aktiv (nicht hängend) über frische `trace_ep_*.jsonl`-Zeitstempel bei jedem Check.
+   Manifest-Vergleich (`data/tasks/tower_of_hanoi/difficulty_manifest.json`) zeigte: Instanzen 10, 12,
+   14 haben `optimal_steps` (14, 15, 11) identisch zu bereits **erfolgreich abgeschlossenen**
+   Instanzen (0, 7, 5) — reine Aufgabenschwierigkeit scheidet damit als Erklärung aus.
+5. **Fix-Versuch 1 (2026-08-10, Commit auf Pod, hier repliziert) — `EpisodeScheduler`-Future-Leck.**
+   `src/execution/scheduler.py`, ThreadPoolExecutor-Zweig: abgeschlossene `Future`-Objekte wurden nie
+   aus dem `futures`-Dict entfernt, ihr Ergebnis (komplette Episode inkl. Step-Details, bei ToH
+   `always_c2` ⌀ ~220k Tokens) blieb dadurch referenziert und im Speicher. **Fix:**
+   `job = futures.pop(fut)` statt `futures[fut]` in der `as_completed`-Schleife (echte, saubere
+   Verbesserung, unabhängig vom Rest — bleibt im Code). **Ergebnis: nicht die (alleinige) Ursache** —
+   nach Neustart mit dem Fix wuchs der Speicher weiterhin in 64 Min. auf 35,8GB, **obwohl in diesem
+   Fenster keine einzige Episode abgeschlossen wurde** (der Fix kann also gar nicht gegriffen haben).
+6. **Fix-Versuch 2 — Langfuse-Tracing deaktiviert.** Log zeigte durchgehend `Failed to export span
+   batch code: 403, reason: Forbidden` über die gesamte Laufzeit — Nutzer bestätigte später, dass das
+   Langfuse-Kontingent erschöpft war. Verdacht: interner Export-Puffer wächst unbegrenzt, da
+   fehlgeschlagene Batches nie geleert werden. `langfuse_enabled: false` gesetzt (rein additive
+   Observability, kein Effekt auf Episodendaten — **Fix bleibt im Code**). **Ergebnis: reale, aber
+   unzureichende Verbesserung** — Wachstumsrate sank von ~20GB/h auf ~12-13GB/h, blieb aber linear
+   positiv statt abzuflachen.
+7. **Fix-Versuch 3 — Parallelität 32→8 reduziert — ⚠️ methodisch fehlerhaft, zurückgenommen.**
+   Hypothese: Spitzenspeicherbedarf gleichzeitig laufender Episoden (`top_logprobs=20` ×
+   `c2.n_samples=3` × ⌀ ~220k Tokens/Episode × bis zu 32 parallele Episoden) überschreitet legitim
+   (nicht als Leck) die 56GB-Grenze, bevor auch nur eine Episode fertig wird — bestätigt durch
+   Speicherwachstum trotz null Abschlüssen über mehrere Stunden. **Auf dem Pod fälschlich
+   `max_concurrent_episodes: 32 → 8` gesetzt**, ohne Zugriff auf die lokale `CLAUDE.md`, die explizit
+   dokumentiert: *"N=32 ... frozen after the Gate C-1 scoped waiver — N=16/24/32 all failed at first
+   and this was a deliberate, user-approved waiver, not a bug to 'fix' by lowering N"* — niedrigere
+   Werte wurden bereits früher getestet und sind bei der Batch-Invarianz-Prüfung durchgefallen. Diese
+   Änderung war also nicht nur unzureichend wirksam (nur ~30% niedrigere Wachstumsrate statt der
+   erwarteten ~4×, vermutlich weil das Wachstum eher an kumulierter LM-Call-Menge über Zeit hängt als
+   an gleichzeitiger Parallelität), sondern hätte bei tatsächlichen Abschlüssen unter N=8
+   möglicherweise die Batch-Invarianz-Garantie verletzt. **Glücklicherweise ist während der ~50 Min.
+   mit N=8 (2026-08-10 08:33-09:23 UTC) keine einzige Episode abgeschlossen worden** — es sind also
+   keine unter fragwürdigen Bedingungen gesammelten Daten in den Datensatz gelangt.
+   **Korrektur: `max_concurrent_episodes` wieder auf 32 zurückgesetzt**, N=8-Versuch nicht im Code
+   belassen.
+8. **2026-08-10 — Abbruchentscheidung.** Mit allen drei Fix-Versuchen ausgeschöpft (zwei echte, aber
+   unzureichende Verbesserungen; ein methodisch zurückgenommener Versuch) und weiterhin ~24h ganz
+   ohne Episoden-Fortschritt auf den drei betroffenen Instanzen, hat der Nutzer entschieden: Pod
+   stoppen, `always_c2`/tower_of_hanoi bei 12/50 vollständigen Instanzen belassen, H2-ToH-Auswertung
+   auf explorativ herabstufen, keine weiteren Kosten für ungewisse Lösung.
+
+**Pod-Status:** `phase2-stage1-h2power` (`4tbs8e8ca11st2`) gestoppt (nicht gelöscht) am 2026-08-10 via
+`runpodctl stop pod` — Netzwerk-Volume und Container-Disk (inkl. der 3 oben genannten Commits, die
+vom Pod aus wegen eines schreibgeschützten Deploy-Keys nicht gepusht werden konnten) bleiben
+erhalten, falls später etwas daraus abgerufen werden muss.
+
+**Nicht als DV-Ausschluss dokumentiert:** die fehlenden 38 ToH-`always_c2`-Instanzen (37 unberührt +
+1 teilweise) sind **kein** methodischer Ausschluss über den Quarantäne-Mechanismus
+(`src/utils/run_resilience.py`, bewusst auf `env_assertion`/`label_error` beschränkt, siehe
+Docstring von `tests/utils/test_run_resilience.py`) — es handelt sich um schlicht nicht gesammelte
+Daten wegen einer operativen Budget-/Zeit-Grenze, dokumentiert hier, nicht als Post-hoc-
+Exklusionskriterium im Datensatz selbst.
+
+**Testsuite:** `tests/execution/test_execution_scheduler.py` (2/2), `tests/utils/
+test_run_resilience.py` (voller Satz) — grün nach dem Scheduler-Fix.
+
+## 2026-08-05 — Phase 2 gestaffelt: Stage 1 (H2-Power-first) statt aller 6 Bedingungen auf einmal
+
+**Anlass:** Nach dem H2-Power-Befund (Eintrag unten: ~37-46% bei runs_per_condition=5) Nutzerfrage,
+ob es sinnvoller ist, statt aller 6 Bedingungen gleichzeitig mit unzureichender Power zuerst gezielt
+die für H2 tatsächlich relevanten Bedingungen mit ausreichender Power zu sammeln.
+
+**Geprüft, mit echten Zahlen, nicht nur die Grundidee übernommen:**
+1. **Reines Umschichten (Phase-1-Always-C2 unverändert wiederverwenden, nur adaptive Runs erhöhen)
+   funktioniert nicht** — Sweep bei fixer Baseline (5 Runs) und variabler Policy-Seite (5-30 Runs)
+   zeigt ein Plateau bei ~50-65% Power, weil die feste Präzision der Baseline zum limitierenden
+   Faktor wird, egal wie viele zusätzliche adaptive Runs man sammelt.
+2. **Beide Arme müssen gemeinsam skalieren.** Symmetrischer Sweep (Always-C2 UND adaptive Policy
+   gemeinsam von 5 auf 10/15/20/30 Runs erhöht, n=50 Instanzen, ICC/Erfolgsraten/Tokenstats real
+   aus Phase 1 kalibriert): Power steigt von ~36-44% (5 Runs) über ~72-83% (15 Runs) auf ~80-89%
+   (20 Runs) — bei allen drei geprüften Token-Verhältnis-Szenarien praktisch identisch (die
+   Token-Superiority-Komponente ist immer bei Power=1.000 gesättigt, bindet also nie; nur die
+   Success-Non-Inferiority-Komponente ist der Flaschenhals).
+3. **Bei n=15 (höhere Präzision nachgerechnet, 1500 Replikate statt 400, ±2 Prozentpunkte 95%-
+   MC-CI):** textworld 73,5% Power, tower_of_hanoi 80,3% Power — stabil über alle drei
+   Token-Ratio-Szenarien. Als ausreichend akzeptiert.
+4. **Realistischer Zeitaufwand** (nicht aus dem Smoke-Test grob abgelesen, sondern aus den echten
+   Phase-1-Episode-Timestamps rekonstruiert — Sessions mit >20 Min Lücke als Pausen rausgerechnet,
+   reine aktive Rechenzeit: 1500 kanonische Episoden in 44,6h, textworld 43,8 Ep/h, tower_of_hanoi
+   27,3 Ep/h, beide bei gemischter C0/C1/C2-Last unter N=32): hochgerechnet auf isolierte
+   Strategie-Blöcke (Always-C2 allein: textworld ~50 Ep/h, ToH ~20 Ep/h; adaptive TLE/VC über das
+   reale Token-Verhältnis aus dem Smoke-Test geschätzt, ~150/~59 Ep/h — Schätzung, nicht direkt
+   gemessen, da Phase 1 diese Strategien nie fuhr) ergibt n=15 für die drei H2-relevanten
+   Bedingungen (adaptive_tle, adaptive_vc, always_c2, beide Domains) ~89 aktive Stunden ≈ 3,7 Tage
+   — innerhalb der vom Nutzer gesetzten Grenze (bevorzugt <4 Tage, hart <6 Tage, Start Mittwoch-
+   abend).
+
+**Entscheidung (Nutzer, 2026-08-05):** Phase 2 gestaffelt, nicht alle 6 Bedingungen auf einmal:
+
+- **Stage 1 (jetzt):** `adaptive_tle`, `adaptive_vc`, `always_c2` bei `runs_per_condition=15`
+  (`configs/phase2_stage1_h2_power.yaml`) — 4500 Episoden, liefert den ausreichend gepowerten
+  konfirmatorischen H2-Test.
+- **Always-C0 und Always-C1** werden **nicht** neu gesammelt — Phase 1 hat beide bereits vollständig
+  (je 250 Episoden/Domain, gleiches eingefrorenes Manifest, gleiches Modell/Backend/GPU, keine
+  relevanten Harness-Änderungen seitdem verifiziert). Always-C1 dient als explorativer
+  Vergleichspunkt (kein Teil der konfirmatorischen H2-Paarung), Always-C0 als deskriptive
+  Pareto-Untergrenze — für beide Zwecke ist Wiederverwendung unproblematisch, anders als für
+  Always-C2 (das *ist* Teil der gepaarten H2-Statistik, siehe Punkt 1 oben, warum das dort nicht
+  funktioniert).
+- **`random` und `eager_style` verschoben auf eine spätere Stage 2**, sobald Zeit ist (kein Teil der
+  H2-Paarung, exploratorischer/RQ4-Wert) — mit `--resume` gegen denselben Checkpoint-Ordner, sobald
+  Stage 1 abgeschlossen ist; keine Sonderbehandlung im Code nötig (Resume erkennt bereits
+  vorhandene Episoden über die Episode-ID, unabhängig davon, mit welcher Config sie erzeugt
+  wurden).
+
+**Verifikation:** `configs/phase2_stage1_h2_power.yaml` gegen die reale Merge-Logik geprüft (4500
+Episoden, `policy_artifact` korrekt vererbt), `build_phase2_worklist`/`group_jobs_by_strategy`
+liefern korrekt 3 zusammenhängende Blöcke à 1500 Episoden.
+
+## 2026-08-05 — H2-Power-Simulation nachgeholt; dabei echten `h2_paired`-Bug gefunden und gefixt
+
+**Anlass:** Für H3 (Phase 1) gab es bereits eine echte Monte-Carlo-Power-Simulation vor der
+Datenerhebung (`docs/gate_e_h3_power_simulation.md`). Für H2 (Phase 2, konfirmatorische Hypothese:
+adaptive Policy non-inferior auf Success-Rate + superior auf log(Tokens) vs. Always-C2) gab es das
+nie — nur eine generische Cohen's-d=0.5-Faustformel (`blueprints/thesis_design.md:319`, "~34
+Instanzen nötig, 50 vorhanden"), die die Methodik selbst als "floor rather than an estimate"
+bezeichnet. Nutzerfrage vor dem Phase-2-Start: brauchen wir mit 50 Instanzen/Domain wirklich genug
+Power?
+
+**Neu gebaut:** `scripts/analysis_rehearsal/h2_power_simulation.py` (analog zu
+`h3_power_simulation.py`) — kalibriert an der echten Phase-1-ICC (episode-level, geclustert nach
+Instanz, **nicht** die step-level H3-ICC): textworld ICC(GEE)=0.205, tower_of_hanoi ICC(GEE)=0.504.
+Token-Verhältnis-Szenarien verankert am echten Smoke-Test von gestern (adaptive_tle=62369 vs.
+always_c2=194713 Tokens, ~3.1x). Simuliert die tatsächliche Phase-2-Stichprobengröße (n Instanzen ×
+5 Runs) über die echte `cluster_bootstrap`-Funktion mit denselben Statistik-/Schwellenwert-
+Definitionen wie `h2_paired`.
+
+**Befund:**
+- Der Token-Superiority-Teil ist in jeder simulierten Zelle bei Power=1.000 gesättigt — der reale
+  Token-Unterschied ist so groß, dass er nie der limitierende Faktor ist.
+- Die Success-Non-Inferiority-Komponente liegt bei n=50/Domain (aktuelles Design) nur bei ~37-46%
+  Power — selbst im günstigsten Fall (adaptive matcht Always-C2 exakt, keine Marge nötig). Bei
+  n=34 (die Floor-Zahl) ist es sogar noch schlechter (~27-36%), bei n=25 ähnlich. n=50 ist bereits
+  die beste erschwingliche Option — kleiner zu gehen verschlechtert die Power weiter, nicht besser.
+- Ursache: nur 5 Runs/Instanz geben hohe Bernoulli-Varianz pro Instanz relativ zur engen δ=0.05-
+  Marge; mehr Instanzen helfen nur mild (n=25→50 verschiebt Power um ~5-15 Prozentpunkte).
+
+**Konsequenz für heute:** n=50/Domain bleibt wie geplant — Verkleinern hilft nicht, Vergrößern ist
+heute nicht umsetzbar (fixes GPU-Budget, einmalige Sammlung). **Wird als explizite Limitation in
+der Methodik dokumentiert** (analog zur bereits dokumentierten H3-Power-Einschränkung): selbst wenn
+adaptive die Success-Rate von Always-C2 exakt trifft, besteht real eine ~55-65%-Chance, dass der
+konfirmatorische Bootstrap Non-Inferiority *nicht* bestätigt — ein Null-Ergebnis bei H2 darf später
+nicht als "adaptive ist schlechter" fehlgelesen werden, wenn es eigentlich "unterpowert, um Parität
+zu erkennen" bedeutet.
+
+**Nebenbefund, wichtiger als die Power-Zahlen selbst:** Die Simulation testete `h2_paired`
+(`src/analysis/inference.py`) direkt gegen synthetische Mehrfach-Runs und fand einen echten Bug —
+noch bevor irgendwelche echten Phase-2-Daten existierten, die dadurch hätten verfälscht werden
+können. `h2_paired` baute sein `by_inst`-Dict als `dict[strategy] = episode` (ein Eintrag pro
+Strategie und Instanz) statt als Liste — bei Produktionsdaten mit `runs_per_condition=5` hätte
+jeder neue Run den vorherigen für dieselbe (Domain, Instanz, Strategie)-Zelle überschrieben, sodass
+am Ende nur der zuletzt verarbeitete von 5 Runs in den konfirmatorischen H2-Test eingeflossen wäre
+— die anderen 4 Runs wären stillschweigend verworfen worden. Kein Unit-Test hatte das je
+aufgedeckt, weil alle bisherigen `h2_paired`-Tests implizit mit `runs_per_condition=1` konstruiert
+waren.
+
+**Gefixt (noch am selben Tag, vor Phase-2-Start):** `h2_paired` mittelt jetzt Success-Rate und
+Tokens über alle Runs pro (Domain, Instanz, Strategie)-Zelle, bevor gepaart wird — bei
+`runs_per_condition=1` (alle bisherigen Tests) verhaltensidentisch zu vorher (Mittelwert über einen
+Wert = dieser Wert). Neuer Regressionstest:
+`tests/analysis/test_inference.py::test_h2_paired_averages_all_runs_not_just_the_last`
+(3 Runs/Strategie, bewusst alternierender Erfolg, damit ein reiner "letzter Run gewinnt"-Bug
+garantiert eine falsche Zahl liefern würde). Die Power-Simulation selbst war von diesem Bug nicht
+betroffen — sie hatte `h2_paired` bewusst nicht direkt aufgerufen, sondern schon vorher richtig
+über die Instanzen gemittelte Zeilen an `cluster_bootstrap` übergeben (siehe Skript-Docstring,
+Abschnitt 4) — die Power-Zahlen oben sind also unverändert gültig.
+
+**Verifikation:** 482 Tests grün, ruff/mypy sauber (mypy-Restfehler nur in unberührtem
+`h3_power_simulation.py`). Volle Simulation: 1000 Replikate × 2000 Bootstrap-Iterationen,
+44 Design-Zellen, 264s Laufzeit, Rohdaten in `data/results/gate_e_h2_power/
+h2_power_simulation.json` (gitignored).
+
+## 2026-08-04 — Phase-2-Strategieblöcke: sequentielle statt interleaved Ausführung
+
+**Anlass:** Der reale GPU-Smoke-Test (Punch-List-Punkt 6) lief mit der bisherigen Job-Reihenfolge
+(`domain → instance → strategy → run`) — dadurch liefen alle 6 Strategien von Anfang an gemischt im
+selben Concurrent-Pool (bis zu N=32), bei ihren jeweiligen Compute-Stufen-Temperaturen (C0=0.3,
+C1=0.5, C2=0.7) gleichzeitig.
+
+**Befund (Subagenten-Recherche gegen `verify_backend_parity.py` + Doku):** Die eingefrorene TLE-
+Batch-Invarianz (N=32, eps=0.05 bits, Gate C-1) wurde nie gegen einen echten heterogenen Batch
+getestet — der Validierungsaufbau schickt einen Probe-Prompt gegen N-1 **identische** Filler-
+Requests bei fixer Temperatur, nie eine echte Mischung mehrerer Compute-Stufen/Strategien
+gleichzeitig. `docs/runpod.md` §5.9 skaliert die Zusicherung explizit auf "stage-homogeneous
+passes" — genau das, was Phase 1 auch gefahren ist. Die architektonische Begründung (vLLM
+Continuous Batching + PagedAttention berechnet Logits pro Request unabhängig von Nachbarn,
+`raw_logprobs`-Modus ist genau deshalb eingefroren) spricht klar dafür, dass es generalisiert — ist
+aber nicht empirisch geprüft.
+
+**Entscheidung (Nutzer, 2026-08-04):** Statt eine neue Batch-Invarianz-Probe für heterogene Batches
+zu bauen (Mehraufwand + zusätzliche GPU-Zeit vor dem einmaligen Lauf), Phase 2 stattdessen strikt
+strategieweise sequentiell ausführen — bleibt automatisch im bereits validierten Bereich.
+
+**Umgesetzt:**
+- `build_phase2_worklist()` (`src/execution/worklist.py`) — Strategie ist jetzt die äußerste
+  Schleife (`strategy → domain → instance → run`), macht die Job-Liste selbst schon strategie-
+  zusammenhängend.
+- Neue `group_jobs_by_strategy()` — partitioniert die Liste in zusammenhängende Pro-Strategie-
+  Blöcke.
+- `scripts/experiment/run_phase2.py` — statt eines einzigen `scheduler.run(jobs, ...)`-Aufrufs für
+  die gesamte Liste läuft jetzt ein Block nach dem anderen durch denselben `EpisodeScheduler`
+  (`scheduler.run()` blockiert bis zur vollständigen Abarbeitung, bevor der nächste Block startet)
+  — echte Drain-Barriere zwischen Strategien, keine bloße Listen-Umsortierung. `max_in_flight_
+  observed` bleibt über den ganzen Lauf kumulativ korrekt (derselbe Scheduler wird wiederverwendet).
+
+**Nicht betroffen:** Resume-Verhalten unverändert (Episode-IDs/Checkpoints bleiben identisch,
+nur die Ausführungsreihenfolge ändert sich); Phase 1 ist bereits abgeschlossen.
+
+**Verifikation:** 3 neue Tests (`tests/execution/test_execution_worklist.py`) — Strategie-Majorität
+der Worklist-Ausgabe, korrekte Blockpartitionierung, Ein-Block-Sonderfall. Volle Testsuite (481
+Tests) grün, ruff/mypy sauber (mypy-Restfehler in unberührten Dateien, gegen den ungeänderten
+Stand verifiziert).
+
+## 2026-08-04 — Volle Reasoning-Logprob-Sidecars für Phase 2 abgeschaltet
+
+**Anlass:** Punch-List-Punkt 6 (echter GPU-Smoke-Test) deckte auf, dass `logprob_sidecar_mode: full`
+für die 6 nicht-Holdout-Instanzen (`logprob_sidecar_full_instances`) bei C1/C2-lastigen Strategien
+auf bis zu ~1GB pro Episode anwächst (Top-K=20-Logprobs über den *gesamten* Reasoning-Block, nicht
+nur das Action-Window). Bei Phase 2s Design (6 Strategien × 5 Runs, mehrere davon C1/C2-lastig)
+multipliziert sich diese Exposition weit stärker als in Phase 1 — echtes Risiko für den einmaligen,
+nicht wiederholbaren 3000-Episoden-Lauf.
+
+**Geprüft, nicht nur angenommen:** Zwei unabhängige Subagenten beauftragt (einer Sonnet/Explore für
+den Code-Pfad, einer Opus für eine bewusst skeptische Prüfung "gibt es einen plausiblen Grund, das
+zu behalten"). Kernbefunde:
+- Kein Code-Pfad (TLE-Berechnung, VC, Allocator, `src/analysis/*`) liest die Sidecar-Datei inhaltlich
+  zurück — TLE wird im Arbeitsspeicher berechnet, *bevor* der Sidecar geschrieben wird.
+- Einziger dokumentierter Zweck war ein Verweis auf ein mögliches Kapitel-9-"Future Work" (Log-Eintrag
+  2026-07-14) — nie in `chapters/outline.md`/`04`/`05`/`08`/`09` operationalisiert. Kapitel 9 nennt
+  namentlich nur die Self-Correction-Achse (Self-Refine, Reflexion) als offene Richtung.
+- **Entscheidend:** Phase 1 hat diesen Vollmodus bereits gesammelt (`data/results/phase1/`, 90
+  Episoden × alle 3 Stufen × beide Domains, `full`-Sidecars weiterhin lokal vorhanden, ~29GB davon).
+  Jeder geprüfte Use Case (Reasoning-inklusive-TLE-Ablation, Audit der TLE-Fenster-Grenze auf einen
+  Parsing-Bug, Reviewer-Nachfrage "hat der Allocator wirklich nur das Action-Window gesehen") ist
+  damit bereits abgedeckt — eine Wiederholung in Phase 2 hätte nur Speicherrisiko ohne analytischen
+  Mehrwert bedeutet.
+
+**Entscheidung (Nutzer, 2026-08-04):** `logprob_sidecar_full_instances` in
+`configs/experiment_core.yaml` für Phase 2 auf `{}` gesetzt — alle Episoden laufen einheitlich im
+Produktions-Default `action_window`. Der volle, lesbare Reasoning-Text bleibt davon unberührt in
+`trace_{episode_id}.jsonl` erhalten (separater Mechanismus, `save_step_traces`/`write_debug_views`).
+
+**Nicht betroffen:** Phase 1 ist bereits abgeschlossen und gesammelt; diese Änderung wirkt nur auf
+zukünftige (Phase-2-)Läufe.
+
+**Verifikation:** reine Config-Änderung, keine Codeänderung; `LogprobSidecarConfig.mode_for()`
+(`src/utils/logprob_sidecar.py:95-102`) fällt bei leerem `full_instances_by_domain` korrekt auf
+`default_mode` zurück, per Code-Lesung bestätigt.
+
+## 2026-08-04 — Phase-2-Threshold-Artefakt gebaut; präregistrierte Tie-Break-Regel bewusst ersetzt (ADR-009)
+
+**Anlass:** Punch-List-Punkt 1 (der einzige harte Blocker vor echter Phase-2-Sammlung) —
+`scripts/phase2_prep/build_threshold_artifact.py` neu geschrieben, gegen die echten Phase-1-
+Holdout-Daten gelaufen.
+
+**Befund beim ersten echten Lauf:** Die präregistrierte Tie-Break-Regel ("resolved by the most
+token-efficient point on the Pareto front", §5.4, wörtlich als Minimum des absoluten Token-Werts
+implementiert) wählte in **allen vier** Domain×Signal-Zellen exakt θ1=0.8/θ2=0.9 — die adaptive
+Policy würde real fast durchgängig bei C0 bleiben, auch in Tower of Hanoi, wo TLE laut H1a stark
+diskriminiert. Auf der ToH/TLE-Pareto-Front erreichte der gewählte Punkt nur `success_proxy=0.14`,
+während der beste Punkt der Front `0.33` erreicht (mehr als doppelt so viel) für ~3x höhere
+Tokenkosten.
+
+**Nutzer-Entscheidung (2026-08-04):** Präregistrierung ist internes Arbeitsmittel, keine externe
+Institutions-Vorgabe — Abweichung ist erlaubt, wenn sauber begründet und dem wissenschaftlichen
+Wert der Arbeit dient. Auftrag: "analysiere und finde heraus, was für den Wert der Thesis am
+besten ist."
+
+**Durchgeführte Analyse, nicht nur erste Idee genommen:** Erfolg/Token-Verhältnis als naheliegende
+Alternative direkt an den echten Daten getestet — wählte in allen vier Zellen **denselben**
+entarteten Extrempunkt (Skalenartefakt: sehr kleiner Token-Nenner dominiert die Ratio). Verworfen.
+
+**Umgesetzt:** Knee-Point-Selektion (`_select_knee_point`, `src/analysis/thresholds.py`) —
+parameterfreie Standardmethode, maximaler normierter Abstand zur Idealecke. Verhält sich auf den
+echten Daten genau wie erwartet: großer Sprung in ToH (θ dort, wo die Front echte Krümmung hat),
+kaum Änderung in TextWorld (Front dort fast flach — passt zu H1a's Nullergebnis dort). Ein echter
+Sonderfall (2-Punkte-Front → Score-Unentschieden by construction) vor dem Einsatz durch einen
+Regressionstest gefangen, nicht zufällig entdeckt — expliziter Tie-Break auf den günstigeren Punkt
+ergänzt.
+
+Volle Argumentation, alle Zahlen, Zitate: `docs/adrs.md` ADR-009.
+
+**Ergebnis-Artefakt:** `data/results/phase1/threshold_artifact.json` (gitignored, lokal) —
+θ1/θ2 pro Domain×Signal, `selection_rule` jetzt in jedem Block mitgeschrieben, damit die
+Provenienz auch ohne diesen Log nachvollziehbar bleibt.
+
+**Prosa-Auswirkung:** §5.4-Methodiktext braucht eine kleine Anpassung (beschreibt noch die alte
+Regel) — im Handover für die Prosa-Session vermerkt
+(`../metacog-thesis/notes/phase1_results_handover_2026-08-04.md`).
+
+**Verifikation:** 477 Tests grün, ruff/mypy sauber, Threshold-Artefakt real neu gebaut und die
+neuen θ-Werte manuell gegen die Handrechnung verifiziert.
+
 ## 2026-08-04 — Annahmen-Checks + fehlende Visualisierungen für H1a/H1b/H3 nachgerüstet
 
 **Anlass:** Nutzerfrage, ob wir für die konfirmatorischen Tests (H1a/H1b/H3/H4) die nötigen

@@ -14,6 +14,7 @@ Run from the **repository root** unless noted (e.g. `python scripts/experiment/r
 | `dev` | Manual play / smoke tests / diagnostics without a full experiment |
 | `cloud` | RunPod setup or result transfer |
 | `phase1-analysis` | Real Phase 1 confirmatory/exploratory analysis (production, not a rehearsal) |
+| `phase2-analysis` | Real Phase 2 confirmatory/exploratory analysis (production, not a rehearsal) |
 
 ## `scripts/experiment/` — production data-collection entry points
 
@@ -77,6 +78,7 @@ Checks run before/around a real run (former Gate C tooling).
 |--------|---------|-------------|--------|
 | [`analysis_pipeline_rehearsal.py`](../scripts/analysis_rehearsal/analysis_pipeline_rehearsal.py) | Analysis dry run: step table → grid-search → policy artifact → `load_policy` → `cluster_bootstrap` on ΔAUROC | End-to-end analysis rehearsal on pilot/C-5 data before real Phase 1 data | `dev` |
 | [`h3_power_simulation.py`](../scripts/analysis_rehearsal/h3_power_simulation.py) | Monte Carlo power simulation for the H3 signal×position_norm interaction: seeds ICC/entropy from pilot data, simulates clustered binary outcomes under the planned Phase 1 design, fits `fit_h3_model` (real GEE) per replicate, reports empirical power vs. true effect size | H3 power check; see `docs/gate_e_h3_power_simulation.md` for the report | `dev` |
+| [`h2_power_simulation.py`](../scripts/analysis_rehearsal/h2_power_simulation.py) | Monte Carlo power simulation for H2 (adaptive non-inferiority + log-token superiority vs. Always-C2): seeds episode-level ICC/success-rate/token stats from real canonical Phase 1 data, token-ratio scenarios anchored to a real GPU smoke test, simulates the planned Phase 2 design (n instances × 5 runs) via `cluster_bootstrap` with `h2_paired`'s real statistic/threshold definitions | H2 power check, run same-day before the one-shot Phase 2 collection; found and triggered the `h2_paired` run-averaging fix (`docs/consistency_log.md` 2026-08-05) | `dev` |
 
 ## `scripts/phase1_analysis/` — real Phase 1 confirmatory/exploratory analysis pipeline
 
@@ -95,6 +97,20 @@ the archived results once the pipeline has been run against the real data.
 | [`stage6_visualizations.py`](../scripts/phase1_analysis/stage6_visualizations.py) | Renders `plot_auroc_comparison_bars`/`plot_h3_marginal_effect` (`src/analysis/visualization.py`) from the Stage 0/2/4 JSON+manifest output; the H3 marginal-effect plot now overlays real binned empirical data (via `build_h3_frame`) alongside the fitted curve as a linearity-in-logit model-fit check | Before Stage 7 | `phase1-analysis` |
 | [`stage7_generate_report.py`](../scripts/phase1_analysis/stage7_generate_report.py) | Renders `docs/phase1_analysis_report.md` from every prior stage's JSON output, embeds the full Stage 1 variable codebook (all 9 tables), and copies every stage's figures (1/2/3/5/6, wherever a `figures_manifest.json` exists) into the committed `docs/figures/phase1_analysis/` | Last stage; produces the archived deliverable | `phase1-analysis` |
 | [`run_all.py`](../scripts/phase1_analysis/run_all.py) | Thin sequential orchestrator chaining Stages 0-7, stops on first non-zero exit | One-shot full-pipeline reproduction | `phase1-analysis` |
+
+## `scripts/phase2_prep/` — bridging real Phase 1 results into Phase 2 collection
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`build_threshold_artifact.py`](../scripts/phase2_prep/build_threshold_artifact.py) | Grid-searches TLE/VC allocator thresholds (theta1/theta2, `step_level_proxy_v1`) against the real Phase 1 holdout data via the Stage 0 canonical manifest, writes the frozen policy artifact `adaptive_tle`/`adaptive_vc`/`eager_style` require; warns (not fatal) on a degenerate theta1>=theta2 policy | Once, before starting real Phase 2 collection | `phase1-analysis` |
+| [`threshold_sensitivity_analysis.py`](../scripts/phase2_prep/threshold_sensitivity_analysis.py) | Thesis §5.9 threshold-sensitivity analysis (never delivered until the TextWorld holdout-labeling incident gave a concrete case to run it on, `docs/consistency_log.md` 2026-08-14 entries): reconstructs the deployed (wrong-holdout-fitted) vs. corrected TextWorld thresholds from raw Phase 1 data via `grid_search_thresholds`, compares them on the correctly-evaluated proxy objective and on realized C0/C1/C2 routing over the actual observed Phase 2 signal values | After the holdout correction, for the record / for Ch.8 interpretation | `phase2-analysis` |
+
+## `scripts/phase2_analysis/` — real Phase 2 confirmatory/exploratory analysis
+
+| Script | Purpose | When to use | Status |
+|--------|---------|-------------|--------|
+| [`stage1_h2_adaptive_allocation.py`](../scripts/phase2_analysis/stage1_h2_adaptive_allocation.py) | H2: per (policy, domain) episode-success non-inferiority + log-token superiority against Always-C2, paired cluster bootstrap, Holm family B (textworld only — tower_of_hanoi is exploratory-reduced-N, see script docstring). Applies `TEXTWORLD_CONFIRMATORY_EXCLUDED_INSTANCES` before pairing (holdout-labeling correction, `docs/consistency_log.md` 2026-08-14) | After real Phase 2 collection | `phase2-analysis` |
+| [`stage2_c0_c1_reference.py`](../scripts/phase2_analysis/stage2_c0_c1_reference.py) | Exploratory Always-C0/Always-C1 reference: pools Phase 1's fixed-stage cells (reused, not re-collected — see script docstring for why C2 alone was re-collected) with Phase 2's adaptive/Always-C2 episodes into a five-arm compute-success spectrum per domain, plus pairwise adaptive-vs-C0/C1 contrasts. No delta rule, no Holm correction | After Stage 1 | `phase2-analysis` |
 
 ## `scripts/run_readiness/` — budget, run-hygiene, resume, and output-quality checks
 

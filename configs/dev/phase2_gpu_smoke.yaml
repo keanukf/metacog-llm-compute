@@ -1,0 +1,23 @@
+extends: ../experiment_core.yaml
+
+# Phase 2 real-GPU smoke test (punch-list item 6, docs/consistency_log.md 2026-08-04) -- exercises
+# all 6 real strategies (adaptive_tle, adaptive_vc, always_c0, always_c2, random, eager_style)
+# against both domains with the real frozen manifests, the real policy_artifact, and real
+# production logging/tracing settings (deliberately NOT overridden here -- the whole point is to
+# verify on real hardware that every sidecar/trace we need is actually written before committing
+# to the full 3000-episode run).
+#
+# Not part of any preregistered experiment run. Do not use for Phase 2 data collection.
+
+phase2:
+  domains: ["textworld", "tower_of_hanoi"]
+  instances_per_domain: 3
+  strategies:
+    - adaptive_tle
+    - adaptive_vc
+    - always_c0
+    - always_c2
+    - random
+    - eager_style
+  runs_per_condition: 1
+  # 2 domains * 3 instances * 6 strategies * 1 run = 36 episodes

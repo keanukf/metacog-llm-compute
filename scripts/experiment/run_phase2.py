@@ -254,7 +254,7 @@ def main() -> None:
     from src.execution.episode_runner import Phase2RunContext, run_phase2_job
     from src.execution.metrics import build_execution_metrics
     from src.execution.scheduler import EpisodeScheduler
-    from src.execution.worklist import build_phase2_worklist
+    from src.execution.worklist import build_phase2_worklist, group_jobs_by_strategy
     from src.utils.checkpointing import list_completed_episodes
     from src.utils.logging_utils import write_run_metadata
     from src.utils.run_output_layout import write_short_run_info
@@ -392,6 +392,7 @@ def main() -> None:
     last_report_t = time.time()
     rolling: list[dict] = []
     done_count = 0
+    done_count_offset = 0
 
     run_ctx = Phase2RunContext(
         config=config,
@@ -421,7 +422,7 @@ def main() -> None:
         nonlocal last_report_t, done_count, rolling
         if outcome.get("status") != "completed":
             return
-        done_count = stats.done_count
+        done_count = done_count_offset + stats.done_count
         rolling = list(stats.rolling)
         data = outcome.get("data") or {}
         if args.verbose_episodes:
@@ -462,32 +463,58 @@ def main() -> None:
                 label_key="strategy",
             )
 
-    stats = scheduler.run(
-        jobs,
-        run_fn=lambda job: run_phase2_job(job, model, run_ctx),
-        on_complete=_on_complete,
-        errors_path=errors_path,
-        checkpoint_dir=checkpoint_dir,
-        quarantined=quarantined,
-        log_fn=log,
-    )
+    # Strategy-sequential blocks, each drained to completion before the next starts: keeps every
+    # concurrently in-flight batch stage-homogeneous, matching the only composition the Gate C-1
+    # TLE batch-invariance probe validated (docs/consistency_log.md 2026-08-04). A single
+    # EpisodeScheduler is reused across blocks so max_in_flight_observed stays a true run-wide max.
+    blocks = group_jobs_by_strategy(jobs)
+    if len(blocks) > 1:
+        log(
+            "Phase 2 running "
+            f"{len(blocks)} strategy-sequential blocks: "
+            + ", ".join(f"{b[0].strategy}={len(b)}" for b in blocks)
+        )
+    agg_attempted = 0
+    agg_completed = 0
+    agg_failed = 0
+    agg_tokens = 0
+    max_in_flight = 0
+    for block in blocks:
+        block_strategy = block[0].strategy if block else None
+        if len(blocks) > 1 and block_strategy is not None:
+            log(f"Phase 2 block start — strategy={block_strategy} ({len(block)} episodes)")
+        stats = scheduler.run(
+            block,
+            run_fn=lambda job: run_phase2_job(job, model, run_ctx),
+            on_complete=_on_complete,
+            errors_path=errors_path,
+            checkpoint_dir=checkpoint_dir,
+            quarantined=quarantined,
+            log_fn=log,
+        )
+        done_count_offset += stats.done_count
+        agg_attempted += stats.episodes_attempted
+        agg_completed += stats.episodes_completed
+        agg_failed += stats.episodes_failed
+        agg_tokens += stats.total_tokens_generated
+        max_in_flight = max(max_in_flight, stats.max_in_flight_observed)
     wall_total = time.perf_counter() - t_run_start
     log(
-        f"Phase 2 finished — new episodes: {stats.done_count}; checkpoints: {len(list_completed_episodes(checkpoint_dir))}; "
-        f"wall {format_run_elapsed(wall_total)}; max_in_flight={stats.max_in_flight_observed}"
+        f"Phase 2 finished — new episodes: {done_count_offset}; checkpoints: {len(list_completed_episodes(checkpoint_dir))}; "
+        f"wall {format_run_elapsed(wall_total)}; max_in_flight={max_in_flight}"
     )
     exec_metrics = build_execution_metrics(
         checkpoint_dir=checkpoint_dir,
         total_wall_time_s=wall_total,
-        total_tokens_generated=stats.total_tokens_generated,
-        max_in_flight_observed=stats.max_in_flight_observed,
+        total_tokens_generated=agg_tokens,
+        max_in_flight_observed=max_in_flight,
     )
     summary = _build_run_summary(
         checkpoint_dir=checkpoint_dir,
         total_wall_time_s=time.perf_counter() - t_run_start,
-        episodes_attempted=stats.episodes_attempted,
-        episodes_completed=stats.episodes_completed,
-        episodes_failed=stats.episodes_failed,
+        episodes_attempted=agg_attempted,
+        episodes_completed=agg_completed,
+        episodes_failed=agg_failed,
         execution_metrics=exec_metrics,
     )
     with open(run_summary_path, "w") as f:

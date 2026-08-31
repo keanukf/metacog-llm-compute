@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-# K=20 is frozen after the Gate C-6 top-K sensitivity sweep (see CLAUDE.md / consistency_log);
+# K=20 is frozen after the Gate C-6 top-K sensitivity sweep (docs/consistency_log.md);
 # TLE is computed over these renormalized top-K logprobs, so this width is a preregistered constant.
 DEFAULT_TOP_LOGPROBS = 20
 

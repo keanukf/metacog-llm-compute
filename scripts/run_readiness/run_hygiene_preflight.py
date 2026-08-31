@@ -43,7 +43,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 # C-1 scoped waiver (docs/consistency_log.md, 2026-07-13) froze concurrency at this value;
-# CLAUDE.md documents it as a project-wide invariant not to be silently changed.
+# It is a project-wide invariant and is not to be silently changed.
 EXPECTED_MAX_CONCURRENT_EPISODES = 32
 DOMAINS = ("textworld", "tower_of_hanoi")
 

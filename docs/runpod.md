@@ -368,7 +368,28 @@ STOP_POD=1 ./scripts/cloud/shell/run_with_autostop.sh scripts/experiment/run_pha
   --checkpoint-dir "${RESULTS_DIR}/phase1/phase1_YYYYMMDD_HHMMSS_UTC"
 ```
 
-**Resume directory trap:** `--checkpoint-dir` must be the **exact timestamped run folder** that contains `ep_*.json` (and optionally `quarantine.jsonl`), not the parent `phase1/` base.
+**Phase 2** follows the identical pattern, `run_phase2.py` instead of `run_phase1.py`:
+
+```bash
+cd /workspace/metacog-llm-compute
+export RESULTS_DIR="/workspace/metacog-llm-compute/data/results"
+STOP_POD=1 ./scripts/cloud/shell/run_with_autostop.sh scripts/experiment/run_phase2.py \
+  --config configs/experiment_core.yaml --real --resume \
+  --checkpoint-dir "${RESULTS_DIR}/phase2/phase2_YYYYMMDD_HHMMSS_UTC"
+```
+
+**Before the first real Phase 2 run:** `configs/experiment_core.yaml`'s `phase2.policy_artifact`
+must point at a real threshold artifact
+(`python scripts/phase2_prep/build_threshold_artifact.py`, see docs/consistency_log.md 2026-08-04
+entry) -- `run_phase2.py` hard-fails at startup (`SystemExit`) for `adaptive_tle`/`adaptive_vc`/
+`eager_style` otherwise, so this fails fast before spending any GPU time, not mid-run.
+
+**Scale**: the real Phase 2 design is 50 instances x 2 domains x 6 strategies x 5 runs = 3000
+episodes (vs. Phase 1's 1500) -- budget more wall-clock and more persistent-volume headroom than
+the Phase 1 numbers above; check the network volume has room to grow before starting (cheap to
+resize on RunPod, expensive to run out of mid-collection and have to pause).
+
+**Resume directory trap:** `--checkpoint-dir` must be the **exact timestamped run folder** that contains `ep_*.json` (and optionally `quarantine.jsonl`), not the parent `phase1/`/`phase2/` base.
 
 Phase runners write `env_assertion` / `label_error` failures to `quarantine.jsonl` and skip those episodes on resume; all other episode failures still append to `errors.jsonl` unchanged.
 
@@ -470,7 +491,7 @@ python scripts/instrument_validation/verify_backend_parity.py --backend server \
 
 ### Instrument validation session (5090 pod)
 
-After connecting Cursor via SSH Remote to `/workspace/metacog-llm-compute`:
+After connecting to the pod over SSH at `/workspace/metacog-llm-compute`:
 
 **Order matters:** pick production `max_concurrent_episodes` from measured throughput *before* backend parity (batch invariance must use the N you will run in Phase 1).
 
@@ -561,6 +582,6 @@ Run this sequence when validating infrastructure before committing GPU budget to
 8. **Download** (local machine, pod running): `./scripts/cloud/shell/download_runpod_results.sh --tcp … [--run pilot_…]`
 9. **Audit** (local): `python scripts/pilot_analysis/audit_pilot_signals.py data/results/runpod_pilot/pilot_…`
 
-**Pass criteria for this smoke:** `pilot_sanity.json` has `has_logprobs: true`; `audit_pilot_signals` shows C0 `tle_rate >= 0.95`; VC rate `>= 0.80` under the **`experiment_core.yaml` VC contract** (`followup_max_tokens: 4`); C1 handoff gate shows low unparsed rate with thinking ON; C2 traces use `self_consistency_majority_vote` when `compute_stages` includes C2. Gate 1 itself still requires a dedicated 20-episode C0 parseability run per domain (see `blueprints/thesis_dependency_map.html`).
+**Pass criteria for this smoke:** `pilot_sanity.json` has `has_logprobs: true`; `audit_pilot_signals` shows C0 `tle_rate >= 0.95`; VC rate `>= 0.80` under the **`experiment_core.yaml` VC contract** (`followup_max_tokens: 4`); C1 handoff gate shows low unparsed rate with thinking ON; C2 traces use `self_consistency_majority_vote` when `compute_stages` includes C2. Gate 1 itself still requires a dedicated 20-episode C0 parseability run per domain.
 
 Then run analysis locally (e.g. ECE on `pilot_calibration.json` via `src/analysis/calibration.py`).

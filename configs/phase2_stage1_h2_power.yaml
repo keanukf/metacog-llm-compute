@@ -1,0 +1,26 @@
+extends: experiment_core.yaml
+
+# Phase 2, Stage 1 of a staged real collection (docs/consistency_log.md 2026-08-05, "Phase-2
+# gestaffelt: Stage 1 (H2-Power-first)"). Real production data, not a diagnostic probe -- lives
+# alongside experiment_core.yaml, not under configs/dev/.
+#
+# Rationale: the H2 power simulation (scripts/analysis_rehearsal/h2_power_simulation.py) found
+# that runs_per_condition=5 (experiment_core.yaml's canonical Phase 2 design) gives H2's
+# non-inferiority test only ~37-46% power. Verified empirically (same script) that raising
+# runs_per_condition to 15 for BOTH the adaptive policy and Always-C2 -- not just the adaptive
+# side -- brings power to ~74% (textworld) / ~80% (tower_of_hanoi), while Always-C0/Always-C1 stay
+# well covered by Phase 1's already-collected fixed-stage cells (same frozen manifest, model,
+# backend -- reused for the exploratory Always-C1 comparison and the descriptive Always-C0 Pareto
+# bound, not re-collected). random and eager_style are deferred to a later stage 2 collection
+# (not part of H2's confirmatory pairing) -- see the consistency_log entry for the full reasoning
+# and the runs-per-condition sweep that ruled out reusing Phase 1's fixed 5-run Always-C2 data
+# as-is (caps power at ~50-65% regardless of how many adaptive runs are added).
+#
+# 2 domains x 50 instances x 3 strategies x 15 runs = 4500 episodes.
+
+phase2:
+  strategies:
+    - adaptive_tle
+    - adaptive_vc
+    - always_c2
+  runs_per_condition: 15

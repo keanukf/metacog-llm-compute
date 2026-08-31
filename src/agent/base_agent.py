@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, cast
 
-from src.agent.allocator import allocate
+from src.agent.allocator import allocate, raw_signal_value
 from src.agent.compute_stages import get_step_fn
 from src.agent.episode_runner import build_initial_history
 from src.agent.history_utils import compact_history_for_prompt, truncate_for_history
@@ -667,6 +667,28 @@ def run_adaptive_episode(
                 signal_source_stage=signal_source_stage,
             )
             stage_per_step.append(stage)
+            # Log the continuous uncertainty score a policy-driven decision actually used, not
+            # just the discrete stage it collapsed to -- Ch.7.4 ("Allocation Patterns: When Does
+            # the Agent Choose to Deliberate?") needs the score, not only the outcome. Mirrors
+            # allocate()'s own condition for when it actually calls policy.stage() (a real policy
+            # lookup happened this step, not eager_style reusing an already-fixed stage) --
+            # deliberately not derived from `stage` alone, since always_c0/always_c2/random never
+            # touch the policy at all.
+            allocator_uncertainty_score: float | None = None
+            allocator_theta1: float | None = None
+            allocator_theta2: float | None = None
+            if policy is not None and (
+                strategy in ("adaptive_tle", "adaptive_vc")
+                or (strategy == "eager_style" and steps != 0 and episode_fixed_stage is None)
+            ):
+                raw_for_log = raw_signal_value(signal, strategy)
+                if raw_for_log is not None:
+                    source_stage_for_log = (signal_source_stage or "C0").upper()
+                    allocator_uncertainty_score = policy.uncertainty_score(
+                        raw_for_log, source_stage=source_stage_for_log
+                    )
+                    allocator_theta1 = policy.theta1
+                    allocator_theta2 = policy.theta2
             if stage not in step_fn_cache:
                 step_fn_cache[stage] = resolve(stage)
             step_fn = step_fn_cache[stage]
@@ -773,6 +795,10 @@ def run_adaptive_episode(
                     "correctness": None,
                     "observation_length_chars": len(step_obs or ""),
                 }
+                if allocator_uncertainty_score is not None:
+                    row_a["allocator_uncertainty_score"] = allocator_uncertainty_score
+                    row_a["allocator_theta1"] = allocator_theta1
+                    row_a["allocator_theta2"] = allocator_theta2
                 if stage == "C2" and isinstance(call_detail, dict):
                     for k in ("vote_agreement", "unique_actions", "winner_index", "tie_broken"):
                         if k in call_detail:

@@ -49,6 +49,23 @@ def main() -> int:
         ),
         ("Stage 6 (visualizations)", _stage_cmd("stage6_visualizations.py")),
         ("Stage 7 (report generation)", _stage_cmd("stage7_generate_report.py")),
+        # Analyses added after the first pass, each reported in the thesis and
+        # therefore part of the reproduction path rather than optional extras.
+        (
+            "Stage 8 (stage-stratified sensitivity, A1)",
+            _stage_cmd("stage_stratified_sensitivity.py", *boot_args),
+        ),
+        ("Stage 9 (symmetric VC calibration, A2)", _stage_cmd("verify_a2_vc_calibration.py")),
+        ("Stage 10 (label-collapse sensitivity, B1)", _stage_cmd("b1_label_sensitivity.py")),
+        ("Stage 11 (Ch.6 completeness tables)", _stage_cmd("ch6_completeness_tables.py")),
+        ("Stage 12 (calibrator stability, A10)", _stage_cmd("a10_calibrator_stability.py")),
+        ("Stage 13 (descriptive statistics)", _stage_cmd("descriptive_statistics.py")),
+        ("Stage 14 (corrected H1a/H4 figures)", _stage_cmd("regen_corrected_h1a_h4_figures.py")),
+        ("Stage 15 (ECE report)", _stage_cmd("ece_report.py")),
+        ("Stage 16 (TextWorld action entropy)", _stage_cmd("textworld_action_entropy.py")),
+        ("Stage 17 (signal autocorrelation)", _stage_cmd("signal_autocorrelation.py")),
+        ("Stage 18 (per-signal within-stage AUROC)", _stage_cmd("per_signal_stage_auroc.py")),
+        ("Stage 19 (within-episode progress)", _stage_cmd("progress_by_position.py")),
     ]
 
     for label, cmd in stages:
