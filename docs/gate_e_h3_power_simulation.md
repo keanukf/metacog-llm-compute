@@ -27,7 +27,7 @@
 
 **Datum:** 2026-07-17
 **Branch/Commit:** `feat/gate-d-calibration`
-**Skript:** [`scripts/h3_power_simulation.py`](../scripts/h3_power_simulation.py)
+**Skript:** [`scripts/h3_power_simulation.py`](../scripts/analysis_rehearsal/h3_power_simulation.py)
 **Seed-Quelle (Pilot-ICC/Entropie):** `data/results/instrument_validation/phase1_20260714_105004/` (72 reale Episoden, dieselbe Gate-C-Pilotquelle wie `docs/gate_e_rehearsal.md`)
 **Report-Artefakt (lokal, `data/results/` ist gitignored):** `data/results/gate_e_h3_power/h3_power_simulation.json`
 
